@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Project Falcon: Export</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&amp;family=Libre+Caslon+Text:wght@400;700&amp;family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#F5F6F3}
+a{color:#16181D}a:hover{color:#000000}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid #16181D;outline-offset:2px}
+button:disabled{cursor:not-allowed}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; align-items: stretch; background: #F5F6F3; color: #16181D; font-family: 'Public Sans', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 1.5;">
+
+  <nav aria-label="Main" style="flex: 1 1 232px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #DADCD5; padding: 20px 16px; display: flex; flex-direction: column; gap: 28px;">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 4px 8px; text-decoration: none; color: #16181D; font-family: 'Courier Prime', 'Courier New', monospace; font-weight: 700; font-size: 20px;">
+      <span aria-hidden="true" style="width: 20px; height: 20px; box-sizing: border-box; border: 2px solid #16181D; border-radius: 3px; display: flex; align-items: center; padding: 0 2px;"><span style="display: block; width: 100%; height: 5px; background: #FFE14D;"></span></span>
+      <span>culltool</span>
+    </a>
+    <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid #DADCD5; border-radius: 6px;">
+      <span style="font-size: 13px; font-weight: 600;">Contoso Ltd</span>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5A606B;"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: #1E7A46;"></span>Microsoft 365 connected</span>
+      <span style="font-size: 12px; color: #5A606B;">Purview eDiscovery Premium</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px;">
+      <a href="Main.dc.html" aria-current="page" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 600; color: #16181D; background: #F5F6F3;">Matters</a>
+      <a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; color: #5A606B;">Connections</a>
+      <a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; color: #5A606B;">Team and roles</a>
+      <a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; color: #5A606B;">Help</a>
+    </div>
+    <div style="margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 8px;">
+      <span aria-hidden="true" style="width: 32px; height: 32px; flex: none; border-radius: 50%; background: #16181D; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">DW</span>
+      <span style="display: flex; flex-direction: column; line-height: 1.3;"><span style="font-size: 13px; font-weight: 600;">Dana Whitfield</span><span style="font-size: 12px; color: #5A606B;">eDiscovery Manager</span></span>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 28px 32px 48px;">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px;">
+
+      <header style="display: flex; flex-direction: column; gap: 14px;">
+        <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #5A606B;">
+          <a href="Main.dc.html" style="color: #5A606B;">Matters</a>
+          <span aria-hidden="true">/</span>
+          <span style="font-family: 'Courier Prime', 'Courier New', monospace;">M-2026-0142</span>
+        </nav>
+        <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+            <h1 style="margin: 0; font-family: 'Libre Caslon Text', Georgia, serif; font-size: 34px; line-height: 1.15; font-weight: 700;">Project Falcon investigation</h1>
+            <p style="margin: 0; font-size: 14px; color: #5A606B;">Purview case M-2026-0142 · 2 custodians · 2 SharePoint sites · opened 3 Nov 2026</p>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid #16181D; font-size: 13px; font-weight: 600;">Query v3</span>
+            <span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #FFE14D; color: #17150A; font-size: 13px; font-weight: 600;">Previewed today 10:42</span>
+          </div>
+        </div>
+        <nav aria-label="Matter sections" style="display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #DADCD5;">
+          <a href="Define.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Define</a>
+          <a href="Scope.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Scope</a>
+          <a href="Preview.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Preview</a>
+          <a href="Terms.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Terms</a>
+          <a href="Export.dc.html" aria-current="page" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 700; color: #16181D; box-shadow: inset 0 -4px 0 #FFE14D;">Export</a>
+          <a href="Log.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Log</a>
+        </nav>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px;">
+
+        <div style="flex: 1.3 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+
+          <section aria-labelledby="check-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+              <h2 id="check-h" style="margin: 0; font-size: 17px; font-weight: 700;">Export check</h2>
+              <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px; background: #1E7A46; color: #FFFFFF; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Ready</span>
+            </div>
+            <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px;">
+              <li style="display: flex; gap: 10px; align-items: flex-start;"><span aria-hidden="true" style="flex: none; width: 22px; height: 22px; border-radius: 50%; background: #1E7A46; color: #FFFFFF; display: flex; align-items: center; justify-content: center; margin-top: 1px;"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg></span><span><strong style="font-weight: 600;">Passed:</strong> this exact query (v3) was previewed at 10:42</span></li>
+              <li style="display: flex; gap: 10px; align-items: flex-start;"><span aria-hidden="true" style="flex: none; width: 22px; height: 22px; border-radius: 50%; background: #1E7A46; color: #FFFFFF; display: flex; align-items: center; justify-content: center; margin-top: 1px;"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg></span><span><strong style="font-weight: 600;">Passed:</strong> same custodians and sites as the preview</span></li>
+              <li style="display: flex; gap: 10px; align-items: flex-start;"><span aria-hidden="true" style="flex: none; width: 22px; height: 22px; border-radius: 50%; background: #1E7A46; color: #FFFFFF; display: flex; align-items: center; justify-content: center; margin-top: 1px;"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg></span><span><strong style="font-weight: 600;">Passed:</strong> counts unchanged since the preview (re-checked 10:58)</span></li>
+            </ul>
+            <p style="margin: 0; font-size: 13px; color: #5A606B;">If any check fails, culltool stops before contacting Purview and tells you what changed.</p>
+          </section>
+
+          <section aria-labelledby="what-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 12px;">
+            <h2 id="what-h" style="margin: 0; font-size: 17px; font-weight: 700;">What will be exported</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 13px; font-weight: 600; color: #5A606B;">Items</span>
+                <span style="font-family: 'Libre Caslon Text', Georgia, serif; font-size: 30px; line-height: 1.15; font-weight: 700; font-variant-numeric: tabular-nums;">{{itemTotal}}</span>
+                <span style="font-size: 13px; color: #5A606B;">{{itemNote}}</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 13px; font-weight: 600; color: #5A606B;">Size</span>
+                <span style="font-family: 'Libre Caslon Text', Georgia, serif; font-size: 30px; line-height: 1.15; font-weight: 700; font-variant-numeric: tabular-nums;">{{sizeTotal}}</span>
+                <span style="font-size: 13px; color: #5A606B;">2 mailboxes, 4 sites</span>
+              </div>
+            </div>
+            <sc-if value="{{partialOff}}" hint-placeholder-val="{{false}}">
+              <p role="alert" style="margin: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid #B42318; color: #B42318; font-size: 14px; font-weight: 600;">You're leaving out 25 items that couldn't be keyword-searched. Agree this with counsel; the choice is recorded in the log.</p>
+            </sc-if>
+          </section>
+
+          <section aria-labelledby="opt-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 4px;">
+            <h2 id="opt-h" style="margin: 0 0 8px; font-size: 17px; font-weight: 700;">Options</h2>
+            <sc-for list="{{switches}}" as="o" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #ECEDE8;">
+                <span style="display: flex; flex-direction: column; line-height: 1.4;">
+                  <span id="{{o.id}}" style="font-weight: 600;">{{o.label}}</span>
+                  <span style="font-size: 13px; color: #5A606B;">{{o.note}}</span>
+                </span>
+                <button type="button" role="switch" aria-checked="{{o.checked}}" aria-labelledby="{{o.id}}" onClick="{{o.toggle}}" style="{{o.trackStyle}}"><span style="{{o.knobStyle}}"></span></button>
+              </div>
+            </sc-for>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0 0;">
+              <span style="display: flex; flex-direction: column; line-height: 1.4;">
+                <span style="font-weight: 600;">Format for emails and chats</span>
+                <span style="font-size: 13px; color: #5A606B;">PST keeps mailbox folders together. Check what your Everlaw project expects.</span>
+              </span>
+              <div role="group" aria-label="Format for emails and chats" style="display: inline-flex; border: 1px solid #C9CCC3; border-radius: 6px; overflow: hidden;">
+                <sc-for list="{{formats}}" as="f" hint-placeholder-count="2">
+                  <button type="button" aria-pressed="{{f.pressed}}" onClick="{{f.pick}}" style="{{f.style}}">{{f.label}}</button>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="go-h" style="background: #FFFFFF; border: 1.5px solid #16181D; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+            <h2 id="go-h" style="margin: 0; font-size: 17px; font-weight: 700;">Start the export</h2>
+            <sc-if value="{{notStarted}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                <p style="margin: 0; font-size: 14px; color: #5A606B;">culltool asks Purview to build the package. Nothing reaches Everlaw until someone imports it there.</p>
+                <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;">
+                  <div style="display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px;">
+                    <label for="confirm-id" style="font-size: 13px; font-weight: 600;">Type <span style="font-family: 'Courier Prime', 'Courier New', monospace;">M-2026-0142</span> to confirm</label>
+                    <input id="confirm-id" type="text" autocomplete="off" value="{{typed}}" onChange="{{onType}}" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; color: #16181D; font-family: 'Courier Prime', 'Courier New', monospace; font-size: 15px;">
+                  </div>
+                  <button type="button" disabled="{{cannotStart}}" onClick="{{onStart}}" style="{{startStyle}}">Start export</button>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{started}}" hint-placeholder-val="{{false}}">
+              <div role="status" style="display: flex; flex-direction: column; gap: 10px;">
+                <p style="margin: 0; display: flex; align-items: center; gap: 10px; font-weight: 600;"><span aria-hidden="true" style="width: 22px; height: 22px; border-radius: 50%; background: #1E7A46; color: #FFFFFF; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg></span>Export started at 10:59</p>
+                <p style="margin: 0; font-size: 14px; color: #5A606B;">Purview is preparing the package. Large exports can take a few hours; it appears below as Ready when it's done.</p>
+                <a href="Log.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid #16181D; color: #16181D; text-decoration: none; font-size: 14px; font-weight: 600;">See it in the log</a>
+              </div>
+            </sc-if>
+          </section>
+        </div>
+
+        <aside style="flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+          <section aria-labelledby="hand-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+            <h2 id="hand-h" style="margin: 0; font-size: 17px; font-weight: 700;">Hand-off to Everlaw</h2>
+            <ol style="margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 12px; font-size: 14px;">
+              <li>
+                <span>culltool starts the export in Purview as</span>
+                <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px;">
+                  <code style="padding: 6px 8px; border-radius: 4px; background: #F5F6F3; font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px; word-break: break-all;">M-2026-0142 EVERLAW 20261105T1058Z</code>
+                  <button type="button" onClick="{{onCopy}}" style="min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid #C9CCC3; background: #FFFFFF; color: #16181D; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">{{copyLabel}}</button>
+                </span>
+              </li>
+              <li>In Everlaw, open the project's <strong style="font-weight: 600;">Purview Cloud Connector</strong>.</li>
+              <li>Choose the case <strong style="font-weight: 600;">M-2026-0142 Project Falcon investigation</strong> and the export above.</li>
+              <li>Import by <strong style="font-weight: 600;">5 Dec 2026</strong>. Purview keeps export downloads for about 30 days.</li>
+            </ol>
+          </section>
+
+          <section aria-labelledby="mini-h" style="display: flex; flex-direction: column; gap: 8px;">
+            <h2 id="mini-h" style="margin: 0; font-size: 17px; font-weight: 700;">Methodology sent with this export</h2>
+            <div style="position: relative; background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 18px 18px 18px 58px; overflow: hidden;">
+              <span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 44px; border-left: 1px solid #B42318;"></span>
+              <span aria-hidden="true" style="position: absolute; top: 0; bottom: 0; left: 48px; border-left: 1px solid #B42318;"></span>
+              <div aria-hidden="true" style="position: absolute; left: 0; top: 18px; bottom: 18px; width: 34px; overflow: hidden; text-align: right; font-family: 'Courier Prime', 'Courier New', monospace; font-size: 11px; line-height: 22px; color: #6B717C; display: flex; flex-direction: column;">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span>
+              </div>
+              <ol style="margin: 0; padding-left: 3ch; font-family: 'Courier Prime', 'Courier New', monospace; font-size: 13px; line-height: 22px;">
+                <li>Item types: emails, Teams chats, documents.</li>
+                <li>Date range from 2024-01-01 to 2025-06-30 (inclusive).</li>
+                <li>Containing ANY of: <mark style="background: #FFE14D; color: #17150A;">"project falcon"</mark>, <mark style="background: #FFE14D; color: #17150A;">invoic*</mark>, <mark style="background: #FFE14D; color: #17150A;">kickback</mark>, <mark style="background: #FFE14D; color: #17150A;">"side letter"</mark>.</li>
+                <li>Excluding items containing "weekly digest".</li>
+                <li>Emails and chats excluded if a participant is at newsletters.contoso.com.</li>
+                <li>Documents limited to docx, xlsx, pptx, pdf.</li>
+                <li>Excluding items labelled Public.</li>
+              </ol>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <section aria-labelledby="hist-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; display: flex; flex-direction: column;">
+        <h2 id="hist-h" style="margin: 0; padding: 16px 20px; border-bottom: 1px solid #DADCD5; font-size: 17px; font-weight: 700;">Exports for this matter</h2>
+        <div style="overflow-x: auto;">
+          <div role="table" aria-label="Exports for this matter" style="min-width: 900px;">
+            <div role="row" style="display: grid; grid-template-columns: minmax(280px, 2fr) 90px 170px 190px 200px; gap: 16px; padding: 10px 20px; border-bottom: 1px solid #DADCD5; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #5A606B;">
+              <span role="columnheader">Export name</span>
+              <span role="columnheader">Query</span>
+              <span role="columnheader">Items</span>
+              <span role="columnheader">Started</span>
+              <span role="columnheader">Status</span>
+            </div>
+            <sc-for list="{{history}}" as="h" hint-placeholder-count="1">
+              <div role="row" style="display: grid; grid-template-columns: minmax(280px, 2fr) 90px 170px 190px 200px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #ECEDE8; font-size: 14px;">
+                <span role="cell" style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px; word-break: break-all;">{{h.name}}</span>
+                <span role="cell">{{h.version}}</span>
+                <span role="cell" style="font-variant-numeric: tabular-nums;">{{h.items}}</span>
+                <span role="cell" style="color: #5A606B;">{{h.started}}</span>
+                <span role="cell" style="display: flex; flex-direction: column; line-height: 1.35;"><span style="{{h.statusStyle}}">{{h.status}}</span><span style="font-size: 13px; color: #5A606B;">{{h.detail}}</span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1650}}'>
+class Component extends DCLogic {
+  st() {
+    return Object.assign({ partial: true, cloud: false, transcripts: true, format: 'pst', typed: '', started: false, copied: '' }, this.state || {});
+  }
+
+  renderVals() {
+    var self = this;
+    var s = this.st();
+    var knob = function (on) {
+      return 'display: block; width: 20px; height: 20px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transform: translateX(' + (on ? '20px' : '0') + '); transition: transform 0.15s ease;';
+    };
+    var track = function (on) {
+      return 'flex: none; width: 48px; height: 28px; padding: 4px; box-sizing: border-box; border-radius: 999px; border: 0; cursor: pointer; display: flex; align-items: center; background: ' + (on ? '#16181D' : '#C9CCC3') + ';';
+    };
+    var switches = [
+      ['partial', 'Include partially indexed items', '25 items Purview could not keyword-search, such as encrypted or oversized files'],
+      ['cloud', 'Include files linked in emails', 'Collects the current version of OneDrive and SharePoint files shared as links'],
+      ['transcripts', 'Teams conversations as transcripts', 'Adds a readable HTML transcript for each chat thread']
+    ].map(function (o) {
+      var on = !!s[o[0]];
+      return {
+        id: 'opt-' + o[0],
+        label: o[1],
+        note: o[2],
+        checked: on ? 'true' : 'false',
+        trackStyle: track(on),
+        knobStyle: knob(on),
+        toggle: function () { var next = {}; next[o[0]] = !on; self.setState(next); }
+      };
+    });
+    var formats = [['pst', 'PST'], ['msg', 'MSG']].map(function (f) {
+      var on = s.format === f[0];
+      return {
+        label: f[1],
+        pressed: on ? 'true' : 'false',
+        style: 'min-height: 40px; padding: 0 16px; border: 0; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; ' + (on ? 'background: #16181D; color: #FFFFFF;' : 'background: #FFFFFF; color: #5A606B;'),
+        pick: function () { self.setState({ format: f[0] }); }
+      };
+    });
+    var ok = s.typed.trim() === 'M-2026-0142';
+    var history = [
+      { name: 'M-2026-0142 EVERLAW 20261104T1630Z', version: 'v2', items: '1,148 + 41 partial', started: '4 Nov 16:30 · Dana Whitfield', status: 'Ready in Purview', detail: 'Download expires 4 Dec', statusStyle: 'font-weight: 600; color: #1E7A46;' }
+    ];
+    if (s.started) {
+      history.unshift({ name: 'M-2026-0142 EVERLAW 20261105T1058Z', version: 'v3', items: s.partial ? '630 + 25 partial' : '630', started: 'Today 10:59 · Dana Whitfield', status: 'Preparing in Purview', detail: '0% · usually minutes to hours', statusStyle: 'font-weight: 600; color: #16181D;' });
+    }
+    return {
+      switches: switches,
+      formats: formats,
+      partialOff: !s.partial,
+      itemTotal: s.partial ? '655' : '630',
+      itemNote: s.partial ? '630 matching + 25 partially indexed' : '630 matching; 25 partially indexed left out',
+      sizeTotal: s.partial ? '50.7 MB' : '29.0 MB',
+      typed: s.typed,
+      onType: function (e) { self.setState({ typed: e.target.value }); },
+      cannotStart: !ok,
+      startStyle: 'min-height: 44px; padding: 0 20px; border-radius: 6px; font: inherit; font-weight: 700; ' +
+        (ok ? 'background: #16181D; color: #FFFFFF; border: 1px solid #16181D; cursor: pointer;' : 'background: #ECEDE8; color: #6B717C; border: 1px solid #DADCD5;'),
+      onStart: function () { if (ok) self.setState({ started: true }); },
+      notStarted: !s.started,
+      started: s.started,
+      history: history,
+      copyLabel: s.copied || 'Copy name',
+      onCopy: function () {
+        try {
+          navigator.clipboard.writeText('M-2026-0142 EVERLAW 20261105T1058Z').then(
+            function () { self.setState({ copied: 'Copied' }); },
+            function () { self.setState({ copied: 'Select to copy' }); }
+          );
+        } catch (err) {
+          self.setState({ copied: 'Select to copy' });
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>culltool</title>
+<meta name="description" content="Cull Microsoft 365 data in Purview eDiscovery, preview exactly what will be collected, and hand a defensible set to Everlaw.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a litigation filing. Pleading-paper line numbers frame the generated methodology;
+   highlighter yellow marks "hits", the way reviewers see search terms in a document. */
+:root {
+  --paper: #F5F6F3;
+  --sheet: #FFFFFF;
+  --ink: #16181D;
+  --muted: #5A606B;
+  --rule: #DADCD5;
+  --margin: #B42318;
+  --hit: #FFE14D;
+  --hit-ink: #17150A;
+  --ok: #1E7A46;
+  --deep: #16181D;
+  --deep-ink: #F2F2EE;
+  --font-display: "Libre Caslon Text", "Iowan Old Style", Georgia, serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Courier Prime", "Courier New", Courier, monospace;
+  --radius: 6px;
+  --line: 26px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111317; --sheet: #191C21; --ink: #ECECE7; --muted: #A2A7B1; --rule: #2D3139;
+    --margin: #F0625A; --hit: #E9C83A; --hit-ink: #16130A; --ok: #4CC07F; --deep: #23272F; --deep-ink: #F2F2EE; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111317; --sheet: #191C21; --ink: #ECECE7; --muted: #A2A7B1; --rule: #2D3139;
+  --margin: #F0625A; --hit: #E9C83A; --hit-ink: #16130A; --ok: #4CC07F; --deep: #23272F; --deep-ink: #F2F2EE; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 400 17px/1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--hit); outline-offset: 3px; border-radius: 3px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.15; text-wrap: balance; margin: 0; }
+h2 { font-size: clamp(1.7rem, 3.2vw, 2.4rem); }
+h3 { font-size: 1.15rem; font-family: var(--font-body); font-weight: 600; letter-spacing: -0.005em; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); }
+.wrap { width: min(1160px, 100% - 40px); margin-inline: auto; }
+.lede { color: var(--muted); max-width: 62ch; font-size: 1.08rem; }
+.eyebrow { font: 600 0.78rem/1 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+mark.hit {
+  color: var(--hit-ink); padding: 0 0.08em; border-radius: 2px;
+  background: linear-gradient(var(--hit), var(--hit)) no-repeat 0 50% / 100% 100%;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  animation: sweep 700ms cubic-bezier(.2,.7,.2,1) both;
+}
+@keyframes sweep { from { background-size: 0% 100%; } }
+@media (prefers-reduced-motion: reduce) { mark.hit { animation: none; } html { scroll-behavior: auto; } }
+
+/* Top bar */
+.top { border-bottom: 1px solid var(--rule); background: var(--paper); position: sticky; top: 0; z-index: 5; }
+.top .wrap { display: flex; align-items: center; gap: 24px; min-height: 60px; flex-wrap: wrap; }
+.brand { font: 700 1.25rem/1 var(--font-mono); letter-spacing: -0.02em; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 22px; height: 22px; border: 2px solid var(--ink); border-radius: 3px; position: relative; }
+.brand-mark::before { content: ""; position: absolute; left: 3px; right: 3px; top: 8px; height: 5px; background: var(--hit); }
+.top nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+.top nav a { text-decoration: none; color: var(--muted); font-size: 0.93rem; font-weight: 500; }
+.top nav a:hover { color: var(--ink); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 6px 10px; color: var(--muted); white-space: nowrap; }
+.chip.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--hit); box-shadow: 0 0 0 2px var(--ink) inset; }
+
+/* Buttons */
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: var(--radius); font-weight: 600; font-size: 0.97rem;
+  text-decoration: none; border: 1.5px solid var(--ink); transition: transform .15s ease, background-color .15s ease; }
+.btn.primary { background: var(--ink); color: var(--paper); }
+.btn.ghost { background: transparent; color: var(--ink); }
+.btn:hover { transform: translateY(-1px); }
+.btn.ghost:hover { background: var(--sheet); }
+
+/* Hero */
+.hero { padding: clamp(40px, 7vw, 88px) 0 56px; }
+.hero .wrap { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: clamp(32px, 5vw, 64px); align-items: center; }
+.hero h1 { font-size: clamp(2.3rem, 4.6vw, 3.4rem); letter-spacing: -0.015em; }
+.hero-copy { display: grid; gap: 22px; }
+.hero-copy .lede { font-size: 1.13rem; }
+
+/* Pleading paper */
+.pleading { position: relative; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: 0 1px 0 var(--rule), 0 18px 40px -24px rgba(0,0,0,.35); padding: 26px 26px 22px 74px; overflow: hidden; }
+.pleading::before { /* the double rule down the left margin */
+  content: ""; position: absolute; top: 0; bottom: 0; left: 56px; width: 4px;
+  border-left: 1px solid var(--margin); border-right: 1px solid var(--margin); opacity: .8; }
+.pleading::after { content: ""; position: absolute; top: 0; bottom: 0; right: 14px; border-right: 1px solid var(--margin); opacity: .45; }
+.pleading .nums { position: absolute; left: 0; width: 46px; top: 26px; bottom: 22px; overflow: hidden; text-align: right;
+  font: 400 12px/var(--line) var(--font-mono); color: var(--muted); user-select: none; }
+.pleading .nums span { display: block; }
+.pleading .body { font: 400 14.5px/var(--line) var(--font-mono); position: relative; }
+.pleading .caption { text-align: center; font-weight: 700; letter-spacing: .08em; }
+.pleading .sub { text-align: center; color: var(--muted); }
+.pleading ol { margin: var(--line) 0 0; padding-left: 0; list-style: none; counter-reset: para; }
+.pleading li { counter-increment: para; padding-left: 2.2ch; text-indent: -2.2ch; }
+.pleading li::before { content: counter(para) ". "; }
+.pleading .stamp { margin-top: var(--line); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); }
+.pleading mark.hit { animation-delay: var(--d, 900ms); }
+.figure-note { margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
+
+.works { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.works .wrap { display: flex; gap: 10px 28px; align-items: center; flex-wrap: wrap; padding: 16px 0; font-size: 0.93rem; color: var(--muted); }
+.works strong { color: var(--ink); font-weight: 600; }
+
+/* Sections */
+section.band { padding: clamp(56px, 8vw, 96px) 0; }
+section.band + section.band { border-top: 4px double var(--rule); }
+.head { display: grid; gap: 14px; margin-bottom: 40px; max-width: 760px; }
+
+/* Steps */
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; counter-reset: step; }
+.step { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 22px; display: grid; gap: 10px; align-content: start; }
+.step .n { font: 700 0.8rem/1 var(--font-mono); color: var(--margin); letter-spacing: .06em; }
+.step p { color: var(--muted); font-size: 0.95rem; }
+.cmd { font: 400 0.86rem/1.4 var(--font-mono); background: var(--paper); border: 1px dashed var(--rule); border-radius: 4px; padding: 7px 9px; overflow-x: auto; white-space: nowrap; }
+.kql { margin-top: 18px; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); }
+.kql summary { cursor: pointer; padding: 14px 18px; font-weight: 600; font-size: 0.95rem; }
+.kql pre { margin: 0; padding: 0 18px 18px; font: 400 0.84rem/1.55 var(--font-mono); white-space: pre-wrap; word-break: break-word; color: var(--muted); }
+
+/* Preview */
+.preview { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 18px; }
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 24px; display: grid; gap: 18px; align-content: start; }
+.panel-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.panel-title h3 { font-size: 1rem; }
+.sample { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.counts { display: grid; gap: 14px; }
+.count { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding-bottom: 14px; border-bottom: 1px solid var(--rule); }
+.count:last-child { border-bottom: 0; padding-bottom: 0; }
+.count .k { color: var(--muted); font-size: 0.92rem; }
+.count .v { font: 700 1.65rem/1.1 var(--font-display); font-variant-numeric: tabular-nums; text-align: right; grid-row: span 2; align-self: center; }
+.count .s { font-size: 0.85rem; color: var(--muted); }
+.flag { display: inline-flex; gap: 6px; align-items: center; font-size: 0.8rem; font-weight: 600; color: var(--ok); }
+.flag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.bars { display: grid; gap: 9px; }
+.bar { display: grid; grid-template-columns: minmax(150px, 1.1fr) 2fr 3.5ch; gap: 12px; align-items: center; font-size: 0.9rem; }
+.bar .track { height: 10px; background: var(--paper); border-radius: 2px; overflow: hidden; }
+.bar .fill { display: block; height: 100%; background: var(--ink); width: var(--w); border-radius: 2px; }
+.bar.muted .fill { background: var(--muted); opacity: .55; }
+.bar .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+/* Term report */
+.terms { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.terms th { text-align: left; font: 600 0.75rem/1 var(--font-body); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); padding: 0 12px 12px 0; border-bottom: 1px solid var(--rule); }
+.terms td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+.terms td.n { text-align: right; width: 7ch; font-weight: 600; }
+.terms td.sz { text-align: right; width: 9ch; color: var(--muted); }
+.terms td.viz { width: 42%; }
+.terms .t { font-family: var(--font-mono); white-space: nowrap; }
+.terms tr.total td:first-child { white-space: nowrap; }
+.terms tr.total td { border-bottom: 0; border-top: 2px solid var(--ink); font-weight: 700; }
+.terms .track { height: 10px; background: var(--paper); border-radius: 2px; }
+.terms .fill { height: 100%; width: var(--w); background: var(--hit); border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.terms-wrap { overflow-x: auto; }
+.two { display: grid; grid-template-columns: 1fr 1.25fr; gap: clamp(28px, 5vw, 64px); align-items: start; }
+.two .head { margin-bottom: 0; }
+.notes { display: grid; gap: 12px; margin-top: 8px; color: var(--muted); font-size: 0.95rem; }
+
+/* Export gate */
+.gate { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.95rem; }
+.check .i { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 700 12px/1 var(--font-body); color: var(--sheet); background: var(--ok); margin-top: 2px; }
+.check.no .i { background: var(--margin); }
+.check.skip { color: var(--muted); }
+.check.skip .i { background: var(--rule); color: var(--muted); }
+.term-out { font: 400 0.84rem/1.55 var(--font-mono); background: var(--paper); border-radius: 4px; padding: 12px 14px; white-space: pre-wrap; word-break: break-word; border-left: 3px solid var(--ok); }
+.term-out.stop { border-left-color: var(--margin); }
+.status-pill { font: 700 0.72rem/1 var(--font-body); letter-spacing: .08em; text-transform: uppercase; padding: 6px 9px; border-radius: 4px; color: var(--sheet); background: var(--ok); }
+.status-pill.stop { background: var(--margin); }
+
+.rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 40px; border-top: 1px solid var(--rule); }
+.rule { padding: 22px 22px 22px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 8px; align-content: start; }
+.rule:not(:nth-child(3n+1)) { padding-left: 22px; border-left: 1px solid var(--rule); }
+.rule p { color: var(--muted); font-size: 0.95rem; }
+
+/* Filters */
+.filters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.filter { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 20px; display: grid; gap: 10px; align-content: start; }
+.filter p { color: var(--muted); font-size: 0.92rem; }
+.scope { display: flex; gap: 6px; flex-wrap: wrap; }
+.scope span { font: 600 0.7rem/1 var(--font-body); letter-spacing: .05em; text-transform: uppercase; padding: 5px 8px; border-radius: 3px; border: 1px solid var(--rule); color: var(--muted); }
+.scope span.all { border-color: var(--ink); color: var(--ink); }
+
+/* Status */
+.status { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.status ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.status li { display: flex; gap: 10px; align-items: flex-start; font-size: 0.97rem; }
+.status li::before { content: ""; flex: none; width: 14px; height: 14px; margin-top: 6px; border-radius: 3px; border: 1.5px solid var(--ink); }
+.status .today li::before { background: var(--ink); box-shadow: inset 0 0 0 3px var(--sheet); }
+.status .next li { color: var(--muted); }
+.status .next li::before { border-color: var(--muted); border-style: dashed; }
+.honest { margin-top: 18px; padding: 18px 20px; border-radius: var(--radius); border: 1px solid var(--rule); background: var(--sheet); display: grid; gap: 6px; font-size: 0.97rem; }
+.honest strong { font-weight: 600; }
+
+/* Pilot */
+.pilot { background: var(--deep); color: var(--deep-ink); border-radius: 10px; padding: clamp(28px, 5vw, 56px); display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 5vw, 56px); }
+.pilot h2 { color: var(--deep-ink); }
+.pilot p { color: color-mix(in srgb, var(--deep-ink) 78%, transparent); }
+.pilot ol { margin: 0; padding-left: 1.3em; display: grid; gap: 10px; }
+.pilot li::marker { font-family: var(--font-mono); color: var(--hit); }
+.pilot .btn.primary { background: var(--hit); color: var(--hit-ink); border-color: var(--hit); }
+
+footer { padding: 40px 0 56px; color: var(--muted); font-size: 0.85rem; }
+footer .wrap { display: grid; gap: 10px; border-top: 1px solid var(--rule); padding-top: 24px; }
+
+@media (max-width: 960px) {
+  .hero .wrap, .two, .pilot, .preview { grid-template-columns: 1fr; }
+  .steps, .filters { grid-template-columns: repeat(2, 1fr); }
+  .rules { grid-template-columns: 1fr 1fr; }
+  .rule:not(:nth-child(3n+1)) { padding-left: 0; border-left: 0; }
+  .rule:nth-child(2n) { padding-left: 22px; border-left: 1px solid var(--rule); }
+}
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .steps, .filters, .rules, .gate, .status, .split { grid-template-columns: 1fr; }
+  .rule:nth-child(2n) { padding-left: 0; border-left: 0; }
+  .top nav { display: none; }
+  .pleading { padding-left: 58px; padding-right: 20px; }
+  .pleading::before { left: 42px; }
+  .pleading .nums { width: 34px; }
+  .bar { grid-template-columns: 1fr 1fr 3.5ch; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="culltool home"><span class="brand-mark" aria-hidden="true"></span>culltool</a>
+    <span class="chip live">Early access</span>
+    <nav aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#preview">Preview</a>
+      <a href="#defensible">Defensibility</a>
+      <a href="#status">What's available</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">eDiscovery culling for Microsoft 365</p>
+        <h1>Send Everlaw <mark class="hit" style="animation-delay:250ms">only what matters.</mark> Show exactly how you chose it.</h1>
+        <p class="lede">culltool turns your culling decisions into a Microsoft Purview eDiscovery search, shows you what that search will collect before anything moves, and hands the approved set to Everlaw through its Purview connector. Every query, count and export is recorded.</p>
+        <div class="actions">
+          <a class="btn primary" href="#how">See how it works</a>
+          <a class="btn ghost" href="#pilot">Run a pilot</a>
+        </div>
+      </div>
+
+      <figure style="margin:0">
+        <div class="pleading">
+          <div class="nums" aria-hidden="true">
+            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
+            <span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span>
+            <span>21</span><span>22</span><span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span>
+          </div>
+          <div class="body">
+            <div class="caption">CULLING METHODOLOGY</div>
+            <div class="sub">Matter M-2026-0142 · Project Falcon investigation</div>
+            <ol>
+              <li>Item types: emails, Teams chats, documents.</li>
+              <li>Date range from 2024-01-01 to 2025-06-30 (inclusive): emails and chats by sent or received date; documents by last modified date.</li>
+              <li>Containing ANY of these terms: <mark class="hit" style="--d:1000ms">"project falcon"</mark>, <mark class="hit" style="--d:1120ms">invoic*</mark>, <mark class="hit" style="--d:1240ms">kickback</mark>, <mark class="hit" style="--d:1360ms">"side letter"</mark>.</li>
+              <li>Excluding items containing "weekly digest".</li>
+              <li>Emails and chats excluded if a participant is at newsletters.contoso.com.</li>
+              <li>Documents limited to file types: docx, xlsx, pptx, pdf.</li>
+              <li>Excluding items with the sensitivity label Public.</li>
+            </ol>
+            <div class="stamp"><span>Search: M-2026-0142 cull v1</span><span>630 items + 25 partially indexed</span></div>
+          </div>
+        </div>
+        <figcaption class="figure-note">Written by <code>culltool kql</code> from the matter file. Example matter; counts from culltool's offline simulator.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <div class="works">
+    <div class="wrap">
+      <span>Works with</span>
+      <strong>Microsoft Purview eDiscovery</strong>
+      <strong>Microsoft Graph</strong>
+      <strong>Everlaw's Purview Cloud Connector</strong>
+    </div>
+  </div>
+
+  <section class="band" id="how">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">How it works</p>
+        <h2>Four commands from scoping to review</h2>
+        <p class="lede">You describe the matter once: custodians, sites and filters. culltool builds the case and the search in Purview, and keeps them in step with your file as you refine it.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="n">01 · DEFINE</span>
+          <h3>Describe the matter</h3>
+          <p>Custodians, extra SharePoint sites, keywords, dates, item types, domains and sensitivity labels, in one matter file. Typos and impossible filters are rejected before anything reaches Microsoft.</p>
+          <div class="cmd">culltool kql matter.json</div>
+        </div>
+        <div class="step">
+          <span class="n">02 · PREVIEW</span>
+          <h3>See what you'd collect</h3>
+          <p>Counts, then an item-level breakdown by custodian, type, sensitivity label and month, plus a spreadsheet of every item. Built from Purview's own report, so it matches the export.</p>
+          <div class="cmd">culltool preview matter.json</div>
+        </div>
+        <div class="step">
+          <span class="n">03 · TEST TERMS</span>
+          <h3>Find the noisy terms</h3>
+          <p>Hits for each search term within all your other filters, so you can see which term is pulling in volume before you agree to it.</p>
+          <div class="cmd">culltool terms matter.json</div>
+        </div>
+        <div class="step">
+          <span class="n">04 · EXPORT</span>
+          <h3>Hand off to Everlaw</h3>
+          <p>One confirmed export from Purview, named for the matter, ready to pick in Everlaw's Purview Cloud Connector. It only runs if the set matches your last preview.</p>
+          <div class="cmd">culltool export matter.json --confirm</div>
+        </div>
+      </div>
+      <details class="kql">
+        <summary>See the KQL culltool wrote for the example matter</summary>
+<pre>("project falcon" OR invoic* OR kickback OR "side letter") AND ((kind:email AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND NOT participants:newsletters.contoso.com) OR ((kind:microsoftteams OR kind:im) AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND NOT participants:newsletters.contoso.com) OR (kind:docs AND (lastmodifiedtime>=2024-01-01 AND lastmodifiedtime<=2025-06-30) AND (fileextension:docx OR fileextension:xlsx OR fileextension:pptx OR fileextension:pdf))) AND NOT InformationProtectionLabelId:11111111-1111-4111-8111-111111111111 AND NOT "weekly digest"</pre>
+      </details>
+    </div>
+  </section>
+
+  <section class="band" id="preview">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Preview</p>
+        <h2>Know the size and shape of the set before it moves</h2>
+        <p class="lede">Previews use item metadata only. Document contents stay in Purview until the export, and then go straight from Purview to Everlaw.</p>
+      </div>
+      <div class="preview">
+        <div class="panel">
+          <div class="panel-title"><h3>Search M-2026-0142 cull v1</h3><span class="sample">Sample data</span></div>
+          <div class="counts">
+            <div class="count"><span class="k">Items matching</span><span class="v">630</span><span class="s">29.0 MB</span></div>
+            <div class="count"><span class="k">Partially indexed items</span><span class="v">25</span><span class="s">21.7 MB · <span class="flag">included in export</span></span></div>
+            <div class="count"><span class="k">Locations searched</span><span class="v">5</span><span class="s">2 mailboxes, 3 sites</span></div>
+          </div>
+          <p class="figure-note" style="margin:0">Partially indexed items (encrypted, unsupported or oversized files) can't be keyword-searched. culltool shows them separately and makes including them an explicit setting.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><h3>Item report: 655 items</h3><span class="sample">Sample data</span></div>
+          <div class="split">
+            <div class="bars" aria-label="Items by sensitivity label">
+              <div class="eyebrow" style="margin-bottom:4px">By sensitivity label</div>
+              <div class="bar"><span>General</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="num">137</span></div>
+              <div class="bar"><span>Highly Confidential</span><span class="track"><span class="fill" style="--w:99%"></span></span><span class="num">136</span></div>
+              <div class="bar"><span>Confidential/Finance</span><span class="track"><span class="fill" style="--w:97%"></span></span><span class="num">133</span></div>
+              <div class="bar"><span>Confidential/Legal</span><span class="track"><span class="fill" style="--w:95%"></span></span><span class="num">130</span></div>
+              <div class="bar muted"><span>No label</span><span class="track"><span class="fill" style="--w:87%"></span></span><span class="num">119</span></div>
+            </div>
+            <div class="bars" aria-label="Items by custodian and type">
+              <div class="eyebrow" style="margin-bottom:4px">By custodian</div>
+              <div class="bar"><span>alex.wilber</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="num">340</span></div>
+              <div class="bar"><span>megan.bowen</span><span class="track"><span class="fill" style="--w:93%"></span></span><span class="num">315</span></div>
+              <div class="eyebrow" style="margin:12px 0 4px">By type</div>
+              <div class="bar"><span>Emails</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="num">223</span></div>
+              <div class="bar"><span>Teams chats</span><span class="track"><span class="fill" style="--w:100%"></span></span><span class="num">223</span></div>
+              <div class="bar"><span>Documents</span><span class="track"><span class="fill" style="--w:94%"></span></span><span class="num">209</span></div>
+            </div>
+          </div>
+          <p class="figure-note" style="margin:0">Sensitivity labels show by name, sublabels included, and encrypted items are counted (69 here), so you can plan for what reviewers won't be able to open.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="terms">
+    <div class="wrap two">
+      <div class="head">
+        <p class="eyebrow">Search term report</p>
+        <h2>Negotiate terms with numbers, not guesses</h2>
+        <p class="lede">Each term is counted inside every other filter: the same custodians, dates, item types and labels. The combined row is the set you would actually export.</p>
+        <div class="notes">
+          <p>Runs on its own search, so testing terms never changes the search you previewed.</p>
+          <p>Every report is saved to the matter's culling log with the time and who ran it.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><h3>M-2026-0142 term report</h3><span class="sample">Sample data</span></div>
+        <div class="terms-wrap">
+          <table class="terms">
+            <thead><tr><th scope="col">Term</th><th scope="col">Hits within scope</th><th scope="col" style="text-align:right">Items</th><th scope="col" style="text-align:right">Size</th></tr></thead>
+            <tbody>
+              <tr><td class="t">"project falcon"</td><td class="viz"><div class="track"><div class="fill" style="--w:16.7%"></div></div></td><td class="n">105</td><td class="sz">4.8 MB</td></tr>
+              <tr><td class="t">invoic*</td><td class="viz"><div class="track"><div class="fill" style="--w:69.8%"></div></div></td><td class="n">440</td><td class="sz">20.2 MB</td></tr>
+              <tr><td class="t">kickback</td><td class="viz"><div class="track"><div class="fill" style="--w:41%"></div></div></td><td class="n">258</td><td class="sz">11.9 MB</td></tr>
+              <tr><td class="t">"side letter"</td><td class="viz"><div class="track"><div class="fill" style="--w:50.2%"></div></div></td><td class="n">316</td><td class="sz">14.5 MB</td></tr>
+              <tr class="total"><td>All terms combined</td><td class="viz"><div class="track"><div class="fill" style="--w:100%"></div></div></td><td class="n">630</td><td class="sz">29.0 MB</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="defensible">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Defensibility</p>
+        <h2>The export can't drift from what you reviewed</h2>
+        <p class="lede">Before any export starts, culltool checks it against your last preview. If anything changed, it stops and tells you what, before it touches Purview.</p>
+      </div>
+      <div class="gate">
+        <div class="panel">
+          <div class="panel-title"><h3>Export check passes</h3><span class="status-pill">Export started</span></div>
+          <div class="check"><span class="i" aria-hidden="true">✓</span><span>This exact query was previewed</span></div>
+          <div class="check"><span class="i" aria-hidden="true">✓</span><span>Same custodians and sites as the preview</span></div>
+          <div class="check"><span class="i" aria-hidden="true">✓</span><span>Counts unchanged since the preview</span></div>
+          <div class="term-out">Export started: 'M-2026-0142 EVERLAW 20261105T072135Z'
+Next, in Everlaw: open the Purview Cloud Connector, pick the case and this export.</div>
+        </div>
+        <div class="panel">
+          <div class="panel-title"><h3>Export check stops</h3><span class="status-pill stop">Stopped</span></div>
+          <div class="check"><span class="i" aria-hidden="true">✓</span><span>This exact query was previewed</span></div>
+          <div class="check"><span class="i" aria-hidden="true">✓</span><span>Same custodians and sites as the preview</span></div>
+          <div class="check no"><span class="i" aria-hidden="true">✕</span><span>17 new items arrived after the preview</span></div>
+          <div class="term-out stop">Stopped: Counts changed since the preview. Run 'preview' again, or pass --accept-changes to export anyway (this is logged).</div>
+        </div>
+      </div>
+
+      <div class="rules">
+        <div class="rule"><h3>Purview does the collection</h3><p>culltool never downloads document contents. The export goes from Purview to Everlaw through Everlaw's own connector.</p></div>
+        <div class="rule"><h3>Preview equals export</h3><p>Previews come from Purview's report on the same search that gets exported, not from a separate search engine.</p></div>
+        <div class="rule"><h3>Filters land where they belong</h3><p>Domain filters touch emails and chats only; file types touch documents only. Adding a domain never silently drops every document.</p></div>
+        <div class="rule"><h3>Labels include sublabels</h3><p>Choose "Confidential" and you also get Confidential/Finance and Confidential/Legal, because that's what files actually carry.</p></div>
+        <div class="rule"><h3>A methodology you can share</h3><p>Every matter produces a plain-English statement of the culling method, ready for a meet-and-confer or a methodology memo.</p></div>
+        <div class="rule"><h3>A log that shows tampering</h3><p>Previews, term reports and exports are logged with the query, filters, counts and the person who ran them, in a hash chain that <code>verify-log</code> checks.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="filters">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Filters</p>
+        <h2>Every filter applies only to the items it makes sense for</h2>
+      </div>
+      <div class="filters">
+        <div class="filter"><h3>Keywords</h3><p>Any or all, exact phrases, and prefix wildcards like <code>invoic*</code>. Leading wildcards are refused.</p><div class="scope"><span class="all">All items</span></div></div>
+        <div class="filter"><h3>Exclusion terms</h3><p>Drop newsletters, digests and other noise by phrase.</p><div class="scope"><span class="all">All items</span></div></div>
+        <div class="filter"><h3>Date range</h3><p>Sent or received date for messages; last modified or created date for documents.</p><div class="scope"><span class="all">All items</span></div></div>
+        <div class="filter"><h3>Sensitivity labels</h3><p>Include or exclude by label name, Parent/Child path or ID.</p><div class="scope"><span class="all">All items</span></div></div>
+        <div class="filter"><h3>Item types</h3><p>Emails, Teams chats and documents, in any combination.</p><div class="scope"><span>Choose types</span></div></div>
+        <div class="filter"><h3>Participant domains</h3><p>Keep or exclude messages involving a company or law firm domain.</p><div class="scope"><span>Emails</span><span>Chats</span></div></div>
+        <div class="filter"><h3>File types</h3><p>Limit documents to the formats that matter, such as docx, xlsx and pdf.</p><div class="scope"><span>Documents</span></div></div>
+        <div class="filter"><h3>Expert KQL</h3><p>Add your own Purview query for anything the filters don't cover.</p><div class="scope"><span class="all">All items</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="status">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">What's available</p>
+        <h2>Today, and what's next</h2>
+      </div>
+      <div class="status">
+        <div class="panel today">
+          <h3>Available today</h3>
+          <ul>
+            <li>Command-line tool for Python 3.10 and later</li>
+            <li>Builds Purview eDiscovery cases, custodians, data sources and searches from one matter file</li>
+            <li>Counts and item-level previews, with a spreadsheet of every item</li>
+            <li>Search term hit report</li>
+            <li>Guarded export for Everlaw's Purview Cloud Connector</li>
+            <li>Plain-English methodology statement and tamper-evident culling log</li>
+            <li>Sign in as yourself, or run unattended with an app certificate</li>
+            <li>Offline dry-run mode that shows every call it would make</li>
+          </ul>
+        </div>
+        <div class="panel next">
+          <h3>Coming next</h3>
+          <ul>
+            <li>Web interface with live counts as you change filters</li>
+            <li>Unique-hits term report and an Excel export for term negotiations</li>
+            <li>Item-level differences between query versions</li>
+            <li>Faster term reports by counting terms in parallel</li>
+            <li>Sensitivity label names inside Everlaw</li>
+            <li>Volume and cost forecasts before export</li>
+          </ul>
+        </div>
+      </div>
+      <div class="honest">
+        <strong>Where it stands</strong>
+        <span>culltool is in early access. It is built and tested end to end against a simulated Purview environment, with 49 automated tests. It has not yet run in a live Microsoft 365 tenant, which is what our first pilots are for.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="pilot">
+    <div class="wrap">
+      <div class="pilot">
+        <div style="display:grid;gap:16px;align-content:start">
+          <p class="eyebrow" style="color:var(--hit)">Pilot program</p>
+          <h2>Run culltool on one real matter</h2>
+          <p>We're looking for eDiscovery and litigation support teams who cull Microsoft 365 data for Everlaw review. A pilot covers one matter in your tenant, with us alongside to set it up.</p>
+        </div>
+        <div style="display:grid;gap:16px;align-content:start">
+          <p style="color:var(--deep-ink);font-weight:600">What you'll need</p>
+          <ol>
+            <li>Microsoft Purview eDiscovery (Premium), or Standard with Purview pay-as-you-go billing</li>
+            <li>An Everlaw project with the Purview Cloud Connector set up</li>
+            <li>Someone with the eDiscovery Manager role in Purview</li>
+            <li>An Entra ID admin to approve one app registration</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><strong style="color:var(--ink);font-family:var(--font-mono)">culltool</strong> · early access</span>
+    <span>Microsoft, Microsoft 365, Microsoft Purview and Microsoft Graph are trademarks of Microsoft Corporation. Everlaw is a trademark of Everlaw, Inc. culltool is an independent tool and is not affiliated with, sponsored by or endorsed by either company.</span>
+  </div>
+</footer>
+
+</body>
+</html>

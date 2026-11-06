@@ -1,0 +1,28 @@
+{
+  "matter_id": "M-2026-0142",
+  "case_name": "M-2026-0142 Project Falcon investigation",
+  "description": "Internal investigation into supplier payments (Project Falcon).",
+  "custodians": [
+    {"email": "alex.wilber@contoso.com"},
+    {"email": "megan.bowen@contoso.com", "sites": ["https://contoso.sharepoint.com/sites/ProjectFalcon"]}
+  ],
+  "additional_sites": ["https://contoso.sharepoint.com/sites/Finance"],
+  "criteria": {
+    "keywords": ["project falcon", "invoic*", "kickback", "side letter"],
+    "keyword_mode": "any",
+    "exclude_keywords": ["weekly digest"],
+    "date_from": "2024-01-01",
+    "date_to": "2025-06-30",
+    "kinds": ["email", "chats", "docs"],
+    "file_extensions": ["docx", "xlsx", "pptx", "pdf"],
+    "exclude_participant_domains": ["newsletters.contoso.com"],
+    "labels": [],
+    "exclude_labels": ["Public"]
+  },
+  "export": {
+    "include_partially_indexed": true,
+    "partially_indexed_scope": "responsiveLocations",
+    "format": "pst",
+    "additional_options": "none"
+  }
+}

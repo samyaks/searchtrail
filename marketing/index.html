@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>SearchTrail</title>
+<meta name="description" content="SearchTrail: evidence of how you searched. SearchTrail turns your search criteria into a precise Microsoft Purview search, previews what it will collect, and sends only what matches to review, with a record of how you searched.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a record of search, filed like a court paper. Pleading-paper line numbers frame
+   the search record; highlighter yellow marks search hits, the way reviewers see them. */
+:root {
+  --paper: #F5F6F3;
+  --sheet: #FFFFFF;
+  --ink: #16181D;
+  --muted: #5A606B;
+  --rule: #DADCD5;
+  --margin: #B42318;
+  --hit: #FFE14D;
+  --hit-ink: #17150A;
+  --ok: #1E7A46;
+  --deep: #16181D;
+  --deep-ink: #F2F2EE;
+  --font-display: "Libre Caslon Text", "Iowan Old Style", Georgia, serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Courier Prime", "Courier New", Courier, monospace;
+  --radius: 6px;
+  --line: 26px;
+  color-scheme: light;
+}
+/* Light theme only, whatever the visitor's system setting. */
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.6 var(--font-body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--hit); outline-offset: 3px; border-radius: 3px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; line-height: 1.15; text-wrap: balance; margin: 0; }
+h2 { font-size: clamp(1.7rem, 3.2vw, 2.4rem); }
+h3 { font-size: 1.12rem; font-family: var(--font-body); font-weight: 600; letter-spacing: -0.005em; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); }
+.wrap { width: min(1160px, 100% - 40px); margin-inline: auto; }
+.lede { color: var(--muted); max-width: 62ch; font-size: 1.08rem; }
+.eyebrow { font: 600 0.78rem/1.3 var(--font-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+mark.hit {
+  color: var(--hit-ink); padding: 0 0.08em; border-radius: 2px;
+  background: linear-gradient(var(--hit), var(--hit)) no-repeat 0 50% / 100% 100%;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  animation: sweep 700ms cubic-bezier(.2,.7,.2,1) both;
+}
+@keyframes sweep { from { background-size: 0% 100%; } }
+@media (prefers-reduced-motion: reduce) { mark.hit { animation: none; } html { scroll-behavior: auto; } }
+
+/* Top bar */
+.top { border-bottom: 1px solid var(--rule); background: var(--paper); position: sticky; top: 0; z-index: 5; }
+.top .wrap { display: flex; align-items: center; gap: 20px; min-height: 64px; flex-wrap: wrap; }
+.brand { font: 700 1.25rem/1 var(--font-mono); letter-spacing: -0.02em; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 22px; height: 22px; border: 2px solid var(--ink); border-radius: 3px; position: relative; }
+.brand-mark::before { content: ""; position: absolute; left: 3px; right: 3px; top: 8px; height: 5px; background: var(--hit); }
+.top nav { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; align-items: center; }
+.top nav a { text-decoration: none; color: var(--muted); font-size: 0.93rem; font-weight: 500; }
+.top nav a:hover { color: var(--ink); }
+.top nav a.btn { color: var(--paper); }
+.tagline { font: 400 0.9rem/1.2 var(--font-display); font-style: italic; color: var(--muted); padding-left: 16px; border-left: 1px solid var(--rule); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 600 0.72rem/1 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 6px 10px; color: var(--muted); white-space: nowrap; }
+.chip.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--hit); box-shadow: 0 0 0 2px var(--ink) inset; }
+
+/* Buttons */
+.actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: var(--radius); font-weight: 600; font-size: 0.97rem;
+  text-decoration: none; border: 1.5px solid var(--ink); transition: transform .15s ease, background-color .15s ease; }
+.btn.primary { background: var(--ink); color: var(--paper); }
+.btn.ghost { background: transparent; color: var(--ink); }
+.btn.small { min-height: 38px; padding: 0 14px; font-size: 0.9rem; }
+.btn:hover { transform: translateY(-1px); }
+.btn.ghost:hover { background: var(--sheet); }
+
+/* Hero */
+.hero { padding: clamp(40px, 7vw, 88px) 0 56px; }
+.hero .wrap { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: clamp(32px, 5vw, 64px); align-items: center; }
+.hero h1 { font-size: clamp(2.3rem, 4.6vw, 3.4rem); letter-spacing: -0.015em; }
+.hero-copy { display: grid; gap: 22px; }
+.hero-copy .lede { font-size: 1.13rem; }
+
+/* Pleading paper */
+.pleading { position: relative; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius);
+  box-shadow: 0 1px 0 var(--rule), 0 18px 40px -24px rgba(0,0,0,.35); padding: 26px 26px 22px 74px; overflow: hidden; }
+.pleading::before { content: ""; position: absolute; top: 0; bottom: 0; left: 56px; width: 4px;
+  border-left: 1px solid var(--margin); border-right: 1px solid var(--margin); opacity: .8; }
+.pleading::after { content: ""; position: absolute; top: 0; bottom: 0; right: 14px; border-right: 1px solid var(--margin); opacity: .45; }
+.pleading .nums { position: absolute; left: 0; width: 46px; top: 26px; bottom: 22px; overflow: hidden; text-align: right;
+  font: 400 12px/var(--line) var(--font-mono); color: var(--muted); user-select: none; }
+.pleading .nums span { display: block; }
+.pleading .body { font: 400 14.5px/var(--line) var(--font-mono); position: relative; }
+.pleading .caption { text-align: center; font-weight: 700; letter-spacing: .08em; }
+.pleading .sub { text-align: center; color: var(--muted); }
+.pleading ol { margin: var(--line) 0 0; padding-left: 0; list-style: none; counter-reset: para; }
+.pleading li { counter-increment: para; padding-left: 2.2ch; text-indent: -2.2ch; }
+.pleading li::before { content: counter(para) ". "; }
+.pleading .stamp { margin-top: var(--line); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); }
+.pleading mark.hit { animation-delay: var(--d, 900ms); }
+.figure-note { margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
+
+.works { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.works .wrap { display: flex; gap: 10px 28px; align-items: center; flex-wrap: wrap; padding: 16px 0; font-size: 0.93rem; color: var(--muted); }
+.works strong { color: var(--ink); font-weight: 600; }
+
+/* Sections */
+section.band { padding: clamp(56px, 8vw, 96px) 0; }
+section.band + section.band { border-top: 4px double var(--rule); }
+.head { display: grid; gap: 14px; margin-bottom: 40px; max-width: 760px; }
+
+/* Who it's for */
+.uses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.use { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 22px; display: grid; gap: 10px; align-content: start; }
+.use p { color: var(--muted); font-size: 0.95rem; }
+.use .tag { justify-self: start; font: 600 0.7rem/1 var(--font-body); letter-spacing: .06em; text-transform: uppercase; padding: 5px 8px; border-radius: 3px; border: 1px solid var(--rule); color: var(--muted); }
+
+/* Pain points */
+.pains { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.pain { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 24px; display: grid; gap: 10px; align-content: start; }
+.pain p { color: var(--muted); }
+.pain .n { font: 700 0.8rem/1 var(--font-mono); color: var(--margin); letter-spacing: .06em; }
+.ask { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between;
+  padding: 18px 22px; border-radius: var(--radius); background: var(--sheet); border: 1px dashed var(--muted); }
+
+/* Steps */
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.step { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 22px; display: grid; gap: 10px; align-content: start; }
+.step .n { font: 700 0.8rem/1 var(--font-mono); color: var(--margin); letter-spacing: .06em; }
+.step p { color: var(--muted); font-size: 0.95rem; }
+
+/* Panels and term table */
+.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 24px; display: grid; gap: 18px; align-content: start; }
+.panel-title { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.panel-title h3 { font-size: 1rem; }
+.sample { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.terms { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.terms th { text-align: left; font: 600 0.75rem/1 var(--font-body); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); padding: 0 12px 12px 0; border-bottom: 1px solid var(--rule); }
+.terms td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+.terms td.n { text-align: right; width: 7ch; font-weight: 600; }
+.terms td.sz { text-align: right; width: 9ch; color: var(--muted); white-space: nowrap; }
+.terms td.viz { width: 42%; }
+.terms .t { font-family: var(--font-mono); white-space: nowrap; }
+.terms tr.total td { border-bottom: 0; border-top: 2px solid var(--ink); font-weight: 700; }
+.terms tr.total td:first-child { white-space: nowrap; }
+.terms .track { height: 10px; background: var(--paper); border-radius: 2px; }
+.terms .fill { height: 100%; width: var(--w); background: var(--hit); border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.terms-wrap { overflow-x: auto; }
+.two { display: grid; grid-template-columns: 1fr 1.25fr; gap: clamp(28px, 5vw, 64px); align-items: start; }
+.two .head { margin-bottom: 0; }
+.notes { display: grid; gap: 12px; margin-top: 8px; color: var(--muted); font-size: 0.95rem; }
+.callout { padding: 14px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--hit) 28%, var(--sheet)); color: var(--ink); font-size: 0.95rem; }
+
+/* Rules grid */
+.rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--rule); }
+.rule { padding: 22px 22px 22px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 8px; align-content: start; }
+.rule:not(:nth-child(3n+1)) { padding-left: 22px; border-left: 1px solid var(--rule); }
+.rule p { color: var(--muted); font-size: 0.95rem; }
+
+/* Requirements */
+.reqs { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.reqs li { display: flex; gap: 10px; align-items: flex-start; }
+.reqs li::before { content: ""; flex: none; width: 14px; height: 14px; margin-top: 6px; border-radius: 3px; border: 1.5px solid var(--ink); background: var(--ink); box-shadow: inset 0 0 0 3px var(--sheet); }
+
+/* Join */
+.join { background: var(--deep); color: var(--deep-ink); border-radius: 10px; padding: clamp(28px, 5vw, 56px); display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 5vw, 56px); }
+.join h2 { color: var(--deep-ink); }
+.join p { color: color-mix(in srgb, var(--deep-ink) 80%, transparent); }
+.join ul { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; }
+.join li::marker { color: var(--hit); }
+.join .btn.primary { background: var(--hit); color: var(--hit-ink); border-color: var(--hit); }
+.placeholder { font: 600 0.8rem/1.3 var(--font-mono); color: var(--hit); border: 1px dashed var(--hit); border-radius: 4px; padding: 4px 8px; }
+
+footer { padding: 40px 0 56px; color: var(--muted); font-size: 0.85rem; }
+footer .wrap { display: grid; gap: 10px; border-top: 1px solid var(--rule); padding-top: 24px; }
+
+@media (max-width: 1100px) { .tagline { display: none; } }
+@media (max-width: 960px) {
+  .hero .wrap, .two, .join { grid-template-columns: 1fr; }
+  .steps, .uses { grid-template-columns: repeat(2, 1fr); }
+  .rules { grid-template-columns: 1fr 1fr; }
+  .rule:not(:nth-child(3n+1)) { padding-left: 0; border-left: 0; }
+  .rule:nth-child(2n) { padding-left: 22px; border-left: 1px solid var(--rule); }
+}
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .steps, .uses, .pains, .rules { grid-template-columns: 1fr; }
+  .rule:nth-child(2n) { padding-left: 0; border-left: 0; }
+  .top nav a:not(.btn) { display: none; }
+  .pleading { padding-left: 58px; padding-right: 20px; }
+  .pleading::before { left: 42px; }
+  .pleading .nums { width: 34px; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="SearchTrail home"><span class="brand-mark" aria-hidden="true"></span>SearchTrail</a>
+    <span class="tagline">Evidence of how you searched</span>
+    <span class="chip live">Early access</span>
+    <nav aria-label="Sections">
+      <a href="#who">Who it's for</a>
+      <a href="#how">How it works</a>
+      <a href="#record">Record of search</a>
+      <a href="#inside">Security</a>
+      <a class="btn primary small" href="#join">Join the waiting list</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">For legal, investigations and records teams on Microsoft 365</p>
+        <h1>Search Microsoft 365 for exactly what you need. <mark class="hit" style="animation-delay:250ms">Send only that to review.</mark></h1>
+        <p class="lede">SearchTrail turns your search criteria into a precise Microsoft Purview search, shows you what it will collect before anything moves, and keeps an exact record of how you searched. The results go to whichever review tool you use, or straight to a download.</p>
+        <div class="actions">
+          <a class="btn primary" href="#join">Join the waiting list</a>
+          <a class="btn ghost" href="#how">See how it works</a>
+        </div>
+      </div>
+
+      <figure style="margin:0">
+        <div class="pleading">
+          <div class="nums" aria-hidden="true">
+            <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
+            <span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span>
+            <span>21</span><span>22</span><span>23</span><span>24</span><span>25</span><span>26</span><span>27</span><span>28</span>
+          </div>
+          <div class="body">
+            <div class="caption">RECORD OF SEARCH</div>
+            <div class="sub">Matter 2026-0418 · Supplier payments review</div>
+            <ol>
+              <li>Records sought: emails, Teams chats and documents.</li>
+              <li>Custodians: 3 Procurement staff, plus the Procurement team site.</li>
+              <li>Date range 2025-01-01 to 2025-12-31 (inclusive).</li>
+              <li>Containing ANY of: <mark class="hit" style="--d:1000ms">"Brightline Logistics"</mark>, <mark class="hit" style="--d:1120ms">"BL-2025-118"</mark>, <mark class="hit" style="--d:1240ms">invoic*</mark>.</li>
+              <li>Excluding automated messages from lists.example.com.</li>
+              <li>Searched in Microsoft Purview on 6 Nov 2026 by J. Alvarez.</li>
+            </ol>
+            <div class="stamp"><span>412 items found</span><span>18 not keyword-searchable, kept for review</span></div>
+          </div>
+        </div>
+        <figcaption class="figure-note">Written by SearchTrail from the search settings. The matter, organization and people are fictional.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <div class="works">
+    <div class="wrap">
+      <span>Works with</span>
+      <strong>Microsoft Purview eDiscovery</strong>
+      <strong>Microsoft Graph</strong>
+      <strong>Any review tool that accepts Purview exports</strong>
+    </div>
+  </div>
+
+  <section class="band" id="who">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Who it's for</p>
+        <h2>Anyone who has to find a specific set of records in Microsoft 365</h2>
+      </div>
+      <div class="uses">
+        <div class="use"><span class="tag">Companies · Law firms</span><h3>Litigation and discovery</h3><p>Collect from custodians with search terms you can defend, and know the volume before it reaches review.</p></div>
+        <div class="use"><span class="tag">HR · Compliance</span><h3>Internal investigations</h3><p>A focused set of emails, chats and files for an HR, compliance or fraud review, without everything around it.</p></div>
+        <div class="use"><span class="tag">Government</span><h3>Public records and FOIA</h3><p>Search for the records a request describes, and keep a record of the search in case it's appealed.</p></div>
+        <div class="use"><span class="tag">Regulated industries</span><h3>Regulatory and audit requests</h3><p>Give a regulator or auditor a set you can explain: who was searched, for what, and over which dates.</p></div>
+      </div>
+      <div class="ask">
+        <p><strong>Using Purview searches for something else?</strong> Tell us when you join the waiting list.</p>
+        <a class="btn ghost small" href="#join">Tell us</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="problem">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Sound familiar?</p>
+        <h2>The trouble starts when Purview results land in review</h2>
+        <p class="lede">People we've talked to say the same thing: what comes out of Purview isn't what they need to review.</p>
+      </div>
+      <div class="pains">
+        <div class="pain"><span class="n">01</span><h3>Far more than you asked for</h3><p>A search for one vendor's invoices pulls in newsletters, auto-replies and unrelated threads from the same mailboxes, and someone has to review all of it.</p></div>
+        <div class="pain"><span class="n">02</span><h3>Search, export, upload, repeat</h3><p>Every change to a search term means another Purview export and another upload into your review tool while the deadline keeps running.</p></div>
+        <div class="pain"><span class="n">03</span><h3>No look before you send</h3><p>You only find out what an export contains once it's loaded for review, after the time and hosting costs have been spent.</p></div>
+        <div class="pain"><span class="n">04</span><h3>Hard to show how you searched</h3><p>When a search is questioned, piecing together which terms, people, dates and locations were searched means digging back through Purview.</p></div>
+      </div>
+      <div class="ask">
+        <p><strong>Is your biggest problem something else?</strong> Tell us when you join the waiting list. We're shaping SearchTrail around the answers.</p>
+        <a class="btn ghost small" href="#join">Tell us</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="how">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">How it works</p>
+        <h2>From criteria to review in four steps</h2>
+        <p class="lede">SearchTrail works with your organization's own Microsoft Purview. It builds the eDiscovery case and search for you, and keeps them in step as you refine your criteria.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="n">01 · SET UP</span>
+          <h3>Choose who and when</h3>
+          <p>Add the people and shared sites in scope and the date range. SearchTrail creates the Purview eDiscovery case.</p>
+        </div>
+        <div class="step">
+          <span class="n">02 · PREVIEW</span>
+          <h3>See what you'd collect</h3>
+          <p>Counts and an item list by custodian, type, sensitivity label and month, before anything is exported. Document contents stay in Purview.</p>
+        </div>
+        <div class="step">
+          <span class="n">03 · NARROW</span>
+          <h3>Narrow with numbers</h3>
+          <p>Hits for each search term within all your other settings, for negotiating terms or narrowing a broad request.</p>
+        </div>
+        <div class="step">
+          <span class="n">04 · SEND</span>
+          <h3>Send it to review</h3>
+          <p>One confirmed Purview export, built only if it matches your last preview. Pick it up through your review tool's Purview connector if it has one, or download the files and load them into Everlaw, Relativity or any other eDiscovery tool.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="terms">
+    <div class="wrap two">
+      <div class="head">
+        <p class="eyebrow">Search term counts</p>
+        <h2>Bring numbers to the scoping conversation</h2>
+        <p class="lede">Each term is counted inside the custodians, dates and item types you set. When one term pulls in most of the volume, you see it before anyone reviews a page.</p>
+        <div class="notes">
+          <p class="callout">Here, <span class="mono">invoic*</span> finds 318 of the 412 items. That's worth a conversation before review starts: is every invoice in scope, or only Brightline's?</p>
+          <p>Counting runs on a separate search, so the search you previewed never changes.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><h3>Matter 2026-0418</h3><span class="sample">Example</span></div>
+        <div class="terms-wrap">
+          <table class="terms">
+            <thead><tr><th scope="col">Term</th><th scope="col">Hits within scope</th><th scope="col" style="text-align:right">Items</th><th scope="col" style="text-align:right">Size</th></tr></thead>
+            <tbody>
+              <tr><td class="t">"Brightline Logistics"</td><td class="viz"><div class="track"><div class="fill" style="--w:23.3%"></div></div></td><td class="n">96</td><td class="sz">4.1 MB</td></tr>
+              <tr><td class="t">"BL-2025-118"</td><td class="viz"><div class="track"><div class="fill" style="--w:10%"></div></div></td><td class="n">41</td><td class="sz">1.9 MB</td></tr>
+              <tr><td class="t">invoic*</td><td class="viz"><div class="track"><div class="fill" style="--w:77.2%"></div></div></td><td class="n">318</td><td class="sz">14.6 MB</td></tr>
+              <tr class="total"><td>All terms combined</td><td class="viz"><div class="track"><div class="fill" style="--w:100%"></div></div></td><td class="n">412</td><td class="sz">19.0 MB</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="record">
+    <div class="wrap">
+      <div class="head">
+        <p class="eyebrow">Record of search</p>
+        <h2>The record behind every search</h2>
+        <p class="lede">If your search is questioned by opposing counsel, a regulator, an auditor or a requester, you may need to describe exactly how you searched. SearchTrail writes it down at every step, so you're not reconstructing it months later.</p>
+      </div>
+      <div class="rules">
+        <div class="rule"><h3>Every search, in plain English</h3><p>Terms, custodians, locations, dates and counts, written as a statement you can adapt for a declaration or a methodology memo.</p></div>
+        <div class="rule"><h3>Who searched, and when</h3><p>Every preview, term count and export is logged with the person who ran it. You sign in as yourself, so Purview's own audit log names the same person.</p></div>
+        <div class="rule"><h3>Edits don't go unnoticed</h3><p>Each log entry carries a fingerprint of the one before it, so a changed or deleted entry is detected.</p></div>
+        <div class="rule"><h3>The export matches the preview</h3><p>Exports come from the same Purview search you previewed. If the search or the data changed since, SearchTrail stops and tells you what changed.</p></div>
+        <div class="rule"><h3>Nothing quietly skipped</h3><p>Files Purview couldn't keyword-search, such as encrypted or oversized ones, are counted and kept for review unless you decide otherwise, and that decision is logged.</p></div>
+        <div class="rule"><h3>Your judgment, documented</h3><p>SearchTrail doesn't decide whether a search is adequate or defensible. It gives you an accurate record to draw on.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="inside">
+    <div class="wrap two">
+      <div class="head">
+        <p class="eyebrow">Security</p>
+        <h2>Runs inside your organization</h2>
+        <p class="lede">SearchTrail runs in your own environment and signs in with your own Microsoft account. There's no new cloud service holding your records.</p>
+        <div class="notes">
+          <p><strong style="color:var(--ink)">Document contents never pass through SearchTrail.</strong> Exports are built in Purview and go to your review tool or your download folder. SearchTrail reads item details such as names, dates and subjects for previews, and those stay in your environment.</p>
+          <p><strong style="color:var(--ink)">It uses permissions you already manage.</strong> Searches run under your Purview role, and an administrator approves one app registration.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><h3>What you need</h3></div>
+        <ul class="reqs">
+          <li>Microsoft 365 with Purview eDiscovery (Premium), included in E5 and G5 licenses</li>
+          <li>A review tool that accepts Purview exports, or somewhere to download them</li>
+          <li>Someone with the eDiscovery Manager role in Purview</li>
+          <li>An administrator to approve one app registration</li>
+        </ul>
+        <p style="color:var(--muted);font-size:0.95rem">Government clouds (GCC, GCC High and DoD): we're confirming support with our first users.</p>
+      </div>
+    </div>
+  </section>
+
+
+  <section class="band" id="join">
+    <div class="wrap">
+      <div class="join">
+        <div style="display:grid;gap:16px;align-content:start">
+          <p class="eyebrow" style="color:var(--hit)">Waiting list</p>
+          <h2>Help shape SearchTrail</h2>
+          <p>SearchTrail is in early access. Tell us how your team searches Microsoft 365 today and what goes wrong, and we'll consider you for our first pilots. It takes about two minutes.</p>
+          <div class="actions">
+            <a class="btn primary" href="#join">Join the waiting list</a>
+            <span class="placeholder">[ADD YOUR FORM LINK]</span>
+          </div>
+        </div>
+        <div style="display:grid;gap:12px;align-content:start">
+          <p style="color:var(--deep-ink);font-weight:600">We'll ask about</p>
+          <ul>
+            <li>What you search Microsoft 365 for, and who you work for</li>
+            <li>Your Microsoft cloud and licenses</li>
+            <li>Where results go: your review tool or a download</li>
+            <li>How often you run these searches</li>
+            <li>What goes wrong with Purview results today</li>
+            <li>Whether you'd rather use a hosted service or run SearchTrail inside your organization</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><strong style="color:var(--ink);font-family:var(--font-mono)">SearchTrail</strong>: evidence of how you searched · early access</span>
+    <span>Microsoft, Microsoft 365, Microsoft Purview, Microsoft Graph and Microsoft Teams are trademarks of Microsoft Corporation. Everlaw and Relativity are trademarks of their respective owners. SearchTrail is independent and is not affiliated with, sponsored by or endorsed by Microsoft, any review tool vendor or any government agency. SearchTrail does not provide legal advice.</span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Project Falcon: Define</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&amp;family=Libre+Caslon+Text:wght@400;700&amp;family=Public+Sans:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#F5F6F3}
+a{color:#16181D}a:hover{color:#000000}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #16181D;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; align-items: stretch; background: #F5F6F3; color: #16181D; font-family: 'Public Sans', 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 1.5;">
+
+  <nav aria-label="Main" style="flex: 1 1 232px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #DADCD5; padding: 20px 16px; display: flex; flex-direction: column; gap: 28px;">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; padding: 4px 8px; text-decoration: none; color: #16181D; font-family: 'Courier Prime', 'Courier New', monospace; font-weight: 700; font-size: 20px;">
+      <span aria-hidden="true" style="width: 20px; height: 20px; box-sizing: border-box; border: 2px solid #16181D; border-radius: 3px; display: flex; align-items: center; padding: 0 2px;"><span style="display: block; width: 100%; height: 5px; background: #FFE14D;"></span></span>
+      <span>culltool</span>
+    </a>
+    <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid #DADCD5; border-radius: 6px;">
+      <span style="font-size: 13px; font-weight: 600;">Contoso Ltd</span>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5A606B;"><span aria-hidden="true" style="width: 7px; height: 7px; border-radius: 50%; background: #1E7A46;"></span>Microsoft 365 connected</span>
+      <span style="font-size: 12px; color: #5A606B;">Purview eDiscovery Premium</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px;">
+      <a href="Main.dc.html" aria-current="page" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 600; color: #16181D; background: #F5F6F3;">Matters</a>
+      <a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; color: #5A606B;">Connections</a>
+      <a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; color: #5A606B;">Team and roles</a>
+      <a href="#" style="display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500; color: #5A606B;">Help</a>
+    </div>
+    <div style="margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 8px;">
+      <span aria-hidden="true" style="width: 32px; height: 32px; flex: none; border-radius: 50%; background: #16181D; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">DW</span>
+      <span style="display: flex; flex-direction: column; line-height: 1.3;"><span style="font-size: 13px; font-weight: 600;">Dana Whitfield</span><span style="font-size: 12px; color: #5A606B;">eDiscovery Manager</span></span>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 28px 32px 48px;">
+    <div style="max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px;">
+
+      <header style="display: flex; flex-direction: column; gap: 14px;">
+        <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #5A606B;">
+          <a href="Main.dc.html" style="color: #5A606B;">Matters</a>
+          <span aria-hidden="true">/</span>
+          <span style="font-family: 'Courier Prime', 'Courier New', monospace;">M-2026-0142</span>
+        </nav>
+        <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+            <h1 style="margin: 0; font-family: 'Libre Caslon Text', Georgia, serif; font-size: 34px; line-height: 1.15; font-weight: 700;">{{title}}</h1>
+            <p style="margin: 0; font-size: 14px; color: #5A606B;">Purview case M-2026-0142 · {{custodianCount}} · {{siteCountText}} · opened 3 Nov 2026</p>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid #16181D; font-size: 13px; font-weight: 600;">{{versionChip}}</span>
+            <span style="{{previewChipStyle}}">{{previewChip}}</span>
+          </div>
+        </div>
+        <nav aria-label="Matter sections" style="display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #DADCD5;">
+          <a href="Define.dc.html" aria-current="page" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 700; color: #16181D; box-shadow: inset 0 -4px 0 #FFE14D;">Define</a>
+          <a href="Scope.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Scope</a>
+          <a href="Preview.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Preview</a>
+          <a href="Terms.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Terms</a>
+          <a href="Export.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Export</a>
+          <a href="Log.dc.html" style="display: flex; align-items: center; min-height: 44px; padding: 0 14px; text-decoration: none; font-weight: 500; color: #5A606B;">Log</a>
+        </nav>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px;">
+
+        <div style="flex: 1.45 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+
+          <section aria-labelledby="details-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 16px;">
+            <h2 id="details-h" style="margin: 0; font-size: 17px; font-weight: 700;">Matter details</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 14px;">
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-size: 13px; font-weight: 600;">Matter ID</span>
+                <span style="min-height: 44px; box-sizing: border-box; display: flex; align-items: center; padding: 0 12px; border-radius: 6px; background: #F5F6F3; border: 1px solid #DADCD5; font-family: 'Courier Prime', 'Courier New', monospace; font-size: 15px;">M-2026-0142</span>
+                <span style="font-size: 12px; color: #5A606B;">Used in the Purview case name and every export name. Can't be changed.</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="matter-type" style="font-size: 13px; font-weight: 600;">Matter type</label>
+                <select id="matter-type" value="{{type}}" onChange="{{onType}}" style="min-height: 44px; box-sizing: border-box; padding: 0 10px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; color: #16181D; font: inherit;">
+                  <option value="investigation">Internal investigation</option>
+                  <option value="litigation">Litigation</option>
+                  <option value="regulatory">Regulatory request</option>
+                  <option value="dsr">Data subject request</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <label for="matter-name" style="font-size: 13px; font-weight: 600;">Name</label>
+              <input id="matter-name" type="text" value="{{name}}" onChange="{{onName}}" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; color: #16181D; font: inherit;">
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <label for="matter-desc" style="font-size: 13px; font-weight: 600;">Description</label>
+              <textarea id="matter-desc" rows="2" value="{{description}}" onChange="{{onDescription}}" style="box-sizing: border-box; padding: 10px 12px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; color: #16181D; font: inherit; resize: vertical;"></textarea>
+              <span style="font-size: 12px; color: #5A606B;">Shown on the Purview case and at the top of the methodology report.</span>
+            </div>
+          </section>
+
+          <section aria-labelledby="cust-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px;">
+              <h2 id="cust-h" style="margin: 0; font-size: 17px; font-weight: 700;">Custodians</h2>
+              <span style="font-size: 13px; color: #5A606B;">People whose mailboxes, chats and files are searched</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 4px; position: relative;">
+              <label for="cust-search" style="font-size: 13px; font-weight: 600;">Add a custodian from Contoso's directory</label>
+              <input id="cust-search" type="search" autocomplete="off" value="{{query}}" onChange="{{onQuery}}" placeholder="Name, email or department" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; color: #16181D; font: inherit;">
+              <sc-if value="{{showSuggestions}}" hint-placeholder-val="{{false}}">
+                <ul aria-label="Matching people" style="list-style: none; margin: 4px 0 0; padding: 4px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; box-shadow: 0 8px 20px -10px rgba(0,0,0,0.3); display: flex; flex-direction: column;">
+                  <sc-for list="{{suggestions}}" as="p" hint-placeholder-count="2">
+                    <li>
+                      <button type="button" onClick="{{p.add}}" style="width: 100%; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: #16181D; font: inherit; text-align: left; cursor: pointer;">
+                        <span aria-hidden="true" style="width: 30px; height: 30px; flex: none; border-radius: 50%; background: #ECEDE8; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">{{p.initials}}</span>
+                        <span style="display: flex; flex-direction: column; line-height: 1.3; flex: 1; min-width: 0;"><span style="font-weight: 600;">{{p.name}}</span><span style="font-size: 13px; color: #5A606B;">{{p.email}} · {{p.dept}}</span></span>
+                        <span style="font-size: 13px; font-weight: 600;">Add</span>
+                      </button>
+                    </li>
+                  </sc-for>
+                  <sc-if value="{{noMatches}}" hint-placeholder-val="{{false}}">
+                    <li style="padding: 10px 8px; font-size: 14px; color: #5A606B;">No one in the directory matches. Check the spelling, or add a site instead.</li>
+                  </sc-if>
+                </ul>
+              </sc-if>
+            </div>
+
+            <div style="display: flex; flex-direction: column;">
+              <sc-for list="{{custodians}}" as="c" hint-placeholder-count="2">
+                <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-top: 1px solid #ECEDE8;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span aria-hidden="true" style="width: 36px; height: 36px; flex: none; border-radius: 50%; background: #ECEDE8; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600;">{{c.initials}}</span>
+                    <span style="display: flex; flex-direction: column; line-height: 1.35; flex: 1; min-width: 0;"><span style="font-weight: 600;">{{c.name}}</span><span style="font-size: 13px; color: #5A606B;">{{c.email}} · {{c.dept}}</span></span>
+                    <button type="button" aria-label="{{c.removeLabel}}" onClick="{{c.remove}}" style="width: 36px; height: 36px; flex: none; border: 0; border-radius: 6px; background: transparent; color: #5A606B; cursor: pointer; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"></path></svg></button>
+                  </div>
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-left: 48px;">
+                    <div role="group" aria-label="{{c.sourcesLabel}}" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                      <sc-for list="{{c.sources}}" as="src" hint-placeholder-count="2">
+                        <button type="button" aria-pressed="{{src.pressed}}" onClick="{{src.toggle}}" style="{{src.style}}">
+                          <sc-if value="{{src.on}}" hint-placeholder-val="{{true}}"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg></sc-if>
+                          {{src.label}}
+                        </button>
+                      </sc-for>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <span id="{{c.holdId}}" style="font-size: 13px; color: #5A606B;">{{c.holdText}}</span>
+                      <button type="button" role="switch" aria-checked="{{c.holdChecked}}" aria-labelledby="{{c.holdId}}" onClick="{{c.toggleHold}}" style="{{c.holdTrack}}"><span style="{{c.holdKnob}}"></span></button>
+                    </div>
+                  </div>
+                  <div style="padding-left: 48px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px;">
+                    <span style="color: #5A606B;">Linked sites:</span>
+                    <span>{{c.sitesText}}</span>
+                    <button type="button" style="min-height: 32px; padding: 0 10px; border-radius: 4px; border: 1px dashed #C9CCC3; background: #FFFFFF; color: #16181D; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Link a site</button>
+                  </div>
+                  <sc-if value="{{c.noSources}}" hint-placeholder-val="{{false}}">
+                    <p role="alert" style="margin: 0; padding-left: 48px; font-size: 13px; font-weight: 600; color: #B42318;">Nothing selected for {{c.name}}. Choose at least one source, or remove them.</p>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <sc-if value="{{noCustodians}}" hint-placeholder-val="{{false}}">
+                <p style="margin: 0; padding: 14px 0; border-top: 1px solid #ECEDE8; color: #5A606B;">No custodians yet. Add one above, or search sites only.</p>
+              </sc-if>
+            </div>
+          </section>
+
+          <section aria-labelledby="sites-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px;">
+              <h2 id="sites-h" style="margin: 0; font-size: 17px; font-weight: 700;">Sites without a custodian</h2>
+              <span style="font-size: 13px; color: #5A606B;">Shared team or department sites</span>
+            </div>
+            <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;">
+              <sc-for list="{{sites}}" as="s" hint-placeholder-count="1">
+                <li style="display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #ECEDE8;">
+                  <span aria-hidden="true" style="width: 32px; height: 32px; flex: none; border-radius: 6px; background: #ECEDE8; display: flex; align-items: center; justify-content: center;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#16181D" stroke-width="1.6"><rect x="2.5" y="3" width="11" height="10" rx="1.5"></rect><path d="M2.5 6.5h11"></path></svg></span>
+                  <span style="flex: 1; min-width: 0; overflow-wrap: anywhere;">{{s.url}}</span>
+                  <button type="button" aria-label="{{s.removeLabel}}" onClick="{{s.remove}}" style="width: 36px; height: 36px; flex: none; border: 0; border-radius: 6px; background: transparent; color: #5A606B; cursor: pointer; display: flex; align-items: center; justify-content: center;"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"></path></svg></button>
+                </li>
+              </sc-for>
+            </ul>
+            <form onSubmit="{{addSite}}" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px;">
+              <div style="display: flex; flex-direction: column; gap: 4px; flex: 1 1 320px;">
+                <label for="site-url" style="font-size: 13px; font-weight: 600;">Site address</label>
+                <input id="site-url" type="url" value="{{siteDraft}}" onChange="{{onSiteDraft}}" placeholder="https://contoso.sharepoint.com/sites/Legal" style="min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #C9CCC3; border-radius: 6px; background: #FFFFFF; color: #16181D; font: inherit;">
+              </div>
+              <button type="submit" style="min-height: 44px; padding: 0 18px; border-radius: 6px; border: 1px solid #16181D; background: #FFFFFF; color: #16181D; font: inherit; font-weight: 600; cursor: pointer;">Add site</button>
+            </form>
+            <sc-if value="{{hasSiteError}}" hint-placeholder-val="{{false}}">
+              <p role="alert" style="margin: 0; font-size: 14px; font-weight: 600; color: #B42318;">{{siteError}}</p>
+            </sc-if>
+          </section>
+        </div>
+
+        <aside style="flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 16px;">
+
+          <section aria-labelledby="loc-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+            <h2 id="loc-h" style="margin: 0; font-size: 17px; font-weight: 700;">What will be searched</h2>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-family: 'Libre Caslon Text', Georgia, serif; font-size: 32px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums;">{{mailboxes}}</span>
+                <span style="font-size: 13px; color: #5A606B;">Mailboxes, with Teams chats</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-family: 'Libre Caslon Text', Georgia, serif; font-size: 32px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums;">{{onedrives}}</span>
+                <span style="font-size: 13px; color: #5A606B;">OneDrive accounts</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-family: 'Libre Caslon Text', Georgia, serif; font-size: 32px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums;">{{sharepoint}}</span>
+                <span style="font-size: 13px; color: #5A606B;">SharePoint sites</span>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 13px; color: #5A606B;">Purview counts OneDrive accounts as sites, so estimates will show {{purviewCount}}.</p>
+            <sc-if value="{{changed}}" hint-placeholder-val="{{false}}">
+              <div role="status" style="padding: 12px 14px; border-radius: 6px; background: #FFF6C2; border: 1px solid #E3C641; color: #17150A; font-size: 14px;"><strong>Who is searched has changed.</strong> culltool will create search {{nextVersion}} in Purview. The v3 preview no longer applies, so you'll need to preview again before exporting.</div>
+            </sc-if>
+            <sc-if value="{{unchanged}}" hint-placeholder-val="{{true}}">
+              <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: #1E7A46; font-weight: 600;"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"></path></svg>In step with the Purview case · synced 10:40</p>
+            </sc-if>
+            <a href="Scope.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border-radius: 6px; background: #16181D; color: #FFFFFF; text-decoration: none; font-weight: 600; font-size: 14px;">Continue to Scope</a>
+          </section>
+
+          <section aria-labelledby="hold-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 8px;">
+            <h2 id="hold-h" style="margin: 0; font-size: 17px; font-weight: 700;">Legal holds</h2>
+            <p style="margin: 0; font-weight: 600;">{{holdSummary}}</p>
+            <p style="margin: 0; font-size: 13px; color: #5A606B;">Holds are placed in Purview and keep content from being deleted while the matter is open. They don't change what's searched. culltool logs who places or releases each one.</p>
+          </section>
+
+          <section aria-labelledby="team-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 10px;">
+            <h2 id="team-h" style="margin: 0; font-size: 17px; font-weight: 700;">Matter team</h2>
+            <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px;">
+              <li style="display: flex; align-items: center; gap: 10px;"><span aria-hidden="true" style="width: 30px; height: 30px; flex: none; border-radius: 50%; background: #16181D; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">DW</span><span style="flex: 1;">Dana Whitfield</span><span style="font-size: 13px; color: #5A606B;">Owner</span></li>
+              <li style="display: flex; align-items: center; gap: 10px;"><span aria-hidden="true" style="width: 30px; height: 30px; flex: none; border-radius: 50%; background: #ECEDE8; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">SO</span><span style="flex: 1;">Sam Ortiz</span><span style="font-size: 13px; color: #5A606B;">Can edit</span></li>
+            </ul>
+            <button type="button" style="align-self: flex-start; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid #C9CCC3; background: #FFFFFF; color: #16181D; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Add person</button>
+            <p style="margin: 0; font-size: 13px; color: #5A606B;">Team members need the eDiscovery Manager role in Purview.</p>
+          </section>
+
+          <section aria-labelledby="case-h" style="background: #FFFFFF; border: 1px solid #DADCD5; border-radius: 8px; padding: 22px; display: flex; flex-direction: column; gap: 6px;">
+            <h2 id="case-h" style="margin: 0; font-size: 17px; font-weight: 700;">Purview case</h2>
+            <span style="font-family: 'Courier Prime', 'Courier New', monospace;">M-2026-0142 Project Falcon investigation</span>
+            <span style="font-size: 13px; color: #5A606B;">Premium case · created by culltool on 3 Nov 2026</span>
+            <a href="https://purview.microsoft.com" style="align-self: flex-start; margin-top: 6px; font-size: 14px; font-weight: 600;">Open in Purview</a>
+          </section>
+        </aside>
+      </div>
+
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  defaults() {
+    return {
+      name: 'Project Falcon investigation',
+      type: 'investigation',
+      description: 'Internal investigation into supplier payments linked to Project Falcon.',
+      custodians: [
+        { id: 'alex', name: 'Alex Wilber', email: 'alex.wilber@contoso.com', dept: 'Procurement', initials: 'AW', mailbox: true, onedrive: true, sites: [], hold: false, heldSince: '' },
+        { id: 'megan', name: 'Megan Bowen', email: 'megan.bowen@contoso.com', dept: 'Finance', initials: 'MB', mailbox: true, onedrive: true, sites: ['sites/ProjectFalcon'], hold: true, heldSince: '3 Nov' }
+      ],
+      sites: ['https://contoso.sharepoint.com/sites/Finance'],
+      query: '',
+      siteDraft: '',
+      siteError: ''
+    };
+  }
+
+  directory() {
+    return [
+      { id: 'alex', name: 'Alex Wilber', email: 'alex.wilber@contoso.com', dept: 'Procurement', initials: 'AW' },
+      { id: 'megan', name: 'Megan Bowen', email: 'megan.bowen@contoso.com', dept: 'Finance', initials: 'MB' },
+      { id: 'hannah', name: 'Hannah Ortega', email: 'hannah.ortega@contoso.com', dept: 'Finance', initials: 'HO' },
+      { id: 'ravi', name: 'Ravi Menon', email: 'ravi.menon@contoso.com', dept: 'Procurement', initials: 'RM' },
+      { id: 'tomas', name: 'Tomas Becker', email: 'tomas.becker@contoso.com', dept: 'Sales', initials: 'TB' },
+      { id: 'grace', name: 'Grace Okafor', email: 'grace.okafor@contoso.com', dept: 'Legal', initials: 'GO' }
+    ];
+  }
+
+  st() { return Object.assign(this.defaults(), this.state || {}); }
+
+  signature(s) {
+    return s.custodians.map(function (c) {
+      return c.id + ':' + (c.mailbox ? 'm' : '') + (c.onedrive ? 'o' : '') + ':' + c.sites.join('|');
+    }).join(',') + '#' + s.sites.join('|');
+  }
+
+  updateCustodian(id, patch) {
+    var s = this.st();
+    this.setState({ custodians: s.custodians.map(function (c) { return c.id === id ? Object.assign({}, c, patch) : c; }) });
+  }
+
+  renderVals() {
+    var self = this;
+    var s = this.st();
+    var changed = this.signature(s) !== this.signature(this.defaults());
+    var q = s.query.trim().toLowerCase();
+    var addedIds = s.custodians.map(function (c) { return c.id; });
+    var suggestions = q ? this.directory().filter(function (p) {
+      return addedIds.indexOf(p.id) < 0 && (p.name + ' ' + p.email + ' ' + p.dept).toLowerCase().indexOf(q) >= 0;
+    }).map(function (p) {
+      return Object.assign({}, p, {
+        add: function () {
+          self.setState({
+            custodians: s.custodians.concat([Object.assign({}, p, { mailbox: true, onedrive: true, sites: [], hold: false, heldSince: '' })]),
+            query: ''
+          });
+        }
+      });
+    }) : [];
+
+    var knob = function (on) {
+      return 'display: block; width: 18px; height: 18px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.25); transform: translateX(' + (on ? '18px' : '0') + '); transition: transform 0.15s ease;';
+    };
+    var track = function (on) {
+      return 'flex: none; width: 44px; height: 26px; padding: 4px; box-sizing: border-box; border-radius: 999px; border: 0; cursor: pointer; display: flex; align-items: center; background: ' + (on ? '#16181D' : '#C9CCC3') + ';';
+    };
+
+    var custodians = s.custodians.map(function (c) {
+      var sources = [['mailbox', 'Mailbox and Teams chats'], ['onedrive', 'OneDrive']].map(function (src) {
+        var on = !!c[src[0]];
+        return {
+          label: src[1],
+          on: on,
+          pressed: on ? 'true' : 'false',
+          style: 'display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; ' +
+            (on ? 'background: #16181D; color: #FFFFFF; border: 1px solid #16181D;' : 'background: #FFFFFF; color: #5A606B; border: 1px dashed #C9CCC3;'),
+          toggle: function () { var patch = {}; patch[src[0]] = !on; self.updateCustodian(c.id, patch); }
+        };
+      });
+      var holdText = c.hold ? (c.heldSince ? 'On hold since ' + c.heldSince : 'Hold requested') : 'Not on hold';
+      return {
+        name: c.name,
+        email: c.email,
+        dept: c.dept,
+        initials: c.initials,
+        removeLabel: 'Remove ' + c.name,
+        remove: function () { self.setState({ custodians: s.custodians.filter(function (x) { return x.id !== c.id; }) }); },
+        sources: sources,
+        sourcesLabel: 'Sources to search for ' + c.name,
+        noSources: !c.mailbox && !c.onedrive,
+        sitesText: c.sites.length ? c.sites.join(', ') : 'None',
+        holdId: 'hold-' + c.id,
+        holdText: holdText,
+        holdChecked: c.hold ? 'true' : 'false',
+        holdTrack: track(c.hold),
+        holdKnob: knob(c.hold),
+        toggleHold: function () { self.updateCustodian(c.id, { hold: !c.hold, heldSince: c.hold ? '' : c.heldSince }); }
+      };
+    });
+
+    var mailboxes = s.custodians.filter(function (c) { return c.mailbox; }).length;
+    var onedrives = s.custodians.filter(function (c) { return c.onedrive; }).length;
+    var linked = s.custodians.reduce(function (n, c) { return n + c.sites.length; }, 0);
+    var sharepoint = linked + s.sites.length;
+    var held = s.custodians.filter(function (c) { return c.hold; }).length;
+
+    return {
+      title: s.name.trim() || 'Untitled matter',
+      custodianCount: s.custodians.length + (s.custodians.length === 1 ? ' custodian' : ' custodians'),
+      siteCountText: sharepoint + (sharepoint === 1 ? ' SharePoint site' : ' SharePoint sites'),
+      versionChip: changed ? 'Query v4 · draft' : 'Query v3',
+      previewChip: changed ? 'Not previewed yet' : 'Previewed today 10:42',
+      previewChipStyle: 'display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; ' +
+        (changed ? 'border: 1px dashed #B42318; color: #B42318;' : 'background: #FFE14D; color: #17150A; border: 1px solid #FFE14D;'),
+      name: s.name,
+      type: s.type,
+      description: s.description,
+      onName: function (e) { self.setState({ name: e.target.value }); },
+      onType: function (e) { self.setState({ type: e.target.value }); },
+      onDescription: function (e) { self.setState({ description: e.target.value }); },
+      query: s.query,
+      onQuery: function (e) { self.setState({ query: e.target.value }); },
+      showSuggestions: !!q,
+      suggestions: suggestions,
+      noMatches: !!q && suggestions.length === 0,
+      custodians: custodians,
+      noCustodians: custodians.length === 0,
+      sites: s.sites.map(function (u) {
+        return { url: u, removeLabel: 'Remove ' + u, remove: function () { self.setState({ sites: s.sites.filter(function (x) { return x !== u; }) }); } };
+      }),
+      siteDraft: s.siteDraft,
+      onSiteDraft: function (e) { self.setState({ siteDraft: e.target.value, siteError: '' }); },
+      hasSiteError: !!s.siteError,
+      siteError: s.siteError,
+      addSite: function (e) {
+        if (e && e.preventDefault) e.preventDefault();
+        var url = (s.siteDraft || '').trim().replace(/\/+$/, '');
+        if (!url) return;
+        if (!/^https:\/\/[a-z0-9-]+\.sharepoint\.com\/(sites|teams)\/[^\s/]+$/i.test(url)) {
+          self.setState({ siteError: 'Use the full site address, like https://contoso.sharepoint.com/sites/Legal.' });
+          return;
+        }
+        if (s.sites.some(function (x) { return x.toLowerCase() === url.toLowerCase(); })) {
+          self.setState({ siteError: 'That site is already in the list.' });
+          return;
+        }
+        self.setState({ sites: s.sites.concat([url]), siteDraft: '', siteError: '' });
+      },
+      mailboxes: String(mailboxes),
+      onedrives: String(onedrives),
+      sharepoint: String(sharepoint),
+      purviewCount: mailboxes + (mailboxes === 1 ? ' mailbox and ' : ' mailboxes and ') + (onedrives + sharepoint) + (onedrives + sharepoint === 1 ? ' site' : ' sites'),
+      changed: changed,
+      unchanged: !changed,
+      nextVersion: 'v4',
+      holdSummary: held === 0 ? 'No custodians on hold' : held + ' of ' + s.custodians.length + (s.custodians.length === 1 ? ' custodian' : ' custodians') + ' on hold'
+    };
+  }
+}
+</script>
+</body>
+</html>
