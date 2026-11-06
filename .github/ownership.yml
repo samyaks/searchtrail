@@ -53,6 +53,7 @@ shared:
     - .github/pull_request_template.md
     - scripts/
     - docs/V1_PLAN.md
+    - docs/PHASE1_PLAN.md
     - docs/adr/
     - docs/agents/
     - CONTRIBUTING.md

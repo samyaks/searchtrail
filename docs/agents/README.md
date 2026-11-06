@@ -2,6 +2,9 @@
 
 One brief per workstream. Each is self-contained: hand the file to the agent. All start once Phase 0 is merged.
 
+Phase 1 runs these one at a time, in the PR order in [`docs/PHASE1_PLAN.md`](../PHASE1_PLAN.md), which
+also fixes the seams between WS-B1 and WS-B2.
+
 | Workstream | Owns |
 |---|---|
 | [WS-B1 · Backend API and data](B1-backend-api-and-data.md) | `backend/app/api/`, `backend/app/schemas/` (hand-written helpers only; `contract.py` is generated), `backend/app/db/` (models, migrations, repositories) |

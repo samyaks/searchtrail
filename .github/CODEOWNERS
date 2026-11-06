@@ -30,6 +30,7 @@
 /.github/workflows/                               @samyaks             # WS-G Quality, packaging and docs
 /backend/alembic.ini                              @samyaks             # WS-B1 Backend API and data
 /backend/app/main.py                              @samyaks             # WS-B1 Backend API and data
+/docs/PHASE1_PLAN.md                              @samyaks             # shared
 /frontend/src/mocks/                              @samyaks             # WS-D Frontend foundation and components
 /frontend/tests/e2e/                              @samyaks             # WS-G Quality, packaging and docs
 /backend/app/schemas/                             @samyaks             # WS-B1 Backend API and data

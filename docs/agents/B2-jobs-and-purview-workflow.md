@@ -42,14 +42,19 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 ```
 
 ## Tasks (in order)
+Your first PR covers tasks 1, 2 and 4, with task 1 proven on the `estimate` handler. Write to the
+database only through B1's repositories (`create_run`, `finish_run`, `add_preview_items`, `append_log`;
+signatures in `docs/PHASE1_PLAN.md`, "The B1 and B2 seams").
+
 1. Split the workflow into resumable steps: start the Purview operation, save its URL with
    `ctx.heartbeat(checkpoint={...})`, poll with `gateway.get_operation()` (backing off, updating
    `progress`), then finish. A resumed job reads `job.checkpoint` and never starts a second operation.
-2. Move the export checks (`export_not_previewed`, `export_counts_changed`, same sources) into one
-   reusable function that both the export job and B1's `/exports/check` call. A blocked export must
-   make no Purview write calls (existing test: only GETs).
+2. Move the export checks (`export_not_previewed`, `export_counts_changed`, same sources) into
+   `check_export(session, gateway, matter_id) -> ExportCheck` in `app/jobs/export_checks.py`, which
+   both the export job and B1's `/exports/check` call. A blocked export must make no Purview write
+   calls (existing test: only GETs).
 3. Handlers for all six kinds: `estimate`, `preview` (estimate + item report, parse with `report.py`,
-   store items in `preview_items` via B1's repositories, store files in `app/storage`),
+   store items in `preview_items` with `add_preview_items`, store files in `app/storage`),
    `term_report`, `export`, `download` (stream with `gateway.download_file` to storage, never
    buffering whole files), `review_set` (`gateway.add_to_review_set`).
 4. Storage: local volume (`SEARCHTRAIL_STORAGE_DIR`) behind a small interface that WS-G can swap for
