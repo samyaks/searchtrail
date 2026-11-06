@@ -1,0 +1,2536 @@
+openapi: 3.1.0
+info:
+  title: SearchTrail API
+  version: 1.0.0-phase0
+  summary: Evidence of how you searched.
+  description: |
+    The SearchTrail V1 API. This file is the **source of truth** for the frontend and the
+    backend (see `docs/adr/0006-contract-first-openapi.md`). Changes go through a small PR
+    approved by the integrator, with regenerated types in the same PR.
+
+    Conventions:
+    - Every path is under `/api/v1`.
+    - The browser authenticates with an HTTP-only session cookie (`st_session`). No tokens reach
+      the browser.
+    - Field names are `snake_case`. Timestamps are RFC 3339 in UTC. Dates are `YYYY-MM-DD`.
+    - Long actions (estimate, preview, term report, export, download, review set) return
+      `202 Accepted` with a `Job`. Poll `GET /jobs/{jobId}` every 3 to 10 seconds.
+    - Errors always use the `Error` body. The `code` values the UI must handle are listed on
+      `ErrorCode`.
+    - Examples use the sample data from `docs/design/` (matter M-2026-0142, Project Falcon).
+  contact:
+    name: SearchTrail maintainers
+    url: https://github.com/samyaks/searchtrail
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /api/v1
+    description: Same origin as the web app
+security:
+  - sessionCookie: []
+tags:
+  - name: system
+    description: Health and setup
+  - name: auth
+    description: Entra ID sign-in (backend-for-frontend)
+  - name: directory
+    description: People and sensitivity labels from Microsoft 365
+  - name: matters
+    description: Matters, custodians, sites and holds (Define)
+  - name: criteria
+    description: Draft criteria, KQL and estimates (Scope)
+  - name: previews
+    description: Item-level previews (Preview)
+  - name: terms
+    description: Hits per search term (Terms)
+  - name: exports
+    description: Guarded exports and hand-off (Export)
+  - name: log
+    description: Query versions and the hash-chained log (Log)
+  - name: jobs
+    description: Status of long-running actions
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Liveness and readiness
+      description: Returns `ok` when the API is up and can reach the database. No sign-in needed.
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+              examples:
+                healthy:
+                  value: { status: ok, version: 0.2.0, database: ok, dry_run: true }
+        "503":
+          description: The API is up but a dependency is not
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+              examples:
+                dbDown:
+                  value: { status: degraded, version: 0.2.0, database: unreachable, dry_run: true }
+
+  /auth/login:
+    get:
+      tags: [auth]
+      operationId: login
+      summary: Start Entra sign-in
+      description: Redirects the browser to Microsoft Entra ID (authorization code flow with PKCE).
+      security: []
+      parameters:
+        - name: return_to
+          in: query
+          description: App path to return to after sign-in. Must be a relative path.
+          schema: { type: string, default: /matters, examples: [/matters/mat_falcon/scope] }
+      responses:
+        "302":
+          description: Redirect to the Microsoft sign-in page
+          headers:
+            Location:
+              description: The Entra authorize URL
+              schema: { type: string }
+
+  /auth/callback:
+    get:
+      tags: [auth]
+      operationId: authCallback
+      summary: Finish Entra sign-in
+      description: Entra redirects here. The API redeems the code, stores tokens server-side (encrypted), sets the session cookie and redirects into the app.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: Authorization code from Entra
+          schema: { type: string }
+        - name: state
+          in: query
+          required: true
+          description: Opaque state that ties the callback to the login request
+          schema: { type: string }
+      responses:
+        "302":
+          description: Signed in; redirect into the app
+          headers:
+            Location:
+              description: The `return_to` path from the login request
+              schema: { type: string }
+            Set-Cookie:
+              description: "`st_session`, HTTP-only, Secure, SameSite=Lax"
+              schema: { type: string }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Sign out
+      description: Ends the session and deletes the cached tokens for it.
+      responses:
+        "204":
+          description: Signed out; the session cookie is cleared
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /me:
+    get:
+      tags: [system]
+      operationId: getMe
+      summary: The signed-in user
+      description: The signed-in user, their tenant and the Purview roles found for them.
+      responses:
+        "200":
+          description: The signed-in user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+              examples:
+                dana:
+                  value:
+                    user: { id: usr_dana, display_name: Dana Whitfield, email: dana.whitfield@contoso.com, initials: DW }
+                    tenant: { id: 6f1d2c3b-0000-4000-8000-000000000001, name: Contoso Ltd }
+                    purview_roles: [eDiscovery Manager]
+                    cloud: commercial
+                    dry_run: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /setup/check:
+    get:
+      tags: [system]
+      operationId: getSetupCheck
+      summary: Check the connection to Purview
+      description: Can SearchTrail reach Purview, which licenses and roles the user has, and which cloud it is using. Shown in the shell and on first run.
+      responses:
+        "200":
+          description: The result of each check
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupCheck" }
+              examples:
+                allGood:
+                  value:
+                    cloud: commercial
+                    dry_run: false
+                    ready: true
+                    checks:
+                      - { key: graph_reachable, label: Microsoft 365 connected, status: ok, message: Signed in to Contoso Ltd. }
+                      - { key: ediscovery_license, label: Purview eDiscovery Premium, status: ok, message: E5 licence found. }
+                      - { key: purview_role, label: eDiscovery Manager role, status: ok, message: Dana Whitfield is an eDiscovery Manager. }
+                      - { key: download_permission, label: Export downloads, status: warning, message: "MicrosoftPurviewEDiscovery consent not found. Downloads will fail until an admin grants eDiscovery.Download.Read." }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /labels:
+    get:
+      tags: [directory]
+      operationId: listLabels
+      summary: Sensitivity labels
+      description: Sensitivity labels with their sublabels. Choosing a parent label in a filter also matches its sublabels.
+      responses:
+        "200":
+          description: Labels, parents first
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelList" }
+              examples:
+                contoso:
+                  value:
+                    items:
+                      - { id: 11111111-1111-4111-8111-111111111111, name: Public, path: Public, description: Approved for anyone, sublabels: [] }
+                      - { id: 22222222-2222-4222-8222-222222222222, name: General, path: General, description: Internal business data, sublabels: [] }
+                      - id: 33333333-3333-4333-8333-333333333333
+                        name: Confidential
+                        path: Confidential
+                        description: Includes the Finance and Legal sublabels
+                        sublabels:
+                          - { id: 44444444-4444-4444-8444-444444444444, name: Finance, path: Confidential/Finance, description: null, sublabels: [] }
+                          - { id: 55555555-5555-4555-8555-555555555555, name: Legal, path: Confidential/Legal, description: null, sublabels: [] }
+                      - { id: 66666666-6666-4666-8666-666666666666, name: Highly Confidential, path: Highly Confidential, description: "Often encrypted; reviewers may not open these", sublabels: [] }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /directory/users:
+    get:
+      tags: [directory]
+      operationId: searchDirectoryUsers
+      summary: Find people to add as custodians
+      description: Searches the tenant directory by name, email or department.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: At least two characters
+          schema: { type: string, minLength: 2, examples: [fin] }
+      responses:
+        "200":
+          description: Matching people (at most 25)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DirectoryUserList" }
+              examples:
+                finance:
+                  value:
+                    items:
+                      - { id: 3c1a7f5e-0000-4000-8000-0000000000b2, display_name: Megan Bowen, email: megan.bowen@contoso.com, department: Finance, initials: MB }
+                      - { id: 3c1a7f5e-0000-4000-8000-0000000000c3, display_name: Hannah Ortega, email: hannah.ortega@contoso.com, department: Finance, initials: HO }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/Throttled"
+
+  /matters:
+    get:
+      tags: [matters]
+      operationId: listMatters
+      summary: List matters
+      description: Matters with their stage and latest counts, most recent activity first.
+      parameters:
+        - name: stage
+          in: query
+          description: Only matters in this stage
+          schema: { $ref: "#/components/schemas/MatterStage" }
+        - name: q
+          in: query
+          description: Text to match against the matter number and name
+          schema: { type: string }
+      responses:
+        "200":
+          description: Matters
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MatterList" }
+              examples:
+                designSample:
+                  $ref: "#/components/examples/MatterListSample"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [matters]
+      operationId: createMatter
+      summary: Create a matter
+      description: Creates the matter in SearchTrail and logs it. The Purview case is created the first time the matter is estimated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatterCreate" }
+            examples:
+              falcon:
+                value:
+                  matter_number: M-2026-0142
+                  name: Project Falcon investigation
+                  type: investigation
+                  description: Internal investigation into supplier payments linked to Project Falcon.
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Matter" }
+              examples:
+                created:
+                  $ref: "#/components/examples/MatterNew"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /matters/{matterId}:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [matters]
+      operationId: getMatter
+      summary: Matter details
+      description: Details, custodians, sites and the state of the query used by the matter header.
+      responses:
+        "200":
+          description: The matter
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Matter" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/MatterFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [matters]
+      operationId: updateMatter
+      summary: Edit matter details
+      description: Changes the name, type or description. The matter number cannot change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatterUpdate" }
+            examples:
+              rename:
+                value: { description: Internal investigation into supplier payments (Project Falcon). }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Matter" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/MatterFalcon"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/custodians/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [matters]
+      operationId: upsertCustodian
+      summary: Add or update a custodian
+      description: Adds the person as a custodian, or changes which of their sources are searched. Changing sources makes the next estimate a new query version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustodianUpsert" }
+            examples:
+              megan:
+                value: { mailbox: true, onedrive: true, sites: ["https://contoso.sharepoint.com/sites/ProjectFalcon"] }
+      responses:
+        "200":
+          description: The custodian as saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Custodian" }
+              examples:
+                megan:
+                  $ref: "#/components/examples/CustodianMegan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [matters]
+      operationId: removeCustodian
+      summary: Remove a custodian
+      description: Removes the custodian from the matter. A hold on them must be released first.
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /matters/{matterId}/custodians/{userId}/hold:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      tags: [matters]
+      operationId: setCustodianHold
+      summary: Place or release a hold
+      description: |
+        Places or releases a Purview legal hold on the custodian's sources. Purview applies holds
+        in the background, so the hold shows `pending` until Purview reports it is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HoldUpdate" }
+            examples:
+              place:
+                value: { on_hold: true }
+      responses:
+        "200":
+          description: The custodian with the new hold state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Custodian" }
+              examples:
+                pending:
+                  value:
+                    user_id: 3c1a7f5e-0000-4000-8000-0000000000a1
+                    display_name: Alex Wilber
+                    email: alex.wilber@contoso.com
+                    department: Procurement
+                    initials: AW
+                    mailbox: true
+                    onedrive: true
+                    sites: []
+                    hold: { status: pending, since: null }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/PurviewFailed"
+
+  /matters/{matterId}/sites:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    post:
+      tags: [matters]
+      operationId: addSite
+      summary: Add a site without a custodian
+      description: Adds a SharePoint site that belongs to no custodian (for example a team site).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SiteCreate" }
+            examples:
+              finance:
+                value: { url: "https://contoso.sharepoint.com/sites/Finance" }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Site" }
+              examples:
+                finance:
+                  value: { id: site_finance, url: "https://contoso.sharepoint.com/sites/Finance" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /matters/{matterId}/sites/{siteId}:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+      - name: siteId
+        in: path
+        required: true
+        description: Site ID
+        schema: { type: string }
+    delete:
+      tags: [matters]
+      operationId: removeSite
+      summary: Remove a site
+      description: Removes a site without a custodian from the matter.
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/draft:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [criteria]
+      operationId: getDraft
+      summary: The criteria being edited
+      description: The draft criteria, and whether they differ from the last estimated query version.
+      responses:
+        "200":
+          description: The draft
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/DraftFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [criteria]
+      operationId: saveDraft
+      summary: Save the criteria being edited
+      description: |
+        Saves the draft. Nothing is sent to Purview until the draft is estimated. Any criteria that
+        match the schema are saved, even ones `/kql/preview` would reject (a leading wildcard, say),
+        so work in progress is never lost; `POST .../estimates` refuses invalid criteria with
+        `criteria_invalid`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DraftUpdate" }
+            examples:
+              falcon:
+                $ref: "#/components/examples/CriteriaRequestFalcon"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Draft" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/DraftFalcon"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /kql/preview:
+    post:
+      tags: [criteria]
+      operationId: previewKql
+      summary: KQL and methodology for some criteria
+      description: Criteria in; KQL, plain-English methodology and warnings out. No Purview call, so it is instant. The Scope screen calls this as the user types (debounced).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KqlPreviewRequest" }
+            examples:
+              falcon:
+                $ref: "#/components/examples/CriteriaRequestFalcon"
+      responses:
+        "200":
+          description: The query and its methodology
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KqlPreview" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/KqlPreviewFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/CriteriaInvalid"
+
+  /matters/{matterId}/estimates:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    post:
+      tags: [criteria]
+      operationId: startEstimate
+      summary: Estimate the current draft
+      description: |
+        Creates a new query version from the draft (if it changed) and asks Purview for counts.
+        The job result is an `EstimateResult`.
+      responses:
+        "202":
+          description: Estimate started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                queued:
+                  value:
+                    id: job_01HF3EST
+                    kind: estimate
+                    status: queued
+                    progress: 0
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:41:12Z"
+                    updated_at: "2026-11-05T10:41:12Z"
+                    result: null
+                    error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/JobAlreadyRunning"
+        "422":
+          $ref: "#/components/responses/CriteriaInvalid"
+
+  /matters/{matterId}/previews:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    post:
+      tags: [previews]
+      operationId: startPreview
+      summary: Start a preview
+      description: |
+        Estimates the latest query version and builds Purview's item report (metadata only, no
+        content leaves Purview). The job result is a `Preview`.
+      responses:
+        "202":
+          description: Preview started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                running:
+                  value:
+                    id: job_01HF3PRV
+                    kind: preview
+                    status: running
+                    progress: 0.42
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:41:30Z"
+                    updated_at: "2026-11-05T10:42:05Z"
+                    result: null
+                    error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/JobAlreadyRunning"
+
+  /matters/{matterId}/previews/latest:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [previews]
+      operationId: getLatestPreview
+      summary: The latest preview
+      description: Counts and breakdowns of the most recent preview. `stale` is true when the draft has changed since.
+      responses:
+        "200":
+          description: The latest preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Preview" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/PreviewFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /previews/{previewId}/items:
+    parameters:
+      - $ref: "#/components/parameters/PreviewId"
+    get:
+      tags: [previews]
+      operationId: listPreviewItems
+      summary: Items in a preview
+      description: One page of the item table, with the same filters as the breakdown bars.
+      parameters:
+        - name: location
+          in: query
+          description: Custodian name or site, as in `by_location`
+          schema: { type: string }
+        - name: type
+          in: query
+          description: Item type
+          schema: { $ref: "#/components/schemas/ItemType" }
+        - name: label
+          in: query
+          description: Label path as in `by_label`, or `No label`
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: A page of items
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PreviewItemPage" }
+              examples:
+                firstPage:
+                  $ref: "#/components/examples/PreviewItemsFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /previews/{previewId}/items.csv:
+    parameters:
+      - $ref: "#/components/parameters/PreviewId"
+    get:
+      tags: [previews]
+      operationId: downloadPreviewItemsCsv
+      summary: All items as CSV
+      description: The full item list (`preview.csv`), same columns as the CLI writes.
+      responses:
+        "200":
+          description: CSV file
+          headers:
+            Content-Disposition:
+              description: "attachment; filename=\"M-2026-0142 preview v3.csv\""
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string }
+              examples:
+                head:
+                  value: |
+                    item_id,location,item_type,subject,author,date,size,sensitivity_label,encrypted
+                    dry-item-00001,alex.wilber@contoso.com,IPM.Note,RE: Falcon supplier payment schedule,alex.wilber@contoso.com,2024-03-14T10:00:00Z,49152,Confidential/Finance,false
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/term-reports:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    post:
+      tags: [terms]
+      operationId: startTermReport
+      summary: Count hits per term
+      description: Counts each term within all other filters, using a separate Purview search so the main search is untouched. The job result is a `TermReport`.
+      responses:
+        "202":
+          description: Term report started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                queued:
+                  value:
+                    id: job_01HF3TRM
+                    kind: term_report
+                    status: queued
+                    progress: 0
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:49:00Z"
+                    updated_at: "2026-11-05T10:49:00Z"
+                    result: null
+                    error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/JobAlreadyRunning"
+        "422":
+          $ref: "#/components/responses/CriteriaInvalid"
+
+  /matters/{matterId}/term-reports/latest:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [terms]
+      operationId: getLatestTermReport
+      summary: The latest term report
+      description: Hits per term from the most recent term report.
+      responses:
+        "200":
+          description: The latest term report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermReport" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/TermReportFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/exports/check:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    post:
+      tags: [exports]
+      operationId: checkExport
+      summary: Run the export checks
+      description: |
+        Runs the same checks as a real export (previewed, same sources, counts unchanged) without
+        exporting. Re-checks counts with Purview, so it can take a few seconds.
+      responses:
+        "200":
+          description: The checks. `ready` is false if any failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportCheck" }
+              examples:
+                ready:
+                  $ref: "#/components/examples/ExportCheckReady"
+                notPreviewed:
+                  value:
+                    ready: false
+                    blocked_code: export_not_previewed
+                    version: 4
+                    previewed_version: 3
+                    previewed_at: "2026-11-05T10:42:00Z"
+                    checked_at: "2026-11-05T11:20:00Z"
+                    counts: null
+                    checks:
+                      - { key: previewed, status: failed, message: "Query v4 hasn't been previewed. Preview it first, so the export matches what was reviewed." }
+                      - { key: same_sources, status: passed, message: Same custodians and sites as the preview. }
+                      - { key: counts_unchanged, status: skipped, message: Not checked because the query wasn't previewed. }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/Throttled"
+
+  /matters/{matterId}/exports:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [exports]
+      operationId: listExports
+      summary: Export history
+      description: Every export for the matter, newest first.
+      responses:
+        "200":
+          description: Exports
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExportList" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/ExportListFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [exports]
+      operationId: startExport
+      summary: Start a guarded export
+      description: |
+        Runs the export checks, then starts the Purview export. Refused (and nothing is sent to
+        Purview) if the query wasn't previewed (`export_not_previewed`), if counts changed and
+        `accept_changes` is false (`export_counts_changed`), or if `confirm_matter_number` doesn't
+        match (`confirmation_mismatch`). The job result is an `Export`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExportStart" }
+            examples:
+              falcon:
+                value:
+                  confirm_matter_number: M-2026-0142
+                  accept_changes: false
+                  options: { include_partially_indexed: true, partially_indexed_scope: responsiveLocations, format: pst, include_cloud_attachments: false, teams_transcripts: true }
+      responses:
+        "202":
+          description: Export started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                queued:
+                  value:
+                    id: job_01HF3EXP
+                    kind: export
+                    status: queued
+                    progress: 0
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:58:40Z"
+                    updated_at: "2026-11-05T10:58:40Z"
+                    result: null
+                    error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The export doesn't match the preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                notPreviewed:
+                  $ref: "#/components/examples/ErrorExportNotPreviewed"
+                countsChanged:
+                  $ref: "#/components/examples/ErrorExportCountsChanged"
+        "422":
+          description: The typed matter number doesn't match
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                mismatch:
+                  value:
+                    code: confirmation_mismatch
+                    message: Type the matter number M-2026-0142 exactly to confirm the export.
+                    details: { expected: M-2026-0142 }
+
+  /exports/{exportId}:
+    parameters:
+      - $ref: "#/components/parameters/ExportId"
+    get:
+      tags: [exports]
+      operationId: getExport
+      summary: Export status
+      description: Status of one export, including any download or review set hand-off.
+      responses:
+        "200":
+          description: The export
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Export" }
+              examples:
+                ready:
+                  $ref: "#/components/examples/ExportReady"
+                preparing:
+                  $ref: "#/components/examples/ExportPreparing"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /exports/{exportId}/download:
+    parameters:
+      - $ref: "#/components/parameters/ExportId"
+    post:
+      tags: [exports]
+      operationId: startExportDownload
+      summary: Download the package
+      description: Downloads the finished export package from Purview to SearchTrail's storage. The job result is an `Export` with `download.status` set.
+      responses:
+        "202":
+          description: Download started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                queued:
+                  value:
+                    id: job_01HF3DL1
+                    kind: download
+                    status: queued
+                    progress: 0
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T12:10:00Z"
+                    updated_at: "2026-11-05T12:10:00Z"
+                    result: null
+                    error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /exports/{exportId}/review-set:
+    parameters:
+      - $ref: "#/components/parameters/ExportId"
+    post:
+      tags: [exports]
+      operationId: startReviewSetHandoff
+      summary: Send to a Purview review set
+      description: Adds the exported search's results to a Purview review set, for Relativity's Purview Sync. The job result is an `Export` with `review_set` set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewSetRequest" }
+            examples:
+              relativity:
+                value: { review_set_name: M-2026-0142 Relativity v3 }
+      responses:
+        "202":
+          description: Hand-off started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                queued:
+                  value:
+                    id: job_01HF3RS1
+                    kind: review_set
+                    status: queued
+                    progress: 0
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T12:12:00Z"
+                    updated_at: "2026-11-05T12:12:00Z"
+                    result: null
+                    error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /matters/{matterId}/versions:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [log]
+      operationId: listVersions
+      summary: Query versions
+      description: Every query version, oldest first, with its counts.
+      responses:
+        "200":
+          description: Versions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QueryVersionList" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/VersionsFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/versions/compare:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [log]
+      operationId: compareVersions
+      summary: Compare two query versions
+      description: Plain-English differences between two versions' methodology and sources, and the change in counts.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Earlier version number
+          schema: { type: integer, minimum: 1, examples: [2] }
+        - name: to
+          in: query
+          required: true
+          description: Later version number
+          schema: { type: integer, minimum: 1, examples: [3] }
+      responses:
+        "200":
+          description: The comparison
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionComparison" }
+              examples:
+                v2v3:
+                  $ref: "#/components/examples/CompareV2V3"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/log:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [log]
+      operationId: listLogEntries
+      summary: Log entries
+      description: The matter's hash-chained log, newest first.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: A page of entries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogEntryPage" }
+              examples:
+                falcon:
+                  $ref: "#/components/examples/LogFalcon"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/log/verify:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    post:
+      tags: [log]
+      operationId: verifyLog
+      summary: Check the hash chain
+      description: Recomputes every entry's hash. Reports the first entry that was changed, removed or reordered.
+      responses:
+        "200":
+          description: The result. `ok` is false if the chain is broken.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LogVerification" }
+              examples:
+                intact:
+                  value: { ok: true, entries: 8, first_bad_seq: null, message: "8 entries verified, chain intact", verified_at: "2026-11-05T11:02:00Z" }
+                broken:
+                  value: { ok: false, entries: 8, first_bad_seq: 5, message: "Entry 5: contents were modified after it was written", verified_at: "2026-11-05T11:02:00Z" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /matters/{matterId}/jobs:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [jobs]
+      operationId: listMatterJobs
+      summary: Jobs for a matter
+      description: |
+        The matter's jobs, newest first. Screens call this with `active=true` when they load, so a
+        long action started earlier (or in another tab) is picked up and followed after a reload.
+      parameters:
+        - name: active
+          in: query
+          description: Only queued or running jobs
+          schema: { type: boolean, default: false }
+        - name: kind
+          in: query
+          description: Only jobs of this kind
+          schema: { $ref: "#/components/schemas/JobKind" }
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobList" }
+              examples:
+                previewRunning:
+                  value:
+                    items:
+                      - id: job_01HF3PRV
+                        kind: preview
+                        status: running
+                        progress: 0.42
+                        matter_id: mat_falcon
+                        created_at: "2026-11-05T10:41:30Z"
+                        updated_at: "2026-11-05T10:42:05Z"
+                        result: null
+                        error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /jobs/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        description: Job ID
+        schema: { type: string, examples: [job_01HF3PRV] }
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Job status
+      description: Status and progress of a long action. Poll every 3 to 10 seconds until `succeeded` or `failed`.
+      responses:
+        "200":
+          description: The job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+              examples:
+                running:
+                  value:
+                    id: job_01HF3PRV
+                    kind: preview
+                    status: running
+                    progress: 0.42
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:41:30Z"
+                    updated_at: "2026-11-05T10:42:05Z"
+                    result: null
+                    error: null
+                estimateDone:
+                  value:
+                    id: job_01HF3EST
+                    kind: estimate
+                    status: succeeded
+                    progress: 1
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:41:12Z"
+                    updated_at: "2026-11-05T10:41:58Z"
+                    result:
+                      version: 3
+                      estimated_at: "2026-11-05T10:41:58Z"
+                      counts: { items: 630, size_bytes: 30408704, partial_items: 25, partial_size_bytes: 22754099, mailboxes: 2, sites: 4 }
+                    error: null
+                failed:
+                  value:
+                    id: job_01HF3EXP
+                    kind: export
+                    status: failed
+                    progress: 0.1
+                    matter_id: mat_falcon
+                    created_at: "2026-11-05T10:58:40Z"
+                    updated_at: "2026-11-05T11:03:10Z"
+                    result: null
+                    error: { code: purview_operation_failed, message: "Purview stopped the export: the search could not be found. Check the case in the Purview portal, then try again.", details: { purview_status: failed } }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: st_session
+      description: HTTP-only session cookie set by `/auth/callback`.
+
+  parameters:
+    MatterId:
+      name: matterId
+      in: path
+      required: true
+      description: Matter ID (not the matter number)
+      schema: { type: string, examples: [mat_falcon] }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: Entra object ID of the person
+      schema: { type: string, examples: [3c1a7f5e-0000-4000-8000-0000000000a1] }
+    PreviewId:
+      name: previewId
+      in: path
+      required: true
+      description: Preview ID
+      schema: { type: string, examples: [prv_falcon_v3] }
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      description: Export ID
+      schema: { type: string, examples: [exp_falcon_v3] }
+    Page:
+      name: page
+      in: query
+      description: Page number, from 1
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      description: Items per page
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+
+  responses:
+    BadRequest:
+      description: The request is malformed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            badRequest:
+              value: { code: validation_failed, message: "matter_number must be letters, digits, dots, dashes or underscores.", details: { field: matter_number } }
+    Unauthorized:
+      description: Not signed in, or the session expired
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            expired:
+              value: { code: session_expired, message: Your session has ended. Sign in again to continue., details: {} }
+    Forbidden:
+      description: Purview or Microsoft 365 refused for lack of a role or licence
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            role:
+              value: { code: purview_permission_missing, message: "You need the eDiscovery Manager role in Purview. Ask your Purview admin to add you to the eDiscovery Manager role group.", details: { role: eDiscovery Manager } }
+            licence:
+              value: { code: license_missing, message: "This tenant has no eDiscovery (Premium) licence (E5 or E5 Compliance), which the Graph eDiscovery APIs need.", details: {} }
+    NotFound:
+      description: No such resource, or not visible to you
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            notFound:
+              value: { code: not_found, message: No matter with that ID., details: {} }
+    Conflict:
+      description: The request conflicts with the current state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            duplicate:
+              value: { code: conflict, message: A matter with number M-2026-0142 already exists., details: {} }
+    JobAlreadyRunning:
+      description: A job of this kind is already queued or running for this matter. Follow it instead (details.job_id).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            running:
+              value: { code: conflict, message: A preview is already running for this matter., details: { job_id: job_01HF3PRV } }
+    CriteriaInvalid:
+      description: The criteria are invalid. Nothing was sent to Purview.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            leadingWildcard:
+              value: { code: criteria_invalid, message: "Search term '*voice' starts with a wildcard, which Purview doesn't support. Use a prefix like invoic* instead.", details: { field: keywords, value: "*voice" } }
+    Throttled:
+      description: Microsoft Graph is throttling requests
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            throttled:
+              value: { code: graph_throttled, message: Microsoft is limiting requests right now. Try again in a minute., details: { retry_after_seconds: 60 } }
+    PurviewFailed:
+      description: Purview reported a failure
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            failed:
+              value: { code: purview_operation_failed, message: Purview could not place the hold. Check the case in the Purview portal and try again., details: { purview_status: failed } }
+
+  examples:
+    MatterListSample:
+      summary: The five matters on the Matters screen
+      value:
+        items:
+          - id: mat_falcon
+            matter_number: M-2026-0142
+            name: Project Falcon investigation
+            stage: previewed
+            custodian_count: 2
+            current_version: 3
+            latest_counts: { items: 630, partial_items: 25 }
+            export_progress: null
+            last_activity_at: "2026-11-05T10:51:00Z"
+            owner: { id: usr_dana, display_name: Dana Whitfield }
+          - id: mat_harlow
+            matter_number: M-2026-0137
+            name: Harlow v. Contoso (employment)
+            stage: scoping
+            custodian_count: 5
+            current_version: 1
+            latest_counts: null
+            export_progress: null
+            last_activity_at: "2026-11-04T16:20:00Z"
+            owner: { id: usr_sam, display_name: Sam Ortiz }
+          - id: mat_brightwell
+            matter_number: M-2026-0129
+            name: Brightwell supply contract dispute
+            stage: exported
+            custodian_count: 3
+            current_version: 4
+            latest_counts: { items: 1206, partial_items: 38 }
+            export_progress: null
+            last_activity_at: "2026-10-28T14:02:00Z"
+            owner: { id: usr_dana, display_name: Dana Whitfield }
+          - id: mat_q3trading
+            matter_number: M-2026-0124
+            name: "Regulator request: Q3 trading records"
+            stage: exporting
+            custodian_count: 8
+            current_version: 2
+            latest_counts: { items: 9842, partial_items: 312 }
+            export_progress: 0.64
+            last_activity_at: "2026-11-05T09:05:00Z"
+            owner: { id: usr_priya, display_name: Priya Natarajan }
+          - id: mat_travel
+            matter_number: M-2026-0101
+            name: "Internal review: travel expenses"
+            stage: exported
+            custodian_count: 2
+            current_version: 2
+            latest_counts: { items: 311, partial_items: 9 }
+            export_progress: null
+            last_activity_at: "2026-10-14T11:30:00Z"
+            owner: { id: usr_sam, display_name: Sam Ortiz }
+        total: 5
+
+    CustodianMegan:
+      value: &custodian_megan
+        user_id: 3c1a7f5e-0000-4000-8000-0000000000b2
+        display_name: Megan Bowen
+        email: megan.bowen@contoso.com
+        department: Finance
+        initials: MB
+        mailbox: true
+        onedrive: true
+        sites: ["https://contoso.sharepoint.com/sites/ProjectFalcon"]
+        hold: { status: "on", since: "2026-11-03T09:20:00Z" }
+
+    MatterNew:
+      value:
+        id: mat_falcon
+        matter_number: M-2026-0142
+        name: Project Falcon investigation
+        type: investigation
+        description: Internal investigation into supplier payments linked to Project Falcon.
+        stage: scoping
+        purview_case_id: null
+        created_at: "2026-11-03T09:12:00Z"
+        created_by: { id: usr_dana, display_name: Dana Whitfield }
+        custodians: []
+        sites: []
+        current_version: null
+        previewed_version: null
+        last_previewed_at: null
+        draft_changed: false
+
+    MatterFalcon:
+      value:
+        id: mat_falcon
+        matter_number: M-2026-0142
+        name: Project Falcon investigation
+        type: investigation
+        description: Internal investigation into supplier payments linked to Project Falcon.
+        stage: previewed
+        purview_case_id: 9b0e4c1d-7a2f-4e55-9c11-2f6f1d0a0142
+        created_at: "2026-11-03T09:12:00Z"
+        created_by: { id: usr_dana, display_name: Dana Whitfield }
+        custodians:
+          - user_id: 3c1a7f5e-0000-4000-8000-0000000000a1
+            display_name: Alex Wilber
+            email: alex.wilber@contoso.com
+            department: Procurement
+            initials: AW
+            mailbox: true
+            onedrive: true
+            sites: []
+            hold: { status: "off", since: null }
+          - *custodian_megan
+        sites:
+          - { id: site_finance, url: "https://contoso.sharepoint.com/sites/Finance" }
+        current_version: 3
+        previewed_version: 3
+        last_previewed_at: "2026-11-05T10:42:00Z"
+        draft_changed: false
+
+    CriteriaRequestFalcon:
+      summary: The Project Falcon criteria from the Scope screen
+      value:
+        criteria: &criteria_falcon
+          keywords: [project falcon, invoic*, kickback, side letter]
+          keyword_mode: any
+          exclude_keywords: [weekly digest]
+          date_from: "2024-01-01"
+          date_to: "2025-06-30"
+          kinds: [email, chats, docs]
+          file_extensions: [docx, xlsx, pptx, pdf]
+          participant_domains: []
+          exclude_participant_domains: [newsletters.contoso.com]
+          label_ids: []
+          exclude_label_ids: [11111111-1111-4111-8111-111111111111]
+          doc_date_property: lastmodifiedtime
+          raw_kql: null
+
+    DraftFalcon:
+      value:
+        criteria:
+          *criteria_falcon
+        updated_at: "2026-11-05T10:40:51Z"
+        based_on_version: 3
+        changed_since_version: false
+
+    KqlPreviewFalcon:
+      value:
+        kql: '("project falcon" OR invoic* OR kickback OR "side letter") AND ((kind:email AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND NOT participants:newsletters.contoso.com) OR ((kind:microsoftteams OR kind:im) AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND NOT participants:newsletters.contoso.com) OR (kind:docs AND (lastmodifiedtime>=2024-01-01 AND lastmodifiedtime<=2025-06-30) AND (fileextension:docx OR fileextension:xlsx OR fileextension:pptx OR fileextension:pdf))) AND NOT InformationProtectionLabelId:11111111-1111-4111-8111-111111111111 AND NOT "weekly digest"'
+        length: 670
+        methodology:
+          - 'Item types: emails, Teams chats, documents.'
+          - 'Date range from 2024-01-01 to 2025-06-30 (inclusive): emails/chats by sent or received date; documents by last modified date.'
+          - 'Containing ANY of these terms: "project falcon", invoic*, kickback, "side letter".'
+          - 'Terms ending in * match any word starting with that stem.'
+          - 'Excluding items containing any of: "weekly digest".'
+          - 'Emails/chats excluded if a participant is at: newsletters.contoso.com.'
+          - 'Documents limited to file types: docx, xlsx, pptx, pdf.'
+          - 'Excluding items with these sensitivity labels: Public.'
+        warnings: []
+
+    PreviewFalcon:
+      value:
+        id: prv_falcon_v3
+        matter_id: mat_falcon
+        version: 3
+        created_at: "2026-11-05T10:42:00Z"
+        created_by: { id: usr_dana, display_name: Dana Whitfield }
+        stale: false
+        counts: { items: 630, size_bytes: 30408704, partial_items: 25, partial_size_bytes: 22754099, mailboxes: 2, sites: 4 }
+        report_items: 655
+        encrypted_items: 41
+        breakdowns:
+          by_location: [{ name: Alex Wilber, count: 312 }, { name: Megan Bowen, count: 281 }, { name: sites/Finance, count: 62 }]
+          by_type: [{ name: Email, count: 223 }, { name: Teams chat, count: 223 }, { name: Document, count: 209 }]
+          by_label:
+            - { name: General, count: 137 }
+            - { name: Highly Confidential, count: 136 }
+            - { name: Confidential/Finance, count: 133 }
+            - { name: Confidential/Legal, count: 130 }
+            - { name: No label, count: 119 }
+          by_month:
+            - { month: 2024-01, count: 39 }
+            - { month: 2024-02, count: 39 }
+            - { month: 2024-03, count: 31 }
+            - { month: 2024-04, count: 32 }
+            - { month: 2024-05, count: 40 }
+            - { month: 2024-06, count: 49 }
+            - { month: 2024-07, count: 35 }
+            - { month: 2024-08, count: 36 }
+            - { month: 2024-09, count: 50 }
+            - { month: 2024-10, count: 36 }
+            - { month: 2024-11, count: 36 }
+            - { month: 2024-12, count: 36 }
+            - { month: 2025-01, count: 28 }
+            - { month: 2025-02, count: 31 }
+            - { month: 2025-03, count: 38 }
+            - { month: 2025-04, count: 39 }
+            - { month: 2025-05, count: 29 }
+            - { month: 2025-06, count: 31 }
+        unmapped_columns: []
+
+    PreviewItemsFalcon:
+      value:
+        items:
+          - { id: itm_0001, title: "RE: Falcon supplier payment schedule", location: Alex Wilber, type: email, date: "2024-03-14T10:00:00Z", label: Confidential/Finance, size_bytes: 49152, encrypted: false }
+          - { id: itm_0002, title: Falcon side letter v3.docx, location: Megan Bowen, type: document, date: "2024-05-02T10:00:00Z", label: Highly Confidential, size_bytes: 217088, encrypted: true }
+          - { id: itm_0003, title: Invoice numbering for Brightline, location: Alex Wilber, type: teams_chat, date: "2024-06-21T10:00:00Z", label: null, size_bytes: 3072, encrypted: false }
+          - { id: itm_0004, title: "FW: Kickback allegations, hotline report", location: Megan Bowen, type: email, date: "2024-09-09T10:00:00Z", label: Confidential/Legal, size_bytes: 62464, encrypted: false }
+          - { id: itm_0005, title: Q3 supplier invoices reconciliation.xlsx, location: sites/Finance, type: document, date: "2024-10-01T10:00:00Z", label: Confidential/Finance, size_bytes: 1258291, encrypted: false }
+          - { id: itm_0006, title: Project Falcon steering committee notes.pptx, location: Megan Bowen, type: document, date: "2025-01-17T10:00:00Z", label: General, size_bytes: 3565158, encrypted: false }
+          - { id: itm_0007, title: "RE: Side letter, please do not forward", location: Alex Wilber, type: email, date: "2025-02-03T10:00:00Z", label: Highly Confidential, size_bytes: 22528, encrypted: true }
+          - { id: itm_0008, title: Falcon payment approvals, location: Megan Bowen, type: teams_chat, date: "2025-04-11T10:00:00Z", label: General, size_bytes: 2048, encrypted: false }
+          - { id: itm_0009, title: Invoice INV-20931 Brightline.pdf, location: sites/Finance, type: document, date: "2025-05-28T10:00:00Z", label: null, size_bytes: 184320, encrypted: false }
+          - { id: itm_0010, title: "RE: Falcon close-out", location: Alex Wilber, type: email, date: "2025-06-24T10:00:00Z", label: Confidential/Legal, size_bytes: 37888, encrypted: false }
+        total: 655
+        page: 1
+        page_size: 10
+
+    TermReportFalcon:
+      value:
+        id: trm_falcon_v3
+        matter_id: mat_falcon
+        version: 3
+        created_at: "2026-11-05T10:51:00Z"
+        created_by: { id: usr_dana, display_name: Dana Whitfield }
+        stale: false
+        combined: { items: 630, size_bytes: 30408704 }
+        rows:
+          - { term: '"project falcon"', items: 105, size_bytes: 5033164, previous_items: 188, previous_version: 2 }
+          - { term: invoic*, items: 440, size_bytes: 21181235, previous_items: 802, previous_version: 2 }
+          - { term: kickback, items: 258, size_bytes: 12478054, previous_items: 371, previous_version: 2 }
+          - { term: '"side letter"', items: 316, size_bytes: 15204352, previous_items: null, previous_version: 2 }
+
+    ExportCheckReady:
+      value:
+        ready: true
+        blocked_code: null
+        version: 3
+        previewed_version: 3
+        previewed_at: "2026-11-05T10:42:00Z"
+        checked_at: "2026-11-05T10:58:00Z"
+        counts: { items: 630, size_bytes: 30408704, partial_items: 25, partial_size_bytes: 22754099, mailboxes: 2, sites: 4 }
+        checks:
+          - { key: previewed, status: passed, message: This exact query (v3) was previewed at 10:42. }
+          - { key: same_sources, status: passed, message: Same custodians and sites as the preview. }
+          - { key: counts_unchanged, status: passed, message: Counts unchanged since the preview (re-checked 10:58). }
+
+    ExportPreparing:
+      value: &export_preparing
+        id: exp_falcon_v3
+        matter_id: mat_falcon
+        name: M-2026-0142 EVERLAW 20261105T1058Z
+        version: 3
+        status: preparing
+        progress: 0
+        counts: { items: 630, size_bytes: 30408704, partial_items: 25, partial_size_bytes: 22754099, mailboxes: 2, sites: 4 }
+        options: { include_partially_indexed: true, partially_indexed_scope: responsiveLocations, format: pst, include_cloud_attachments: false, teams_transcripts: true }
+        changes_accepted: false
+        started_at: "2026-11-05T10:59:00Z"
+        started_by: { id: usr_dana, display_name: Dana Whitfield }
+        finished_at: null
+        expires_at: null
+        files: []
+        download: { status: none, progress: null, stored_path: null, finished_at: null }
+        review_set: { status: none, name: null, finished_at: null }
+
+    ExportReady:
+      value: &export_ready
+        id: exp_falcon_v2
+        matter_id: mat_falcon
+        name: M-2026-0142 EVERLAW 20261104T1630Z
+        version: 2
+        status: ready
+        progress: 1
+        counts: { items: 1148, size_bytes: 55364812, partial_items: 41, partial_size_bytes: 37320704, mailboxes: 2, sites: 4 }
+        options: { include_partially_indexed: true, partially_indexed_scope: responsiveLocations, format: pst, include_cloud_attachments: false, teams_transcripts: true }
+        changes_accepted: false
+        started_at: "2026-11-04T16:30:00Z"
+        started_by: { id: usr_dana, display_name: Dana Whitfield }
+        finished_at: "2026-11-04T16:52:00Z"
+        expires_at: "2026-12-04T16:52:00Z"
+        files:
+          - { name: Exchange.zip, size_bytes: 61203456 }
+          - { name: SharePoint.zip, size_bytes: 31482060 }
+        download: { status: none, progress: null, stored_path: null, finished_at: null }
+        review_set: { status: none, name: null, finished_at: null }
+
+    ExportListFalcon:
+      value:
+        items: [*export_preparing, *export_ready]
+
+    VersionsFalcon:
+      value:
+        items:
+          - version: 1
+            created_at: "2026-11-03T09:30:00Z"
+            created_by: { id: usr_dana, display_name: Dana Whitfield }
+            summary: '"project falcon", invoic* · all dates'
+            criteria: { keywords: [project falcon, invoic*], keyword_mode: any, exclude_keywords: [], date_from: null, date_to: null, kinds: [email, chats, docs], file_extensions: [], participant_domains: [], exclude_participant_domains: [], label_ids: [], exclude_label_ids: [], doc_date_property: lastmodifiedtime, raw_kql: null }
+            kql: '("project falcon" OR invoic*) AND (kind:email OR (kind:microsoftteams OR kind:im) OR kind:docs)'
+            methodology: ["Item types: emails, Teams chats, documents.", 'Containing ANY of: "project falcon", invoic*.']
+            sources_fingerprint: 7d1f0c9a3be2a4e1c0b1d5c3e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0
+            purview_search_id: 0f1e2d3c-0000-4000-8000-00000000s001
+            counts: { items: 3912, size_bytes: 188743680, partial_items: 160, partial_size_bytes: 139460608, mailboxes: 2, sites: 4 }
+            exported: false
+          - version: 2
+            created_at: "2026-11-04T15:40:00Z"
+            created_by: { id: usr_dana, display_name: Dana Whitfield }
+            summary: added kickback, a date range and a newsletter domain exclusion · exported
+            criteria: { keywords: [project falcon, invoic*, kickback], keyword_mode: any, exclude_keywords: [], date_from: "2024-01-01", date_to: "2025-06-30", kinds: [email, chats, docs], file_extensions: [], participant_domains: [], exclude_participant_domains: [newsletters.contoso.com], label_ids: [], exclude_label_ids: [], doc_date_property: lastmodifiedtime, raw_kql: null }
+            kql: '("project falcon" OR invoic* OR kickback) AND (...)'
+            methodology: ["Item types: emails, Teams chats, documents.", "Date range from 2024-01-01 to 2025-06-30 (inclusive)."]
+            sources_fingerprint: 7d1f0c9a3be2a4e1c0b1d5c3e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0
+            purview_search_id: 0f1e2d3c-0000-4000-8000-00000000s001
+            counts: { items: 1148, size_bytes: 55364812, partial_items: 41, partial_size_bytes: 37320704, mailboxes: 2, sites: 4 }
+            exported: true
+          - version: 3
+            created_at: "2026-11-05T10:41:12Z"
+            created_by: { id: usr_dana, display_name: Dana Whitfield }
+            summary: added "side letter", left out "weekly digest", the Public label and non-office file types
+            criteria:
+              *criteria_falcon
+            kql: '("project falcon" OR invoic* OR kickback OR "side letter") AND (...)'
+            methodology: ["Item types: emails, Teams chats, documents.", 'Excluding items containing "weekly digest".']
+            sources_fingerprint: 7d1f0c9a3be2a4e1c0b1d5c3e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0
+            purview_search_id: 0f1e2d3c-0000-4000-8000-00000000s001
+            counts: { items: 630, size_bytes: 30408704, partial_items: 25, partial_size_bytes: 22754099, mailboxes: 2, sites: 4 }
+            exported: false
+
+    CompareV2V3:
+      value:
+        from: 2
+        to: 3
+        changes:
+          - { change: added, text: Added term "side letter" }
+          - { change: added, text: Excluding items containing "weekly digest" }
+          - { change: added, text: Excluding items labelled Public }
+          - { change: added, text: "Documents limited to docx, xlsx, pptx, pdf" }
+          - { change: removed, text: Documents of any file type }
+        unchanged: custodians, sites, date range, terms "project falcon", invoic* and kickback.
+        sources_changed: false
+        counts: { from_items: 1148, to_items: 630, delta: -518 }
+
+    LogFalcon:
+      value:
+        items:
+          - { seq: 8, ts: "2026-11-05T10:51:00Z", action: term_report, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v3 · 4 terms counted, version: 3, prev_hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", hash: "cd7c2de3013d2eeac2f7d8bb6abd56515813a04e172e75a17e9b79002a003329", details: {} }
+          - { seq: 7, ts: "2026-11-05T10:42:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v3 · 630 items + 25 partially indexed, version: 3, prev_hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", details: {} }
+          - { seq: 6, ts: "2026-11-04T16:52:00Z", action: export_finished, actor: SearchTrail, actor_email: null, summary: M-2026-0142 EVERLAW 20261104T1630Z · ready in Purview, version: 2, prev_hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", details: {} }
+          - { seq: 5, ts: "2026-11-04T16:30:00Z", action: export_started, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", details: {} }
+          - { seq: 4, ts: "2026-11-04T15:58:00Z", action: term_report, actor: Sam Ortiz, actor_email: sam.ortiz@contoso.com, summary: Query v2 · 3 terms counted, version: 2, prev_hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", details: {} }
+          - { seq: 3, ts: "2026-11-04T15:41:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", details: {} }
+          - { seq: 2, ts: "2026-11-03T09:30:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v1 · 3,912 items + 160 partially indexed, version: 1, prev_hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", details: {} }
+          - { seq: 1, ts: "2026-11-03T09:12:00Z", action: matter_created, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Purview case M-2026-0142 with 2 custodians, version: null, prev_hash: "0000000000000000000000000000000000000000000000000000000000000000", hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", details: {} }
+        total: 8
+        page: 1
+        page_size: 50
+
+    ErrorExportNotPreviewed:
+      value:
+        code: export_not_previewed
+        message: "This exact query and set of sources hasn't been previewed. Preview it first, so the export matches what was reviewed."
+        details: { version: 4, previewed_version: 3 }
+
+    ErrorExportCountsChanged:
+      value:
+        code: export_counts_changed
+        message: "Counts changed since the preview at 10:42 (new mail may have arrived). Preview again, or accept the changes to export anyway; that choice is logged."
+        details:
+          changes:
+            items: { preview: 630, now: 647 }
+            partial_items: { preview: 25, now: 25 }
+
+  schemas:
+    Health:
+      type: object
+      description: Service health
+      required: [status, version, database, dry_run]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        version: { type: string }
+        database: { type: string, enum: [ok, unreachable] }
+        dry_run: { type: boolean, description: True when SEARCHTRAIL_DRY_RUN=1 (no tenant is contacted) }
+
+    ErrorCode:
+      type: string
+      description: |
+        Machine-readable error code. The UI must handle each of: `criteria_invalid`,
+        `export_not_previewed`, `export_counts_changed`, `confirmation_mismatch`,
+        `purview_permission_missing`, `license_missing`, `graph_throttled`,
+        `purview_operation_failed`, `session_expired`. The generic codes `validation_failed`,
+        `not_found`, `conflict` and `internal_error` can appear anywhere.
+      enum:
+        - criteria_invalid
+        - export_not_previewed
+        - export_counts_changed
+        - confirmation_mismatch
+        - purview_permission_missing
+        - license_missing
+        - graph_throttled
+        - purview_operation_failed
+        - session_expired
+        - validation_failed
+        - not_found
+        - conflict
+        - internal_error
+
+    Error:
+      type: object
+      description: Every error response has this shape.
+      required: [code, message, details]
+      properties:
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        message: { type: string, description: "A plain-English explanation and how to fix it, safe to show to the user" }
+        details:
+          type: object
+          description: Extra, code-specific data (for example the changed counts)
+          additionalProperties: true
+
+    UserRef:
+      type: object
+      description: A person, as shown next to an action
+      required: [id, display_name]
+      properties:
+        id: { type: string }
+        display_name: { type: string }
+
+    Me:
+      type: object
+      description: The signed-in user
+      required: [user, tenant, purview_roles, cloud, dry_run]
+      properties:
+        user:
+          type: object
+          required: [id, display_name, email, initials]
+          properties:
+            id: { type: string }
+            display_name: { type: string }
+            email: { type: string, format: email }
+            initials: { type: string }
+        tenant:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        purview_roles:
+          type: array
+          description: Purview role groups found for the user (for example "eDiscovery Manager")
+          items: { type: string }
+        cloud: { $ref: "#/components/schemas/Cloud" }
+        dry_run: { type: boolean }
+
+    Cloud:
+      type: string
+      description: Which Microsoft cloud the tenant is in. V1 supports `commercial`; the others are designed for and tested in pilots.
+      enum: [commercial, gcc, gcc_high, dod]
+
+    SetupCheck:
+      type: object
+      description: Connection and permission checks
+      required: [cloud, dry_run, ready, checks]
+      properties:
+        cloud: { $ref: "#/components/schemas/Cloud" }
+        dry_run: { type: boolean }
+        ready: { type: boolean, description: True when no check failed }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [key, label, status, message]
+            properties:
+              key: { type: string, enum: [graph_reachable, ediscovery_license, purview_role, download_permission, labels_permission] }
+              label: { type: string }
+              status: { type: string, enum: [ok, warning, failed] }
+              message: { type: string }
+
+    Label:
+      type: object
+      description: A sensitivity label. `path` is "Parent/Child" for sublabels.
+      required: [id, name, path, description, sublabels]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        path: { type: string }
+        description: { type: [string, "null"] }
+        sublabels:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+
+    LabelList:
+      type: object
+      description: Sensitivity labels
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+
+    DirectoryUser:
+      type: object
+      description: A person in the tenant directory
+      required: [id, display_name, email, department, initials]
+      properties:
+        id: { type: string, description: Entra object ID }
+        display_name: { type: string }
+        email: { type: string, format: email }
+        department: { type: [string, "null"] }
+        initials: { type: string }
+
+    DirectoryUserList:
+      type: object
+      description: People matching a search
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DirectoryUser" }
+
+    MatterStage:
+      type: string
+      description: |
+        Where the matter is. `scoping`: not previewed, or the query changed since. `previewed`:
+        the current query was previewed. `exporting`: an export is being prepared. `exported`:
+        the latest export is ready.
+      enum: [scoping, previewed, exporting, exported]
+
+    MatterType:
+      type: string
+      description: Kind of matter
+      enum: [investigation, litigation, regulatory, dsr]
+
+    LatestCounts:
+      type: object
+      description: Counts from the latest estimate or preview
+      required: [items, partial_items]
+      properties:
+        items: { type: integer, minimum: 0 }
+        partial_items: { type: integer, minimum: 0 }
+
+    MatterSummary:
+      type: object
+      description: One row of the Matters list
+      required: [id, matter_number, name, stage, custodian_count, current_version, latest_counts, export_progress, last_activity_at, owner]
+      properties:
+        id: { type: string }
+        matter_number: { type: string, description: "The firm's matter number, also used as the Purview case name prefix" }
+        name: { type: string }
+        stage: { $ref: "#/components/schemas/MatterStage" }
+        custodian_count: { type: integer, minimum: 0 }
+        current_version: { type: [integer, "null"], description: "Latest query version, null before the first estimate" }
+        latest_counts:
+          oneOf:
+            - $ref: "#/components/schemas/LatestCounts"
+            - type: "null"
+        export_progress: { type: [number, "null"], minimum: 0, maximum: 1, description: Set while stage is exporting }
+        last_activity_at: { type: string, format: date-time }
+        owner: { $ref: "#/components/schemas/UserRef" }
+
+    MatterList:
+      type: object
+      description: Matters
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MatterSummary" }
+        total: { type: integer, minimum: 0 }
+
+    MatterCreate:
+      type: object
+      description: A new matter
+      required: [matter_number, name, type]
+      additionalProperties: false
+      properties:
+        matter_number: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        type: { $ref: "#/components/schemas/MatterType" }
+        description: { type: string, maxLength: 2000, default: "" }
+
+    MatterUpdate:
+      type: object
+      description: Fields to change. Omitted fields stay as they are.
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        type: { $ref: "#/components/schemas/MatterType" }
+        description: { type: string, maxLength: 2000 }
+
+    Matter:
+      type: object
+      description: A matter with its custodians and sites
+      required: [id, matter_number, name, type, description, stage, purview_case_id, created_at, created_by, custodians, sites, current_version, previewed_version, last_previewed_at, draft_changed]
+      properties:
+        id: { type: string }
+        matter_number: { type: string }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/MatterType" }
+        description: { type: string }
+        stage: { $ref: "#/components/schemas/MatterStage" }
+        purview_case_id: { type: [string, "null"], description: Set once the Purview case exists }
+        created_at: { type: string, format: date-time }
+        created_by: { $ref: "#/components/schemas/UserRef" }
+        custodians:
+          type: array
+          items: { $ref: "#/components/schemas/Custodian" }
+        sites:
+          type: array
+          description: Sites without a custodian
+          items: { $ref: "#/components/schemas/Site" }
+        current_version: { type: [integer, "null"] }
+        previewed_version: { type: [integer, "null"] }
+        last_previewed_at: { type: [string, "null"], format: date-time }
+        draft_changed: { type: boolean, description: True when the draft criteria or sources differ from the current version }
+
+    HoldStatus:
+      type: string
+      description: "`pending`: requested, Purview is applying it. `releasing`: release requested."
+      enum: ["off", pending, "on", releasing, failed]
+
+    Hold:
+      type: object
+      description: Legal hold state for a custodian
+      required: [status, since]
+      properties:
+        status: { $ref: "#/components/schemas/HoldStatus" }
+        since: { type: [string, "null"], format: date-time, description: When the hold took effect }
+
+    HoldUpdate:
+      type: object
+      description: "Place (`on_hold`: true) or release (`on_hold`: false) a hold"
+      required: [on_hold]
+      additionalProperties: false
+      properties:
+        on_hold: { type: boolean }
+
+    Custodian:
+      type: object
+      description: A person whose data is searched
+      required: [user_id, display_name, email, department, initials, mailbox, onedrive, sites, hold]
+      properties:
+        user_id: { type: string }
+        display_name: { type: string }
+        email: { type: string, format: email }
+        department: { type: [string, "null"] }
+        initials: { type: string }
+        mailbox: { type: boolean, description: Search the mailbox and Teams chats }
+        onedrive: { type: boolean, description: Search OneDrive }
+        sites:
+          type: array
+          description: SharePoint sites linked to this custodian
+          items: { type: string, format: uri }
+        hold: { $ref: "#/components/schemas/Hold" }
+
+    CustodianUpsert:
+      type: object
+      description: Which of the custodian's sources to search. At least one of mailbox, onedrive or a site.
+      required: [mailbox, onedrive]
+      additionalProperties: false
+      properties:
+        mailbox: { type: boolean }
+        onedrive: { type: boolean }
+        sites:
+          type: array
+          items: { type: string, format: uri }
+          default: []
+
+    Site:
+      type: object
+      description: A SharePoint site without a custodian
+      required: [id, url]
+      properties:
+        id: { type: string }
+        url: { type: string, format: uri }
+
+    SiteCreate:
+      type: object
+      description: A SharePoint site URL (https)
+      required: [url]
+      additionalProperties: false
+      properties:
+        url: { type: string, format: uri, pattern: "^https://" }
+
+    ItemKind:
+      type: string
+      description: "Item types a search can include: emails, Teams chats, documents"
+      enum: [email, chats, docs]
+
+    Criteria:
+      type: object
+      description: |
+        Search criteria. Same fields as `CullCriteria` in `backend/searchtrail/query.py`.
+        Each filter applies only to the item types it makes sense for (domains to emails and
+        chats, file types to documents).
+      additionalProperties: false
+      required: [keywords, keyword_mode, exclude_keywords, date_from, date_to, kinds, file_extensions, participant_domains, exclude_participant_domains, label_ids, exclude_label_ids, doc_date_property, raw_kql]
+      properties:
+        keywords:
+          type: array
+          description: Terms and phrases. `word*` is a prefix match; leading wildcards are rejected.
+          items: { type: string, minLength: 1 }
+        keyword_mode: { type: string, enum: [any, all] }
+        exclude_keywords:
+          type: array
+          items: { type: string, minLength: 1 }
+        date_from: { type: [string, "null"], format: date, description: Inclusive }
+        date_to: { type: [string, "null"], format: date, description: Inclusive }
+        kinds:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ItemKind" }
+        file_extensions:
+          type: array
+          description: Documents only
+          items: { type: string, pattern: "^[a-z0-9]{1,10}$" }
+        participant_domains:
+          type: array
+          description: Emails and chats only
+          items: { type: string }
+        exclude_participant_domains:
+          type: array
+          description: Emails and chats only
+          items: { type: string }
+        label_ids:
+          type: array
+          description: Only items with these labels (a parent includes its sublabels). Excludes unlabelled items.
+          items: { type: string, format: uuid }
+        exclude_label_ids:
+          type: array
+          items: { type: string, format: uuid }
+        doc_date_property: { type: string, enum: [lastmodifiedtime, created] }
+        raw_kql: { type: [string, "null"], description: "Expert escape hatch, ANDed onto the query" }
+
+    Draft:
+      type: object
+      description: The criteria being edited on the Scope screen
+      required: [criteria, updated_at, based_on_version, changed_since_version]
+      properties:
+        criteria: { $ref: "#/components/schemas/Criteria" }
+        updated_at: { type: string, format: date-time }
+        based_on_version: { type: [integer, "null"] }
+        changed_since_version: { type: boolean, description: "True when the draft would produce a different query or sources than `based_on_version`" }
+
+    DraftUpdate:
+      type: object
+      description: New draft criteria
+      required: [criteria]
+      additionalProperties: false
+      properties:
+        criteria: { $ref: "#/components/schemas/Criteria" }
+
+    KqlPreviewRequest:
+      type: object
+      description: Criteria to turn into KQL
+      required: [criteria]
+      additionalProperties: false
+      properties:
+        criteria: { $ref: "#/components/schemas/Criteria" }
+
+    KqlPreview:
+      type: object
+      description: The KQL, its plain-English methodology and any warnings
+      required: [kql, length, methodology, warnings]
+      properties:
+        kql: { type: string }
+        length: { type: integer, description: "Characters in the KQL. Purview has length limits; a warning appears past 4,000." }
+        methodology:
+          type: array
+          description: One sentence per line, ready for a methodology memo
+          items: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+
+    Counts:
+      type: object
+      description: Counts from a Purview estimate
+      required: [items, size_bytes, partial_items, partial_size_bytes, mailboxes, sites]
+      properties:
+        items: { type: integer, minimum: 0, description: Indexed items matching }
+        size_bytes: { type: integer, minimum: 0 }
+        partial_items: { type: integer, minimum: 0, description: Partially indexed items (could not be keyword-searched) }
+        partial_size_bytes: { type: integer, minimum: 0 }
+        mailboxes: { type: integer, minimum: 0 }
+        sites: { type: integer, minimum: 0 }
+
+    EstimateResult:
+      type: object
+      description: Result of an `estimate` job
+      required: [version, estimated_at, counts]
+      properties:
+        version: { type: integer }
+        estimated_at: { type: string, format: date-time }
+        counts: { $ref: "#/components/schemas/Counts" }
+
+    NamedCount:
+      type: object
+      description: One bar in a breakdown
+      required: [name, count]
+      properties:
+        name: { type: string }
+        count: { type: integer, minimum: 0 }
+
+    MonthCount:
+      type: object
+      description: One month in the month chart
+      required: [month, count]
+      properties:
+        month: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+        count: { type: integer, minimum: 0 }
+
+    Preview:
+      type: object
+      description: A preview's counts and breakdowns
+      required: [id, matter_id, version, created_at, created_by, stale, counts, report_items, encrypted_items, breakdowns, unmapped_columns]
+      properties:
+        id: { type: string }
+        matter_id: { type: string }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        created_by: { $ref: "#/components/schemas/UserRef" }
+        stale: { type: boolean, description: True when the draft changed after this preview }
+        counts: { $ref: "#/components/schemas/Counts" }
+        report_items: { type: integer, description: "Rows in Purview's item report (matching plus partially indexed, if included)" }
+        encrypted_items: { type: integer }
+        breakdowns:
+          type: object
+          required: [by_location, by_type, by_label, by_month]
+          properties:
+            by_location: { type: array, items: { $ref: "#/components/schemas/NamedCount" } }
+            by_type: { type: array, items: { $ref: "#/components/schemas/NamedCount" } }
+            by_label: { type: array, items: { $ref: "#/components/schemas/NamedCount" } }
+            by_month: { type: array, items: { $ref: "#/components/schemas/MonthCount" } }
+        unmapped_columns:
+          type: array
+          description: Report columns the parser didn't recognise (see report.COLUMN_CANDIDATES)
+          items: { type: string }
+
+    ItemType:
+      type: string
+      description: Item type in the preview table
+      enum: [email, teams_chat, document, other]
+
+    PreviewItem:
+      type: object
+      description: One row of the item table (metadata only)
+      required: [id, title, location, type, date, label, size_bytes, encrypted]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        location: { type: string, description: Custodian name or site }
+        type: { $ref: "#/components/schemas/ItemType" }
+        date: { type: [string, "null"], format: date-time }
+        label: { type: [string, "null"], description: Label path; null when unlabelled }
+        size_bytes: { type: [integer, "null"] }
+        encrypted: { type: boolean }
+
+    PreviewItemPage:
+      type: object
+      description: A page of preview items
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PreviewItem" }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    TermRow:
+      type: object
+      description: Hits for one term within all other filters
+      required: [term, items, size_bytes, previous_items, previous_version]
+      properties:
+        term: { type: string, description: The term as it appears in the KQL }
+        items: { type: integer }
+        size_bytes: { type: integer }
+        previous_items: { type: [integer, "null"], description: Hits in the previous version's term report; null if the term is new }
+        previous_version: { type: [integer, "null"] }
+
+    TermReport:
+      type: object
+      description: Hits per term
+      required: [id, matter_id, version, created_at, created_by, stale, combined, rows]
+      properties:
+        id: { type: string }
+        matter_id: { type: string }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        created_by: { $ref: "#/components/schemas/UserRef" }
+        stale: { type: boolean }
+        combined:
+          type: object
+          description: All terms together (the full query)
+          required: [items, size_bytes]
+          properties:
+            items: { type: integer }
+            size_bytes: { type: integer }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/TermRow" }
+
+    ExportOptions:
+      type: object
+      description: Purview export settings
+      required: [include_partially_indexed, format]
+      additionalProperties: false
+      properties:
+        include_partially_indexed: { type: boolean, description: "Decide this deliberately, with counsel. The choice is logged." }
+        partially_indexed_scope:
+          type: string
+          enum: [responsiveLocations, "responsiveLocations, nonresponsiveLocations"]
+          default: responsiveLocations
+        format: { type: string, enum: [pst, msg] }
+        include_cloud_attachments: { type: boolean, default: false, description: Files linked in emails (current version) }
+        teams_transcripts: { type: boolean, default: true, description: HTML transcript per Teams conversation }
+
+    ExportCheckItem:
+      type: object
+      description: One export check
+      required: [key, status, message]
+      properties:
+        key: { type: string, enum: [previewed, same_sources, counts_unchanged] }
+        status: { type: string, enum: [passed, failed, skipped] }
+        message: { type: string }
+
+    ExportCheck:
+      type: object
+      description: Result of the export checks
+      required: [ready, blocked_code, version, previewed_version, previewed_at, checked_at, counts, checks]
+      properties:
+        ready: { type: boolean }
+        blocked_code:
+          description: The error a real export would return now, if any
+          oneOf:
+            - type: string
+              enum: [export_not_previewed, export_counts_changed]
+            - type: "null"
+        version: { type: [integer, "null"] }
+        previewed_version: { type: [integer, "null"] }
+        previewed_at: { type: [string, "null"], format: date-time }
+        checked_at: { type: string, format: date-time }
+        counts:
+          description: Counts now (null if not re-checked)
+          oneOf:
+            - $ref: "#/components/schemas/Counts"
+            - type: "null"
+        checks:
+          type: array
+          items: { $ref: "#/components/schemas/ExportCheckItem" }
+
+    ExportStart:
+      type: object
+      description: Start an export. The user types the matter number to confirm.
+      required: [options, confirm_matter_number]
+      additionalProperties: false
+      properties:
+        options: { $ref: "#/components/schemas/ExportOptions" }
+        confirm_matter_number: { type: string }
+        accept_changes: { type: boolean, default: false, description: Export even if counts changed since the preview (logged) }
+
+    ExportStatus:
+      type: string
+      description: Purview export state
+      enum: [preparing, ready, failed, expired]
+
+    HandoffStatus:
+      type: string
+      description: State of a download or review set hand-off
+      enum: [none, running, done, failed]
+
+    Export:
+      type: object
+      description: An export and its hand-offs
+      required: [id, matter_id, name, version, status, progress, counts, options, changes_accepted, started_at, started_by, finished_at, expires_at, files, download, review_set]
+      properties:
+        id: { type: string }
+        matter_id: { type: string }
+        name: { type: string, description: The export's name in Purview }
+        version: { type: integer }
+        status: { $ref: "#/components/schemas/ExportStatus" }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        counts: { $ref: "#/components/schemas/Counts" }
+        options: { $ref: "#/components/schemas/ExportOptions" }
+        changes_accepted: { type: boolean }
+        started_at: { type: string, format: date-time }
+        started_by: { $ref: "#/components/schemas/UserRef" }
+        finished_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time, description: When Purview deletes the download (about 30 days) }
+        files:
+          type: array
+          items:
+            type: object
+            required: [name, size_bytes]
+            properties:
+              name: { type: string }
+              size_bytes: { type: [integer, "null"] }
+        download:
+          type: object
+          required: [status, progress, stored_path, finished_at]
+          properties:
+            status: { $ref: "#/components/schemas/HandoffStatus" }
+            progress: { type: [number, "null"], minimum: 0, maximum: 1 }
+            stored_path: { type: [string, "null"], description: Where the package was stored (in SearchTrail's storage) }
+            finished_at: { type: [string, "null"], format: date-time }
+        review_set:
+          type: object
+          required: [status, name, finished_at]
+          properties:
+            status: { $ref: "#/components/schemas/HandoffStatus" }
+            name: { type: [string, "null"] }
+            finished_at: { type: [string, "null"], format: date-time }
+
+    ExportList:
+      type: object
+      description: Exports, newest first
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Export" }
+
+    ReviewSetRequest:
+      type: object
+      description: The review set to add to (created if missing)
+      required: [review_set_name]
+      additionalProperties: false
+      properties:
+        review_set_name: { type: string, minLength: 1, maxLength: 200 }
+
+    QueryVersion:
+      type: object
+      description: A frozen query version, created when a changed draft is estimated
+      required: [version, created_at, created_by, summary, criteria, kql, methodology, sources_fingerprint, purview_search_id, counts, exported]
+      properties:
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        created_by: { $ref: "#/components/schemas/UserRef" }
+        summary: { type: string, description: Short description of what changed from the previous version }
+        criteria: { $ref: "#/components/schemas/Criteria" }
+        kql: { type: string }
+        methodology: { type: array, items: { type: string } }
+        sources_fingerprint: { type: string, description: SHA-256 of the custodians and sites searched }
+        purview_search_id: { type: [string, "null"] }
+        counts:
+          oneOf:
+            - $ref: "#/components/schemas/Counts"
+            - type: "null"
+        exported: { type: boolean }
+
+    QueryVersionList:
+      type: object
+      description: Query versions, oldest first
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/QueryVersion" }
+
+    VersionComparison:
+      type: object
+      description: Differences between two versions
+      required: [from, to, changes, unchanged, sources_changed, counts]
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        changes:
+          type: array
+          items:
+            type: object
+            required: [change, text]
+            properties:
+              change: { type: string, enum: [added, removed] }
+              text: { type: string }
+        unchanged: { type: string, description: Plain-English list of what stayed the same }
+        sources_changed: { type: boolean }
+        counts:
+          type: object
+          required: [from_items, to_items, delta]
+          properties:
+            from_items: { type: [integer, "null"] }
+            to_items: { type: [integer, "null"] }
+            delta: { type: [integer, "null"] }
+
+    LogAction:
+      type: string
+      description: What was done
+      enum: [matter_created, matter_updated, custodian_added, custodian_updated, custodian_removed, site_added, site_removed, hold_placed, hold_released, estimate, preview, term_report, export_started, export_finished, export_downloaded, review_set_added]
+
+    LogEntry:
+      type: object
+      description: One hash-chained log entry (same chain format as `backend/searchtrail/audit.py`)
+      required: [seq, ts, action, actor, actor_email, summary, version, prev_hash, hash, details]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        ts: { type: string, format: date-time }
+        action: { $ref: "#/components/schemas/LogAction" }
+        actor: { type: string, description: "Display name of the person, or SearchTrail for automatic steps" }
+        actor_email: { type: [string, "null"], description: "The person's sign-in name (UPN), which identifies them unambiguously; null for automatic steps" }
+        summary: { type: string }
+        version: { type: [integer, "null"] }
+        prev_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+        details:
+          type: object
+          description: The full logged record (KQL, criteria, counts, settings)
+          additionalProperties: true
+
+    LogEntryPage:
+      type: object
+      description: A page of log entries
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LogEntry" }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    LogVerification:
+      type: object
+      description: Result of checking the hash chain
+      required: [ok, entries, first_bad_seq, message, verified_at]
+      properties:
+        ok: { type: boolean }
+        entries: { type: integer }
+        first_bad_seq: { type: [integer, "null"] }
+        message: { type: string }
+        verified_at: { type: string, format: date-time }
+
+    JobKind:
+      type: string
+      description: The long action a job runs
+      enum: [estimate, preview, term_report, export, download, review_set]
+
+    JobStatus:
+      type: string
+      description: Job state
+      enum: [queued, running, succeeded, failed]
+
+    JobList:
+      type: object
+      description: Jobs, newest first
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Job" }
+
+    Job:
+      type: object
+      description: |
+        A long action. `result` is set when `status` is `succeeded`: an `EstimateResult`
+        (estimate), `Preview` (preview), `TermReport` (term_report) or `Export` (export, download,
+        review_set). `error` is set when `status` is `failed`.
+      required: [id, kind, status, progress, matter_id, created_at, updated_at, result, error]
+      properties:
+        id: { type: string }
+        kind: { $ref: "#/components/schemas/JobKind" }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        matter_id: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        result:
+          oneOf:
+            - $ref: "#/components/schemas/EstimateResult"
+            - $ref: "#/components/schemas/Preview"
+            - $ref: "#/components/schemas/TermReport"
+            - $ref: "#/components/schemas/Export"
+            - type: "null"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/Error"
+            - type: "null"

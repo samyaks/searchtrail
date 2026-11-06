@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "searchtrail"
+version = "0.2.0"
+description = "SearchTrail: evidence of how you searched. Precise Purview eDiscovery searches, previews and a tamper-evident record."
+requires-python = ">=3.12"
+dependencies = [
+  # core (CLI, Graph, Purview)
+  "msal>=1.28",
+  "requests>=2.31",
+  # web API and worker
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic[email]>=2.7",
+  "pydantic-settings>=2.3",
+  "sqlalchemy>=2.0.30",
+  "alembic>=1.13",
+  "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "httpx>=0.27"]
+# Exact versions for the tools whose output CI compares (codegen) or enforces (lint).
+dev = ["pytest>=8", "httpx>=0.27", "pyyaml>=6", "ruff==0.17.4", "datamodel-code-generator==0.89.0"]
+
+[project.scripts]
+searchtrail = "searchtrail.cli:main"
+searchtrail-worker = "app.jobs.worker:main"
+
+[tool.setuptools.packages.find]
+include = ["searchtrail*", "app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+extend-exclude = ["app/schemas/contract.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E741", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/db/migrations/*" = ["E501"]

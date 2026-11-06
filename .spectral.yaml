@@ -1,0 +1,10 @@
+# Lint rules for contracts/openapi.yaml. Run: npx @stoplight/spectral-cli lint contracts/openapi.yaml
+extends: ["spectral:oas"]
+rules:
+  # Every operation must be documented and tagged.
+  operation-description: error
+  operation-tags: error
+  operation-operationId: error
+  oas3-valid-media-example: error
+  oas3-valid-schema-example: error
+  oas3-unused-component: warn

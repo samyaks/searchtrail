@@ -1,0 +1,49 @@
+@import '@fontsource/libre-caslon-text/400.css';
+@import '@fontsource/libre-caslon-text/700.css';
+@import '@fontsource/public-sans/400.css';
+@import '@fontsource/public-sans/500.css';
+@import '@fontsource/public-sans/600.css';
+@import '@fontsource/public-sans/700.css';
+@import '@fontsource/courier-prime/400.css';
+@import '@fontsource/courier-prime/700.css';
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--st-paper);
+  color: var(--st-ink);
+  font-family: var(--st-font-body);
+  font-size: var(--st-text-md);
+  line-height: 1.5;
+}
+h1,
+h2,
+h3 {
+  font-family: var(--st-font-heading);
+  font-weight: 400;
+  margin: 0;
+}
+a {
+  color: var(--st-ink);
+}
+:focus-visible {
+  outline: var(--st-focus);
+  outline-offset: 2px;
+}
+code,
+.st-mono {
+  font-family: var(--st-font-mono);
+}
+.st-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -1,0 +1,2645 @@
+{
+  "addSite": {
+    "method": "POST",
+    "path": "/matters/{matterId}/sites",
+    "examples": {
+      "201": {
+        "finance": {
+          "id": "site_finance",
+          "url": "https://contoso.sharepoint.com/sites/Finance"
+        }
+      },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "duplicate": {
+          "code": "conflict",
+          "message": "A matter with number M-2026-0142 already exists.",
+          "details": {}
+        }
+      },
+      "request": {
+        "finance": {
+          "url": "https://contoso.sharepoint.com/sites/Finance"
+        }
+      }
+    }
+  },
+  "authCallback": {
+    "method": "GET",
+    "path": "/auth/callback",
+    "examples": {
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      }
+    }
+  },
+  "checkExport": {
+    "method": "POST",
+    "path": "/matters/{matterId}/exports/check",
+    "examples": {
+      "200": {
+        "ready": {
+          "ready": true,
+          "blocked_code": null,
+          "version": 3,
+          "previewed_version": 3,
+          "previewed_at": "2026-11-05T10:42:00Z",
+          "checked_at": "2026-11-05T10:58:00Z",
+          "counts": {
+            "items": 630,
+            "size_bytes": 30408704,
+            "partial_items": 25,
+            "partial_size_bytes": 22754099,
+            "mailboxes": 2,
+            "sites": 4
+          },
+          "checks": [
+            {
+              "key": "previewed",
+              "status": "passed",
+              "message": "This exact query (v3) was previewed at 10:42."
+            },
+            {
+              "key": "same_sources",
+              "status": "passed",
+              "message": "Same custodians and sites as the preview."
+            },
+            {
+              "key": "counts_unchanged",
+              "status": "passed",
+              "message": "Counts unchanged since the preview (re-checked 10:58)."
+            }
+          ]
+        },
+        "notPreviewed": {
+          "ready": false,
+          "blocked_code": "export_not_previewed",
+          "version": 4,
+          "previewed_version": 3,
+          "previewed_at": "2026-11-05T10:42:00Z",
+          "checked_at": "2026-11-05T11:20:00Z",
+          "counts": null,
+          "checks": [
+            {
+              "key": "previewed",
+              "status": "failed",
+              "message": "Query v4 hasn't been previewed. Preview it first, so the export matches what was reviewed."
+            },
+            {
+              "key": "same_sources",
+              "status": "passed",
+              "message": "Same custodians and sites as the preview."
+            },
+            {
+              "key": "counts_unchanged",
+              "status": "skipped",
+              "message": "Not checked because the query wasn't previewed."
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "429": {
+        "throttled": {
+          "code": "graph_throttled",
+          "message": "Microsoft is limiting requests right now. Try again in a minute.",
+          "details": {
+            "retry_after_seconds": 60
+          }
+        }
+      }
+    }
+  },
+  "compareVersions": {
+    "method": "GET",
+    "path": "/matters/{matterId}/versions/compare",
+    "examples": {
+      "200": {
+        "v2v3": {
+          "from": 2,
+          "to": 3,
+          "changes": [
+            {
+              "change": "added",
+              "text": "Added term \"side letter\""
+            },
+            {
+              "change": "added",
+              "text": "Excluding items containing \"weekly digest\""
+            },
+            {
+              "change": "added",
+              "text": "Excluding items labelled Public"
+            },
+            {
+              "change": "added",
+              "text": "Documents limited to docx, xlsx, pptx, pdf"
+            },
+            {
+              "change": "removed",
+              "text": "Documents of any file type"
+            }
+          ],
+          "unchanged": "custodians, sites, date range, terms \"project falcon\", invoic* and kickback.",
+          "sources_changed": false,
+          "counts": {
+            "from_items": 1148,
+            "to_items": 630,
+            "delta": -518
+          }
+        }
+      },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "createMatter": {
+    "method": "POST",
+    "path": "/matters",
+    "examples": {
+      "201": {
+        "created": {
+          "id": "mat_falcon",
+          "matter_number": "M-2026-0142",
+          "name": "Project Falcon investigation",
+          "type": "investigation",
+          "description": "Internal investigation into supplier payments linked to Project Falcon.",
+          "stage": "scoping",
+          "purview_case_id": null,
+          "created_at": "2026-11-03T09:12:00Z",
+          "created_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "custodians": [],
+          "sites": [],
+          "current_version": null,
+          "previewed_version": null,
+          "last_previewed_at": null,
+          "draft_changed": false
+        }
+      },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "409": {
+        "duplicate": {
+          "code": "conflict",
+          "message": "A matter with number M-2026-0142 already exists.",
+          "details": {}
+        }
+      },
+      "request": {
+        "falcon": {
+          "matter_number": "M-2026-0142",
+          "name": "Project Falcon investigation",
+          "type": "investigation",
+          "description": "Internal investigation into supplier payments linked to Project Falcon."
+        }
+      }
+    }
+  },
+  "downloadPreviewItemsCsv": {
+    "method": "GET",
+    "path": "/previews/{previewId}/items.csv",
+    "examples": {
+      "200": {
+        "head": "item_id,location,item_type,subject,author,date,size,sensitivity_label,encrypted\ndry-item-00001,alex.wilber@contoso.com,IPM.Note,RE: Falcon supplier payment schedule,alex.wilber@contoso.com,2024-03-14T10:00:00Z,49152,Confidential/Finance,false\n"
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getDraft": {
+    "method": "GET",
+    "path": "/matters/{matterId}/draft",
+    "examples": {
+      "200": {
+        "falcon": {
+          "criteria": {
+            "keywords": [
+              "project falcon",
+              "invoic*",
+              "kickback",
+              "side letter"
+            ],
+            "keyword_mode": "any",
+            "exclude_keywords": [
+              "weekly digest"
+            ],
+            "date_from": "2024-01-01",
+            "date_to": "2025-06-30",
+            "kinds": [
+              "email",
+              "chats",
+              "docs"
+            ],
+            "file_extensions": [
+              "docx",
+              "xlsx",
+              "pptx",
+              "pdf"
+            ],
+            "participant_domains": [],
+            "exclude_participant_domains": [
+              "newsletters.contoso.com"
+            ],
+            "label_ids": [],
+            "exclude_label_ids": [
+              "11111111-1111-4111-8111-111111111111"
+            ],
+            "doc_date_property": "lastmodifiedtime",
+            "raw_kql": null
+          },
+          "updated_at": "2026-11-05T10:40:51Z",
+          "based_on_version": 3,
+          "changed_since_version": false
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getExport": {
+    "method": "GET",
+    "path": "/exports/{exportId}",
+    "examples": {
+      "200": {
+        "ready": {
+          "id": "exp_falcon_v2",
+          "matter_id": "mat_falcon",
+          "name": "M-2026-0142 EVERLAW 20261104T1630Z",
+          "version": 2,
+          "status": "ready",
+          "progress": 1,
+          "counts": {
+            "items": 1148,
+            "size_bytes": 55364812,
+            "partial_items": 41,
+            "partial_size_bytes": 37320704,
+            "mailboxes": 2,
+            "sites": 4
+          },
+          "options": {
+            "include_partially_indexed": true,
+            "partially_indexed_scope": "responsiveLocations",
+            "format": "pst",
+            "include_cloud_attachments": false,
+            "teams_transcripts": true
+          },
+          "changes_accepted": false,
+          "started_at": "2026-11-04T16:30:00Z",
+          "started_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "finished_at": "2026-11-04T16:52:00Z",
+          "expires_at": "2026-12-04T16:52:00Z",
+          "files": [
+            {
+              "name": "Exchange.zip",
+              "size_bytes": 61203456
+            },
+            {
+              "name": "SharePoint.zip",
+              "size_bytes": 31482060
+            }
+          ],
+          "download": {
+            "status": "none",
+            "progress": null,
+            "stored_path": null,
+            "finished_at": null
+          },
+          "review_set": {
+            "status": "none",
+            "name": null,
+            "finished_at": null
+          }
+        },
+        "preparing": {
+          "id": "exp_falcon_v3",
+          "matter_id": "mat_falcon",
+          "name": "M-2026-0142 EVERLAW 20261105T1058Z",
+          "version": 3,
+          "status": "preparing",
+          "progress": 0,
+          "counts": {
+            "items": 630,
+            "size_bytes": 30408704,
+            "partial_items": 25,
+            "partial_size_bytes": 22754099,
+            "mailboxes": 2,
+            "sites": 4
+          },
+          "options": {
+            "include_partially_indexed": true,
+            "partially_indexed_scope": "responsiveLocations",
+            "format": "pst",
+            "include_cloud_attachments": false,
+            "teams_transcripts": true
+          },
+          "changes_accepted": false,
+          "started_at": "2026-11-05T10:59:00Z",
+          "started_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "finished_at": null,
+          "expires_at": null,
+          "files": [],
+          "download": {
+            "status": "none",
+            "progress": null,
+            "stored_path": null,
+            "finished_at": null
+          },
+          "review_set": {
+            "status": "none",
+            "name": null,
+            "finished_at": null
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getHealth": {
+    "method": "GET",
+    "path": "/health",
+    "examples": {
+      "200": {
+        "healthy": {
+          "status": "ok",
+          "version": "0.2.0",
+          "database": "ok",
+          "dry_run": true
+        }
+      },
+      "503": {
+        "dbDown": {
+          "status": "degraded",
+          "version": "0.2.0",
+          "database": "unreachable",
+          "dry_run": true
+        }
+      }
+    }
+  },
+  "getJob": {
+    "method": "GET",
+    "path": "/jobs/{jobId}",
+    "examples": {
+      "200": {
+        "running": {
+          "id": "job_01HF3PRV",
+          "kind": "preview",
+          "status": "running",
+          "progress": 0.42,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:41:30Z",
+          "updated_at": "2026-11-05T10:42:05Z",
+          "result": null,
+          "error": null
+        },
+        "estimateDone": {
+          "id": "job_01HF3EST",
+          "kind": "estimate",
+          "status": "succeeded",
+          "progress": 1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:41:12Z",
+          "updated_at": "2026-11-05T10:41:58Z",
+          "result": {
+            "version": 3,
+            "estimated_at": "2026-11-05T10:41:58Z",
+            "counts": {
+              "items": 630,
+              "size_bytes": 30408704,
+              "partial_items": 25,
+              "partial_size_bytes": 22754099,
+              "mailboxes": 2,
+              "sites": 4
+            }
+          },
+          "error": null
+        },
+        "failed": {
+          "id": "job_01HF3EXP",
+          "kind": "export",
+          "status": "failed",
+          "progress": 0.1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:58:40Z",
+          "updated_at": "2026-11-05T11:03:10Z",
+          "result": null,
+          "error": {
+            "code": "purview_operation_failed",
+            "message": "Purview stopped the export: the search could not be found. Check the case in the Purview portal, then try again.",
+            "details": {
+              "purview_status": "failed"
+            }
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getLatestPreview": {
+    "method": "GET",
+    "path": "/matters/{matterId}/previews/latest",
+    "examples": {
+      "200": {
+        "falcon": {
+          "id": "prv_falcon_v3",
+          "matter_id": "mat_falcon",
+          "version": 3,
+          "created_at": "2026-11-05T10:42:00Z",
+          "created_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "stale": false,
+          "counts": {
+            "items": 630,
+            "size_bytes": 30408704,
+            "partial_items": 25,
+            "partial_size_bytes": 22754099,
+            "mailboxes": 2,
+            "sites": 4
+          },
+          "report_items": 655,
+          "encrypted_items": 41,
+          "breakdowns": {
+            "by_location": [
+              {
+                "name": "Alex Wilber",
+                "count": 312
+              },
+              {
+                "name": "Megan Bowen",
+                "count": 281
+              },
+              {
+                "name": "sites/Finance",
+                "count": 62
+              }
+            ],
+            "by_type": [
+              {
+                "name": "Email",
+                "count": 223
+              },
+              {
+                "name": "Teams chat",
+                "count": 223
+              },
+              {
+                "name": "Document",
+                "count": 209
+              }
+            ],
+            "by_label": [
+              {
+                "name": "General",
+                "count": 137
+              },
+              {
+                "name": "Highly Confidential",
+                "count": 136
+              },
+              {
+                "name": "Confidential/Finance",
+                "count": 133
+              },
+              {
+                "name": "Confidential/Legal",
+                "count": 130
+              },
+              {
+                "name": "No label",
+                "count": 119
+              }
+            ],
+            "by_month": [
+              {
+                "month": "2024-01",
+                "count": 39
+              },
+              {
+                "month": "2024-02",
+                "count": 39
+              },
+              {
+                "month": "2024-03",
+                "count": 31
+              },
+              {
+                "month": "2024-04",
+                "count": 32
+              },
+              {
+                "month": "2024-05",
+                "count": 40
+              },
+              {
+                "month": "2024-06",
+                "count": 49
+              },
+              {
+                "month": "2024-07",
+                "count": 35
+              },
+              {
+                "month": "2024-08",
+                "count": 36
+              },
+              {
+                "month": "2024-09",
+                "count": 50
+              },
+              {
+                "month": "2024-10",
+                "count": 36
+              },
+              {
+                "month": "2024-11",
+                "count": 36
+              },
+              {
+                "month": "2024-12",
+                "count": 36
+              },
+              {
+                "month": "2025-01",
+                "count": 28
+              },
+              {
+                "month": "2025-02",
+                "count": 31
+              },
+              {
+                "month": "2025-03",
+                "count": 38
+              },
+              {
+                "month": "2025-04",
+                "count": 39
+              },
+              {
+                "month": "2025-05",
+                "count": 29
+              },
+              {
+                "month": "2025-06",
+                "count": 31
+              }
+            ]
+          },
+          "unmapped_columns": []
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getLatestTermReport": {
+    "method": "GET",
+    "path": "/matters/{matterId}/term-reports/latest",
+    "examples": {
+      "200": {
+        "falcon": {
+          "id": "trm_falcon_v3",
+          "matter_id": "mat_falcon",
+          "version": 3,
+          "created_at": "2026-11-05T10:51:00Z",
+          "created_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "stale": false,
+          "combined": {
+            "items": 630,
+            "size_bytes": 30408704
+          },
+          "rows": [
+            {
+              "term": "\"project falcon\"",
+              "items": 105,
+              "size_bytes": 5033164,
+              "previous_items": 188,
+              "previous_version": 2
+            },
+            {
+              "term": "invoic*",
+              "items": 440,
+              "size_bytes": 21181235,
+              "previous_items": 802,
+              "previous_version": 2
+            },
+            {
+              "term": "kickback",
+              "items": 258,
+              "size_bytes": 12478054,
+              "previous_items": 371,
+              "previous_version": 2
+            },
+            {
+              "term": "\"side letter\"",
+              "items": 316,
+              "size_bytes": 15204352,
+              "previous_items": null,
+              "previous_version": 2
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getMatter": {
+    "method": "GET",
+    "path": "/matters/{matterId}",
+    "examples": {
+      "200": {
+        "falcon": {
+          "id": "mat_falcon",
+          "matter_number": "M-2026-0142",
+          "name": "Project Falcon investigation",
+          "type": "investigation",
+          "description": "Internal investigation into supplier payments linked to Project Falcon.",
+          "stage": "previewed",
+          "purview_case_id": "9b0e4c1d-7a2f-4e55-9c11-2f6f1d0a0142",
+          "created_at": "2026-11-03T09:12:00Z",
+          "created_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "custodians": [
+            {
+              "user_id": "3c1a7f5e-0000-4000-8000-0000000000a1",
+              "display_name": "Alex Wilber",
+              "email": "alex.wilber@contoso.com",
+              "department": "Procurement",
+              "initials": "AW",
+              "mailbox": true,
+              "onedrive": true,
+              "sites": [],
+              "hold": {
+                "status": "off",
+                "since": null
+              }
+            },
+            {
+              "user_id": "3c1a7f5e-0000-4000-8000-0000000000b2",
+              "display_name": "Megan Bowen",
+              "email": "megan.bowen@contoso.com",
+              "department": "Finance",
+              "initials": "MB",
+              "mailbox": true,
+              "onedrive": true,
+              "sites": [
+                "https://contoso.sharepoint.com/sites/ProjectFalcon"
+              ],
+              "hold": {
+                "status": "on",
+                "since": "2026-11-03T09:20:00Z"
+              }
+            }
+          ],
+          "sites": [
+            {
+              "id": "site_finance",
+              "url": "https://contoso.sharepoint.com/sites/Finance"
+            }
+          ],
+          "current_version": 3,
+          "previewed_version": 3,
+          "last_previewed_at": "2026-11-05T10:42:00Z",
+          "draft_changed": false
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getMe": {
+    "method": "GET",
+    "path": "/me",
+    "examples": {
+      "200": {
+        "dana": {
+          "user": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield",
+            "email": "dana.whitfield@contoso.com",
+            "initials": "DW"
+          },
+          "tenant": {
+            "id": "6f1d2c3b-0000-4000-8000-000000000001",
+            "name": "Contoso Ltd"
+          },
+          "purview_roles": [
+            "eDiscovery Manager"
+          ],
+          "cloud": "commercial",
+          "dry_run": true
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "getSetupCheck": {
+    "method": "GET",
+    "path": "/setup/check",
+    "examples": {
+      "200": {
+        "allGood": {
+          "cloud": "commercial",
+          "dry_run": false,
+          "ready": true,
+          "checks": [
+            {
+              "key": "graph_reachable",
+              "label": "Microsoft 365 connected",
+              "status": "ok",
+              "message": "Signed in to Contoso Ltd."
+            },
+            {
+              "key": "ediscovery_license",
+              "label": "Purview eDiscovery Premium",
+              "status": "ok",
+              "message": "E5 licence found."
+            },
+            {
+              "key": "purview_role",
+              "label": "eDiscovery Manager role",
+              "status": "ok",
+              "message": "Dana Whitfield is an eDiscovery Manager."
+            },
+            {
+              "key": "download_permission",
+              "label": "Export downloads",
+              "status": "warning",
+              "message": "MicrosoftPurviewEDiscovery consent not found. Downloads will fail until an admin grants eDiscovery.Download.Read."
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listExports": {
+    "method": "GET",
+    "path": "/matters/{matterId}/exports",
+    "examples": {
+      "200": {
+        "falcon": {
+          "items": [
+            {
+              "id": "exp_falcon_v3",
+              "matter_id": "mat_falcon",
+              "name": "M-2026-0142 EVERLAW 20261105T1058Z",
+              "version": 3,
+              "status": "preparing",
+              "progress": 0,
+              "counts": {
+                "items": 630,
+                "size_bytes": 30408704,
+                "partial_items": 25,
+                "partial_size_bytes": 22754099,
+                "mailboxes": 2,
+                "sites": 4
+              },
+              "options": {
+                "include_partially_indexed": true,
+                "partially_indexed_scope": "responsiveLocations",
+                "format": "pst",
+                "include_cloud_attachments": false,
+                "teams_transcripts": true
+              },
+              "changes_accepted": false,
+              "started_at": "2026-11-05T10:59:00Z",
+              "started_by": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              },
+              "finished_at": null,
+              "expires_at": null,
+              "files": [],
+              "download": {
+                "status": "none",
+                "progress": null,
+                "stored_path": null,
+                "finished_at": null
+              },
+              "review_set": {
+                "status": "none",
+                "name": null,
+                "finished_at": null
+              }
+            },
+            {
+              "id": "exp_falcon_v2",
+              "matter_id": "mat_falcon",
+              "name": "M-2026-0142 EVERLAW 20261104T1630Z",
+              "version": 2,
+              "status": "ready",
+              "progress": 1,
+              "counts": {
+                "items": 1148,
+                "size_bytes": 55364812,
+                "partial_items": 41,
+                "partial_size_bytes": 37320704,
+                "mailboxes": 2,
+                "sites": 4
+              },
+              "options": {
+                "include_partially_indexed": true,
+                "partially_indexed_scope": "responsiveLocations",
+                "format": "pst",
+                "include_cloud_attachments": false,
+                "teams_transcripts": true
+              },
+              "changes_accepted": false,
+              "started_at": "2026-11-04T16:30:00Z",
+              "started_by": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              },
+              "finished_at": "2026-11-04T16:52:00Z",
+              "expires_at": "2026-12-04T16:52:00Z",
+              "files": [
+                {
+                  "name": "Exchange.zip",
+                  "size_bytes": 61203456
+                },
+                {
+                  "name": "SharePoint.zip",
+                  "size_bytes": 31482060
+                }
+              ],
+              "download": {
+                "status": "none",
+                "progress": null,
+                "stored_path": null,
+                "finished_at": null
+              },
+              "review_set": {
+                "status": "none",
+                "name": null,
+                "finished_at": null
+              }
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listLabels": {
+    "method": "GET",
+    "path": "/labels",
+    "examples": {
+      "200": {
+        "contoso": {
+          "items": [
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "name": "Public",
+              "path": "Public",
+              "description": "Approved for anyone",
+              "sublabels": []
+            },
+            {
+              "id": "22222222-2222-4222-8222-222222222222",
+              "name": "General",
+              "path": "General",
+              "description": "Internal business data",
+              "sublabels": []
+            },
+            {
+              "id": "33333333-3333-4333-8333-333333333333",
+              "name": "Confidential",
+              "path": "Confidential",
+              "description": "Includes the Finance and Legal sublabels",
+              "sublabels": [
+                {
+                  "id": "44444444-4444-4444-8444-444444444444",
+                  "name": "Finance",
+                  "path": "Confidential/Finance",
+                  "description": null,
+                  "sublabels": []
+                },
+                {
+                  "id": "55555555-5555-4555-8555-555555555555",
+                  "name": "Legal",
+                  "path": "Confidential/Legal",
+                  "description": null,
+                  "sublabels": []
+                }
+              ]
+            },
+            {
+              "id": "66666666-6666-4666-8666-666666666666",
+              "name": "Highly Confidential",
+              "path": "Highly Confidential",
+              "description": "Often encrypted; reviewers may not open these",
+              "sublabels": []
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "403": {
+        "role": {
+          "code": "purview_permission_missing",
+          "message": "You need the eDiscovery Manager role in Purview. Ask your Purview admin to add you to the eDiscovery Manager role group.",
+          "details": {
+            "role": "eDiscovery Manager"
+          }
+        },
+        "licence": {
+          "code": "license_missing",
+          "message": "This tenant has no eDiscovery (Premium) licence (E5 or E5 Compliance), which the Graph eDiscovery APIs need.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listLogEntries": {
+    "method": "GET",
+    "path": "/matters/{matterId}/log",
+    "examples": {
+      "200": {
+        "falcon": {
+          "items": [
+            {
+              "seq": 8,
+              "ts": "2026-11-05T10:51:00Z",
+              "action": "term_report",
+              "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
+              "summary": "Query v3 · 4 terms counted",
+              "version": 3,
+              "prev_hash": "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b",
+              "hash": "cd7c2de3013d2eeac2f7d8bb6abd56515813a04e172e75a17e9b79002a003329",
+              "details": {}
+            },
+            {
+              "seq": 7,
+              "ts": "2026-11-05T10:42:00Z",
+              "action": "preview",
+              "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
+              "summary": "Query v3 · 630 items + 25 partially indexed",
+              "version": 3,
+              "prev_hash": "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291",
+              "hash": "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b",
+              "details": {}
+            },
+            {
+              "seq": 6,
+              "ts": "2026-11-04T16:52:00Z",
+              "action": "export_finished",
+              "actor": "SearchTrail",
+              "actor_email": null,
+              "summary": "M-2026-0142 EVERLAW 20261104T1630Z · ready in Purview",
+              "version": 2,
+              "prev_hash": "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1",
+              "hash": "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291",
+              "details": {}
+            },
+            {
+              "seq": 5,
+              "ts": "2026-11-04T16:30:00Z",
+              "action": "export_started",
+              "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
+              "summary": "Query v2 · 1",
+              "148 items + 41 partially indexed": null,
+              "version": 2,
+              "prev_hash": "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6",
+              "hash": "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1",
+              "details": {}
+            },
+            {
+              "seq": 4,
+              "ts": "2026-11-04T15:58:00Z",
+              "action": "term_report",
+              "actor": "Sam Ortiz",
+              "actor_email": "sam.ortiz@contoso.com",
+              "summary": "Query v2 · 3 terms counted",
+              "version": 2,
+              "prev_hash": "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6",
+              "hash": "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6",
+              "details": {}
+            },
+            {
+              "seq": 3,
+              "ts": "2026-11-04T15:41:00Z",
+              "action": "preview",
+              "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
+              "summary": "Query v2 · 1",
+              "148 items + 41 partially indexed": null,
+              "version": 2,
+              "prev_hash": "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76",
+              "hash": "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6",
+              "details": {}
+            },
+            {
+              "seq": 2,
+              "ts": "2026-11-03T09:30:00Z",
+              "action": "preview",
+              "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
+              "summary": "Query v1 · 3",
+              "912 items + 160 partially indexed": null,
+              "version": 1,
+              "prev_hash": "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff",
+              "hash": "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76",
+              "details": {}
+            },
+            {
+              "seq": 1,
+              "ts": "2026-11-03T09:12:00Z",
+              "action": "matter_created",
+              "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
+              "summary": "Purview case M-2026-0142 with 2 custodians",
+              "version": null,
+              "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+              "hash": "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff",
+              "details": {}
+            }
+          ],
+          "total": 8,
+          "page": 1,
+          "page_size": 50
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listMatterJobs": {
+    "method": "GET",
+    "path": "/matters/{matterId}/jobs",
+    "examples": {
+      "200": {
+        "previewRunning": {
+          "items": [
+            {
+              "id": "job_01HF3PRV",
+              "kind": "preview",
+              "status": "running",
+              "progress": 0.42,
+              "matter_id": "mat_falcon",
+              "created_at": "2026-11-05T10:41:30Z",
+              "updated_at": "2026-11-05T10:42:05Z",
+              "result": null,
+              "error": null
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listMatters": {
+    "method": "GET",
+    "path": "/matters",
+    "examples": {
+      "200": {
+        "designSample": {
+          "items": [
+            {
+              "id": "mat_falcon",
+              "matter_number": "M-2026-0142",
+              "name": "Project Falcon investigation",
+              "stage": "previewed",
+              "custodian_count": 2,
+              "current_version": 3,
+              "latest_counts": {
+                "items": 630,
+                "partial_items": 25
+              },
+              "export_progress": null,
+              "last_activity_at": "2026-11-05T10:51:00Z",
+              "owner": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              }
+            },
+            {
+              "id": "mat_harlow",
+              "matter_number": "M-2026-0137",
+              "name": "Harlow v. Contoso (employment)",
+              "stage": "scoping",
+              "custodian_count": 5,
+              "current_version": 1,
+              "latest_counts": null,
+              "export_progress": null,
+              "last_activity_at": "2026-11-04T16:20:00Z",
+              "owner": {
+                "id": "usr_sam",
+                "display_name": "Sam Ortiz"
+              }
+            },
+            {
+              "id": "mat_brightwell",
+              "matter_number": "M-2026-0129",
+              "name": "Brightwell supply contract dispute",
+              "stage": "exported",
+              "custodian_count": 3,
+              "current_version": 4,
+              "latest_counts": {
+                "items": 1206,
+                "partial_items": 38
+              },
+              "export_progress": null,
+              "last_activity_at": "2026-10-28T14:02:00Z",
+              "owner": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              }
+            },
+            {
+              "id": "mat_q3trading",
+              "matter_number": "M-2026-0124",
+              "name": "Regulator request: Q3 trading records",
+              "stage": "exporting",
+              "custodian_count": 8,
+              "current_version": 2,
+              "latest_counts": {
+                "items": 9842,
+                "partial_items": 312
+              },
+              "export_progress": 0.64,
+              "last_activity_at": "2026-11-05T09:05:00Z",
+              "owner": {
+                "id": "usr_priya",
+                "display_name": "Priya Natarajan"
+              }
+            },
+            {
+              "id": "mat_travel",
+              "matter_number": "M-2026-0101",
+              "name": "Internal review: travel expenses",
+              "stage": "exported",
+              "custodian_count": 2,
+              "current_version": 2,
+              "latest_counts": {
+                "items": 311,
+                "partial_items": 9
+              },
+              "export_progress": null,
+              "last_activity_at": "2026-10-14T11:30:00Z",
+              "owner": {
+                "id": "usr_sam",
+                "display_name": "Sam Ortiz"
+              }
+            }
+          ],
+          "total": 5
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listPreviewItems": {
+    "method": "GET",
+    "path": "/previews/{previewId}/items",
+    "examples": {
+      "200": {
+        "firstPage": {
+          "items": [
+            {
+              "id": "itm_0001",
+              "title": "RE: Falcon supplier payment schedule",
+              "location": "Alex Wilber",
+              "type": "email",
+              "date": "2024-03-14T10:00:00Z",
+              "label": "Confidential/Finance",
+              "size_bytes": 49152,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0002",
+              "title": "Falcon side letter v3.docx",
+              "location": "Megan Bowen",
+              "type": "document",
+              "date": "2024-05-02T10:00:00Z",
+              "label": "Highly Confidential",
+              "size_bytes": 217088,
+              "encrypted": true
+            },
+            {
+              "id": "itm_0003",
+              "title": "Invoice numbering for Brightline",
+              "location": "Alex Wilber",
+              "type": "teams_chat",
+              "date": "2024-06-21T10:00:00Z",
+              "label": null,
+              "size_bytes": 3072,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0004",
+              "title": "FW: Kickback allegations, hotline report",
+              "location": "Megan Bowen",
+              "type": "email",
+              "date": "2024-09-09T10:00:00Z",
+              "label": "Confidential/Legal",
+              "size_bytes": 62464,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0005",
+              "title": "Q3 supplier invoices reconciliation.xlsx",
+              "location": "sites/Finance",
+              "type": "document",
+              "date": "2024-10-01T10:00:00Z",
+              "label": "Confidential/Finance",
+              "size_bytes": 1258291,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0006",
+              "title": "Project Falcon steering committee notes.pptx",
+              "location": "Megan Bowen",
+              "type": "document",
+              "date": "2025-01-17T10:00:00Z",
+              "label": "General",
+              "size_bytes": 3565158,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0007",
+              "title": "RE: Side letter, please do not forward",
+              "location": "Alex Wilber",
+              "type": "email",
+              "date": "2025-02-03T10:00:00Z",
+              "label": "Highly Confidential",
+              "size_bytes": 22528,
+              "encrypted": true
+            },
+            {
+              "id": "itm_0008",
+              "title": "Falcon payment approvals",
+              "location": "Megan Bowen",
+              "type": "teams_chat",
+              "date": "2025-04-11T10:00:00Z",
+              "label": "General",
+              "size_bytes": 2048,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0009",
+              "title": "Invoice INV-20931 Brightline.pdf",
+              "location": "sites/Finance",
+              "type": "document",
+              "date": "2025-05-28T10:00:00Z",
+              "label": null,
+              "size_bytes": 184320,
+              "encrypted": false
+            },
+            {
+              "id": "itm_0010",
+              "title": "RE: Falcon close-out",
+              "location": "Alex Wilber",
+              "type": "email",
+              "date": "2025-06-24T10:00:00Z",
+              "label": "Confidential/Legal",
+              "size_bytes": 37888,
+              "encrypted": false
+            }
+          ],
+          "total": 655,
+          "page": 1,
+          "page_size": 10
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listVersions": {
+    "method": "GET",
+    "path": "/matters/{matterId}/versions",
+    "examples": {
+      "200": {
+        "falcon": {
+          "items": [
+            {
+              "version": 1,
+              "created_at": "2026-11-03T09:30:00Z",
+              "created_by": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              },
+              "summary": "\"project falcon\", invoic* · all dates",
+              "criteria": {
+                "keywords": [
+                  "project falcon",
+                  "invoic*"
+                ],
+                "keyword_mode": "any",
+                "exclude_keywords": [],
+                "date_from": null,
+                "date_to": null,
+                "kinds": [
+                  "email",
+                  "chats",
+                  "docs"
+                ],
+                "file_extensions": [],
+                "participant_domains": [],
+                "exclude_participant_domains": [],
+                "label_ids": [],
+                "exclude_label_ids": [],
+                "doc_date_property": "lastmodifiedtime",
+                "raw_kql": null
+              },
+              "kql": "(\"project falcon\" OR invoic*) AND (kind:email OR (kind:microsoftteams OR kind:im) OR kind:docs)",
+              "methodology": [
+                "Item types: emails, Teams chats, documents.",
+                "Containing ANY of: \"project falcon\", invoic*."
+              ],
+              "sources_fingerprint": "7d1f0c9a3be2a4e1c0b1d5c3e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0",
+              "purview_search_id": "0f1e2d3c-0000-4000-8000-00000000s001",
+              "counts": {
+                "items": 3912,
+                "size_bytes": 188743680,
+                "partial_items": 160,
+                "partial_size_bytes": 139460608,
+                "mailboxes": 2,
+                "sites": 4
+              },
+              "exported": false
+            },
+            {
+              "version": 2,
+              "created_at": "2026-11-04T15:40:00Z",
+              "created_by": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              },
+              "summary": "added kickback, a date range and a newsletter domain exclusion · exported",
+              "criteria": {
+                "keywords": [
+                  "project falcon",
+                  "invoic*",
+                  "kickback"
+                ],
+                "keyword_mode": "any",
+                "exclude_keywords": [],
+                "date_from": "2024-01-01",
+                "date_to": "2025-06-30",
+                "kinds": [
+                  "email",
+                  "chats",
+                  "docs"
+                ],
+                "file_extensions": [],
+                "participant_domains": [],
+                "exclude_participant_domains": [
+                  "newsletters.contoso.com"
+                ],
+                "label_ids": [],
+                "exclude_label_ids": [],
+                "doc_date_property": "lastmodifiedtime",
+                "raw_kql": null
+              },
+              "kql": "(\"project falcon\" OR invoic* OR kickback) AND (...)",
+              "methodology": [
+                "Item types: emails, Teams chats, documents.",
+                "Date range from 2024-01-01 to 2025-06-30 (inclusive)."
+              ],
+              "sources_fingerprint": "7d1f0c9a3be2a4e1c0b1d5c3e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0",
+              "purview_search_id": "0f1e2d3c-0000-4000-8000-00000000s001",
+              "counts": {
+                "items": 1148,
+                "size_bytes": 55364812,
+                "partial_items": 41,
+                "partial_size_bytes": 37320704,
+                "mailboxes": 2,
+                "sites": 4
+              },
+              "exported": true
+            },
+            {
+              "version": 3,
+              "created_at": "2026-11-05T10:41:12Z",
+              "created_by": {
+                "id": "usr_dana",
+                "display_name": "Dana Whitfield"
+              },
+              "summary": "added \"side letter\", left out \"weekly digest\", the Public label and non-office file types",
+              "criteria": {
+                "keywords": [
+                  "project falcon",
+                  "invoic*",
+                  "kickback",
+                  "side letter"
+                ],
+                "keyword_mode": "any",
+                "exclude_keywords": [
+                  "weekly digest"
+                ],
+                "date_from": "2024-01-01",
+                "date_to": "2025-06-30",
+                "kinds": [
+                  "email",
+                  "chats",
+                  "docs"
+                ],
+                "file_extensions": [
+                  "docx",
+                  "xlsx",
+                  "pptx",
+                  "pdf"
+                ],
+                "participant_domains": [],
+                "exclude_participant_domains": [
+                  "newsletters.contoso.com"
+                ],
+                "label_ids": [],
+                "exclude_label_ids": [
+                  "11111111-1111-4111-8111-111111111111"
+                ],
+                "doc_date_property": "lastmodifiedtime",
+                "raw_kql": null
+              },
+              "kql": "(\"project falcon\" OR invoic* OR kickback OR \"side letter\") AND (...)",
+              "methodology": [
+                "Item types: emails, Teams chats, documents.",
+                "Excluding items containing \"weekly digest\"."
+              ],
+              "sources_fingerprint": "7d1f0c9a3be2a4e1c0b1d5c3e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0",
+              "purview_search_id": "0f1e2d3c-0000-4000-8000-00000000s001",
+              "counts": {
+                "items": 630,
+                "size_bytes": 30408704,
+                "partial_items": 25,
+                "partial_size_bytes": 22754099,
+                "mailboxes": 2,
+                "sites": 4
+              },
+              "exported": false
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "login": {
+    "method": "GET",
+    "path": "/auth/login",
+    "examples": {}
+  },
+  "logout": {
+    "method": "POST",
+    "path": "/auth/logout",
+    "examples": {
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "previewKql": {
+    "method": "POST",
+    "path": "/kql/preview",
+    "examples": {
+      "200": {
+        "falcon": {
+          "kql": "(\"project falcon\" OR invoic* OR kickback OR \"side letter\") AND ((kind:email AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND NOT participants:newsletters.contoso.com) OR ((kind:microsoftteams OR kind:im) AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND NOT participants:newsletters.contoso.com) OR (kind:docs AND (lastmodifiedtime>=2024-01-01 AND lastmodifiedtime<=2025-06-30) AND (fileextension:docx OR fileextension:xlsx OR fileextension:pptx OR fileextension:pdf))) AND NOT InformationProtectionLabelId:11111111-1111-4111-8111-111111111111 AND NOT \"weekly digest\"",
+          "length": 670,
+          "methodology": [
+            "Item types: emails, Teams chats, documents.",
+            "Date range from 2024-01-01 to 2025-06-30 (inclusive): emails/chats by sent or received date; documents by last modified date.",
+            "Containing ANY of these terms: \"project falcon\", invoic*, kickback, \"side letter\".",
+            "Terms ending in * match any word starting with that stem.",
+            "Excluding items containing any of: \"weekly digest\".",
+            "Emails/chats excluded if a participant is at: newsletters.contoso.com.",
+            "Documents limited to file types: docx, xlsx, pptx, pdf.",
+            "Excluding items with these sensitivity labels: Public."
+          ],
+          "warnings": []
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "422": {
+        "leadingWildcard": {
+          "code": "criteria_invalid",
+          "message": "Search term '*voice' starts with a wildcard, which Purview doesn't support. Use a prefix like invoic* instead.",
+          "details": {
+            "field": "keywords",
+            "value": "*voice"
+          }
+        }
+      },
+      "request": {
+        "falcon": {
+          "criteria": {
+            "keywords": [
+              "project falcon",
+              "invoic*",
+              "kickback",
+              "side letter"
+            ],
+            "keyword_mode": "any",
+            "exclude_keywords": [
+              "weekly digest"
+            ],
+            "date_from": "2024-01-01",
+            "date_to": "2025-06-30",
+            "kinds": [
+              "email",
+              "chats",
+              "docs"
+            ],
+            "file_extensions": [
+              "docx",
+              "xlsx",
+              "pptx",
+              "pdf"
+            ],
+            "participant_domains": [],
+            "exclude_participant_domains": [
+              "newsletters.contoso.com"
+            ],
+            "label_ids": [],
+            "exclude_label_ids": [
+              "11111111-1111-4111-8111-111111111111"
+            ],
+            "doc_date_property": "lastmodifiedtime",
+            "raw_kql": null
+          }
+        }
+      }
+    }
+  },
+  "removeCustodian": {
+    "method": "DELETE",
+    "path": "/matters/{matterId}/custodians/{userId}",
+    "examples": {
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "duplicate": {
+          "code": "conflict",
+          "message": "A matter with number M-2026-0142 already exists.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "removeSite": {
+    "method": "DELETE",
+    "path": "/matters/{matterId}/sites/{siteId}",
+    "examples": {
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "saveDraft": {
+    "method": "PUT",
+    "path": "/matters/{matterId}/draft",
+    "examples": {
+      "200": {
+        "falcon": {
+          "criteria": {
+            "keywords": [
+              "project falcon",
+              "invoic*",
+              "kickback",
+              "side letter"
+            ],
+            "keyword_mode": "any",
+            "exclude_keywords": [
+              "weekly digest"
+            ],
+            "date_from": "2024-01-01",
+            "date_to": "2025-06-30",
+            "kinds": [
+              "email",
+              "chats",
+              "docs"
+            ],
+            "file_extensions": [
+              "docx",
+              "xlsx",
+              "pptx",
+              "pdf"
+            ],
+            "participant_domains": [],
+            "exclude_participant_domains": [
+              "newsletters.contoso.com"
+            ],
+            "label_ids": [],
+            "exclude_label_ids": [
+              "11111111-1111-4111-8111-111111111111"
+            ],
+            "doc_date_property": "lastmodifiedtime",
+            "raw_kql": null
+          },
+          "updated_at": "2026-11-05T10:40:51Z",
+          "based_on_version": 3,
+          "changed_since_version": false
+        }
+      },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "request": {
+        "falcon": {
+          "criteria": {
+            "keywords": [
+              "project falcon",
+              "invoic*",
+              "kickback",
+              "side letter"
+            ],
+            "keyword_mode": "any",
+            "exclude_keywords": [
+              "weekly digest"
+            ],
+            "date_from": "2024-01-01",
+            "date_to": "2025-06-30",
+            "kinds": [
+              "email",
+              "chats",
+              "docs"
+            ],
+            "file_extensions": [
+              "docx",
+              "xlsx",
+              "pptx",
+              "pdf"
+            ],
+            "participant_domains": [],
+            "exclude_participant_domains": [
+              "newsletters.contoso.com"
+            ],
+            "label_ids": [],
+            "exclude_label_ids": [
+              "11111111-1111-4111-8111-111111111111"
+            ],
+            "doc_date_property": "lastmodifiedtime",
+            "raw_kql": null
+          }
+        }
+      }
+    }
+  },
+  "searchDirectoryUsers": {
+    "method": "GET",
+    "path": "/directory/users",
+    "examples": {
+      "200": {
+        "finance": {
+          "items": [
+            {
+              "id": "3c1a7f5e-0000-4000-8000-0000000000b2",
+              "display_name": "Megan Bowen",
+              "email": "megan.bowen@contoso.com",
+              "department": "Finance",
+              "initials": "MB"
+            },
+            {
+              "id": "3c1a7f5e-0000-4000-8000-0000000000c3",
+              "display_name": "Hannah Ortega",
+              "email": "hannah.ortega@contoso.com",
+              "department": "Finance",
+              "initials": "HO"
+            }
+          ]
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "429": {
+        "throttled": {
+          "code": "graph_throttled",
+          "message": "Microsoft is limiting requests right now. Try again in a minute.",
+          "details": {
+            "retry_after_seconds": 60
+          }
+        }
+      }
+    }
+  },
+  "setCustodianHold": {
+    "method": "PUT",
+    "path": "/matters/{matterId}/custodians/{userId}/hold",
+    "examples": {
+      "200": {
+        "pending": {
+          "user_id": "3c1a7f5e-0000-4000-8000-0000000000a1",
+          "display_name": "Alex Wilber",
+          "email": "alex.wilber@contoso.com",
+          "department": "Procurement",
+          "initials": "AW",
+          "mailbox": true,
+          "onedrive": true,
+          "sites": [],
+          "hold": {
+            "status": "pending",
+            "since": null
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "403": {
+        "role": {
+          "code": "purview_permission_missing",
+          "message": "You need the eDiscovery Manager role in Purview. Ask your Purview admin to add you to the eDiscovery Manager role group.",
+          "details": {
+            "role": "eDiscovery Manager"
+          }
+        },
+        "licence": {
+          "code": "license_missing",
+          "message": "This tenant has no eDiscovery (Premium) licence (E5 or E5 Compliance), which the Graph eDiscovery APIs need.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "502": {
+        "failed": {
+          "code": "purview_operation_failed",
+          "message": "Purview could not place the hold. Check the case in the Purview portal and try again.",
+          "details": {
+            "purview_status": "failed"
+          }
+        }
+      },
+      "request": {
+        "place": {
+          "on_hold": true
+        }
+      }
+    }
+  },
+  "startEstimate": {
+    "method": "POST",
+    "path": "/matters/{matterId}/estimates",
+    "examples": {
+      "202": {
+        "queued": {
+          "id": "job_01HF3EST",
+          "kind": "estimate",
+          "status": "queued",
+          "progress": 0,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:41:12Z",
+          "updated_at": "2026-11-05T10:41:12Z",
+          "result": null,
+          "error": null
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "403": {
+        "role": {
+          "code": "purview_permission_missing",
+          "message": "You need the eDiscovery Manager role in Purview. Ask your Purview admin to add you to the eDiscovery Manager role group.",
+          "details": {
+            "role": "eDiscovery Manager"
+          }
+        },
+        "licence": {
+          "code": "license_missing",
+          "message": "This tenant has no eDiscovery (Premium) licence (E5 or E5 Compliance), which the Graph eDiscovery APIs need.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "running": {
+          "code": "conflict",
+          "message": "A preview is already running for this matter.",
+          "details": {
+            "job_id": "job_01HF3PRV"
+          }
+        }
+      },
+      "422": {
+        "leadingWildcard": {
+          "code": "criteria_invalid",
+          "message": "Search term '*voice' starts with a wildcard, which Purview doesn't support. Use a prefix like invoic* instead.",
+          "details": {
+            "field": "keywords",
+            "value": "*voice"
+          }
+        }
+      }
+    }
+  },
+  "startExport": {
+    "method": "POST",
+    "path": "/matters/{matterId}/exports",
+    "examples": {
+      "202": {
+        "queued": {
+          "id": "job_01HF3EXP",
+          "kind": "export",
+          "status": "queued",
+          "progress": 0,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:58:40Z",
+          "updated_at": "2026-11-05T10:58:40Z",
+          "result": null,
+          "error": null
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "notPreviewed": {
+          "code": "export_not_previewed",
+          "message": "This exact query and set of sources hasn't been previewed. Preview it first, so the export matches what was reviewed.",
+          "details": {
+            "version": 4,
+            "previewed_version": 3
+          }
+        },
+        "countsChanged": {
+          "code": "export_counts_changed",
+          "message": "Counts changed since the preview at 10:42 (new mail may have arrived). Preview again, or accept the changes to export anyway; that choice is logged.",
+          "details": {
+            "changes": {
+              "items": {
+                "preview": 630,
+                "now": 647
+              },
+              "partial_items": {
+                "preview": 25,
+                "now": 25
+              }
+            }
+          }
+        }
+      },
+      "422": {
+        "mismatch": {
+          "code": "confirmation_mismatch",
+          "message": "Type the matter number M-2026-0142 exactly to confirm the export.",
+          "details": {
+            "expected": "M-2026-0142"
+          }
+        }
+      },
+      "request": {
+        "falcon": {
+          "confirm_matter_number": "M-2026-0142",
+          "accept_changes": false,
+          "options": {
+            "include_partially_indexed": true,
+            "partially_indexed_scope": "responsiveLocations",
+            "format": "pst",
+            "include_cloud_attachments": false,
+            "teams_transcripts": true
+          }
+        }
+      }
+    }
+  },
+  "startExportDownload": {
+    "method": "POST",
+    "path": "/exports/{exportId}/download",
+    "examples": {
+      "202": {
+        "queued": {
+          "id": "job_01HF3DL1",
+          "kind": "download",
+          "status": "queued",
+          "progress": 0,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T12:10:00Z",
+          "updated_at": "2026-11-05T12:10:00Z",
+          "result": null,
+          "error": null
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "403": {
+        "role": {
+          "code": "purview_permission_missing",
+          "message": "You need the eDiscovery Manager role in Purview. Ask your Purview admin to add you to the eDiscovery Manager role group.",
+          "details": {
+            "role": "eDiscovery Manager"
+          }
+        },
+        "licence": {
+          "code": "license_missing",
+          "message": "This tenant has no eDiscovery (Premium) licence (E5 or E5 Compliance), which the Graph eDiscovery APIs need.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "duplicate": {
+          "code": "conflict",
+          "message": "A matter with number M-2026-0142 already exists.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "startPreview": {
+    "method": "POST",
+    "path": "/matters/{matterId}/previews",
+    "examples": {
+      "202": {
+        "running": {
+          "id": "job_01HF3PRV",
+          "kind": "preview",
+          "status": "running",
+          "progress": 0.42,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:41:30Z",
+          "updated_at": "2026-11-05T10:42:05Z",
+          "result": null,
+          "error": null
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "running": {
+          "code": "conflict",
+          "message": "A preview is already running for this matter.",
+          "details": {
+            "job_id": "job_01HF3PRV"
+          }
+        }
+      }
+    }
+  },
+  "startReviewSetHandoff": {
+    "method": "POST",
+    "path": "/exports/{exportId}/review-set",
+    "examples": {
+      "202": {
+        "queued": {
+          "id": "job_01HF3RS1",
+          "kind": "review_set",
+          "status": "queued",
+          "progress": 0,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T12:12:00Z",
+          "updated_at": "2026-11-05T12:12:00Z",
+          "result": null,
+          "error": null
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "403": {
+        "role": {
+          "code": "purview_permission_missing",
+          "message": "You need the eDiscovery Manager role in Purview. Ask your Purview admin to add you to the eDiscovery Manager role group.",
+          "details": {
+            "role": "eDiscovery Manager"
+          }
+        },
+        "licence": {
+          "code": "license_missing",
+          "message": "This tenant has no eDiscovery (Premium) licence (E5 or E5 Compliance), which the Graph eDiscovery APIs need.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "duplicate": {
+          "code": "conflict",
+          "message": "A matter with number M-2026-0142 already exists.",
+          "details": {}
+        }
+      },
+      "request": {
+        "relativity": {
+          "review_set_name": "M-2026-0142 Relativity v3"
+        }
+      }
+    }
+  },
+  "startTermReport": {
+    "method": "POST",
+    "path": "/matters/{matterId}/term-reports",
+    "examples": {
+      "202": {
+        "queued": {
+          "id": "job_01HF3TRM",
+          "kind": "term_report",
+          "status": "queued",
+          "progress": 0,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:49:00Z",
+          "updated_at": "2026-11-05T10:49:00Z",
+          "result": null,
+          "error": null
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "409": {
+        "running": {
+          "code": "conflict",
+          "message": "A preview is already running for this matter.",
+          "details": {
+            "job_id": "job_01HF3PRV"
+          }
+        }
+      },
+      "422": {
+        "leadingWildcard": {
+          "code": "criteria_invalid",
+          "message": "Search term '*voice' starts with a wildcard, which Purview doesn't support. Use a prefix like invoic* instead.",
+          "details": {
+            "field": "keywords",
+            "value": "*voice"
+          }
+        }
+      }
+    }
+  },
+  "updateMatter": {
+    "method": "PATCH",
+    "path": "/matters/{matterId}",
+    "examples": {
+      "200": {
+        "falcon": {
+          "id": "mat_falcon",
+          "matter_number": "M-2026-0142",
+          "name": "Project Falcon investigation",
+          "type": "investigation",
+          "description": "Internal investigation into supplier payments linked to Project Falcon.",
+          "stage": "previewed",
+          "purview_case_id": "9b0e4c1d-7a2f-4e55-9c11-2f6f1d0a0142",
+          "created_at": "2026-11-03T09:12:00Z",
+          "created_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "custodians": [
+            {
+              "user_id": "3c1a7f5e-0000-4000-8000-0000000000a1",
+              "display_name": "Alex Wilber",
+              "email": "alex.wilber@contoso.com",
+              "department": "Procurement",
+              "initials": "AW",
+              "mailbox": true,
+              "onedrive": true,
+              "sites": [],
+              "hold": {
+                "status": "off",
+                "since": null
+              }
+            },
+            {
+              "user_id": "3c1a7f5e-0000-4000-8000-0000000000b2",
+              "display_name": "Megan Bowen",
+              "email": "megan.bowen@contoso.com",
+              "department": "Finance",
+              "initials": "MB",
+              "mailbox": true,
+              "onedrive": true,
+              "sites": [
+                "https://contoso.sharepoint.com/sites/ProjectFalcon"
+              ],
+              "hold": {
+                "status": "on",
+                "since": "2026-11-03T09:20:00Z"
+              }
+            }
+          ],
+          "sites": [
+            {
+              "id": "site_finance",
+              "url": "https://contoso.sharepoint.com/sites/Finance"
+            }
+          ],
+          "current_version": 3,
+          "previewed_version": 3,
+          "last_previewed_at": "2026-11-05T10:42:00Z",
+          "draft_changed": false
+        }
+      },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "request": {
+        "rename": {
+          "description": "Internal investigation into supplier payments (Project Falcon)."
+        }
+      }
+    }
+  },
+  "upsertCustodian": {
+    "method": "PUT",
+    "path": "/matters/{matterId}/custodians/{userId}",
+    "examples": {
+      "200": {
+        "megan": {
+          "user_id": "3c1a7f5e-0000-4000-8000-0000000000b2",
+          "display_name": "Megan Bowen",
+          "email": "megan.bowen@contoso.com",
+          "department": "Finance",
+          "initials": "MB",
+          "mailbox": true,
+          "onedrive": true,
+          "sites": [
+            "https://contoso.sharepoint.com/sites/ProjectFalcon"
+          ],
+          "hold": {
+            "status": "on",
+            "since": "2026-11-03T09:20:00Z"
+          }
+        }
+      },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      },
+      "request": {
+        "megan": {
+          "mailbox": true,
+          "onedrive": true,
+          "sites": [
+            "https://contoso.sharepoint.com/sites/ProjectFalcon"
+          ]
+        }
+      }
+    }
+  },
+  "verifyLog": {
+    "method": "POST",
+    "path": "/matters/{matterId}/log/verify",
+    "examples": {
+      "200": {
+        "intact": {
+          "ok": true,
+          "entries": 8,
+          "first_bad_seq": null,
+          "message": "8 entries verified, chain intact",
+          "verified_at": "2026-11-05T11:02:00Z"
+        },
+        "broken": {
+          "ok": false,
+          "entries": 8,
+          "first_bad_seq": 5,
+          "message": "Entry 5: contents were modified after it was written",
+          "verified_at": "2026-11-05T11:02:00Z"
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  }
+}

@@ -1,11 +1,50 @@
-# culltool: cull in Purview, review in Everlaw
+# SearchTrail: evidence of how you searched
 
-A starter culling tool for eDiscovery. A legal team narrows Microsoft 365 data down to the
-documents that matter, previews the result, and hands exactly that set to Everlaw for review.
+SearchTrail turns search criteria into a precise Microsoft Purview eDiscovery search, previews
+what it will collect, keeps a tamper-evident record of how the search was done, and exports the
+result to a review tool (Everlaw, Relativity and others) or as a download. It was previously
+called `culltool`.
+
+The repository holds the V1 web app being built (see [`docs/V1_PLAN.md`](docs/V1_PLAN.md)) and the
+command-line tool it grew from:
+
+| Path | What |
+|---|---|
+| `backend/searchtrail/` | Core library and CLI: KQL builder, Graph eDiscovery calls, report parser, hash-chained log, offline dry-run |
+| `backend/app/` | FastAPI app, database, jobs worker, `PurviewGateway` |
+| `frontend/` | React web app (Vite, TypeScript) |
+| `contracts/openapi.yaml` | The API contract, source of truth for frontend and backend |
+| `deploy/` | Dockerfiles and `docker-compose.yml` |
+| `docs/` | V1 plan, ADRs, agent briefs, design source |
+
+## Run the web app locally
+
+```bash
+# Backend: Postgres, migrations, API (:8000) and worker in Docker, dry run on (no tenant needed)
+docker compose -f deploy/docker-compose.yml up --build
+curl localhost:8000/api/v1/health
+
+# Backend tests and lint
+cd backend && python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+pytest && ruff check .
+
+# Frontend on :5173 with MSW mocks (the Matters screen shows sample data); no backend needed
+cd frontend && npm ci && npm run dev
+npm run dev:api        # mocks off, /api proxied to the backend on :8000
+npm run lint && npm run typecheck && npm test
+
+# After changing contracts/openapi.yaml (contract PRs only): regenerate the derived code
+scripts/codegen.sh
+```
+
+Start with [`docs/V1_PLAN.md`](docs/V1_PLAN.md), the [ADRs](docs/adr/README.md) and the
+[agent briefs](docs/agents/README.md).
+
+## The command-line tool
 
 ```
- culltool                              Microsoft Purview eDiscovery             Everlaw
- ────────                              ────────────────────────────             ───────
+ searchtrail                           Microsoft Purview eDiscovery             Review tool
+ ───────────                           ────────────────────────────             ───────────
  matter.json (custodians, filters)
    │ kql      show query + methodology
    │ preview  ───────────────────────▶ case, custodians, search,
@@ -13,7 +52,7 @@ documents that matter, previews the result, and hands exactly that set to Everla
    │ terms    ───────────────────────▶ hits per search term
    │ export   ───────────────────────▶ export package ──── Purview Cloud ───▶ review
    ▼                                                       Connector
- hash-chained culling log
+ hash-chained search log
 ```
 
 ## Built-in defensibility rules
@@ -34,18 +73,19 @@ documents that matter, previews the result, and hands exactly that set to Everla
 ## Try it offline (no tenant needed)
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
+cd backend && python3.12 -m venv .venv && . .venv/bin/activate
 pip install -e ".[test]"
 pytest
-culltool --dry-run kql examples/matter.json
-culltool --dry-run preview examples/matter.json
-culltool --dry-run terms examples/matter.json
-culltool --dry-run export examples/matter.json --confirm --wait
-culltool --dry-run verify-log examples/matter.json
+cd ..   # the examples live at the repo root
+searchtrail --dry-run kql examples/matter.json
+searchtrail --dry-run preview examples/matter.json
+searchtrail --dry-run terms examples/matter.json
+searchtrail --dry-run export examples/matter.json --confirm --wait
+searchtrail --dry-run verify-log examples/matter.json
 ```
 
 `--dry-run` prints every Graph call the tool would make and simulates the responses.
-Dry runs keep their own state and log under `.culltool/dry-run/`, so they never mix with real records.
+Dry runs keep their own state and log under `.searchtrail/dry-run/`, so they never mix with real records.
 
 ## Connect to a real tenant
 
@@ -64,7 +104,7 @@ Dry runs keep their own state and log under `.culltool/dry-run/`, so they never 
    - Community testing found that exports need `eDiscovery.ReadWrite.All`, even where the docs say read-only is enough.
 3. **Purview roles.** The people running the tool need the **eDiscovery Manager** role in Purview.
 4. Copy `.env.example` to `.env` and fill it in.
-5. Run `culltool labels` to test the connection, then `culltool kql your-matter.json`.
+5. Run `searchtrail labels` to test the connection, then `searchtrail kql your-matter.json`.
 
 ## Commands
 
@@ -111,7 +151,7 @@ checked without a tenant:
   - The date properties `sent`, `received` and `lastmodifiedtime`
 
   Compare the counts with the same search built in the Purview portal. The portal's condition builder writes different syntax (`(c:c)` blocks, `MipSensitiveLabel`).
-- **Report column names.** The first real `preview` prints any columns it didn't recognise. Add them to `COLUMN_CANDIDATES` in `culltool/report.py`.
+- **Report column names.** The first real `preview` prints any columns it didn't recognise. Add them to `COLUMN_CANDIDATES` in `backend/searchtrail/report.py`.
 - **Downloads.** Check the download app ID and whether the `X-AllowWithAADToken` header is needed (see `graph.py`).
 - **exportReport.** Check that it accepts `exportLocation` when partially indexed items are included.
 - **Everlaw.** Check which export format and `additionalOptions` Everlaw's Purview connector expects. Everlaw wants exports from a *search* (this tool does that), not from a review set.
@@ -133,7 +173,7 @@ checked without a tenant:
 ## Code map
 
 ```
-culltool/
+backend/searchtrail/
   query.py       filters -> KQL, validation, plain-English methodology
   ediscovery.py  the Graph eDiscovery calls, one method per step
   workflow.py    prepare / preview / terms / export, with the defensibility checks
