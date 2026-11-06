@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from searchtrail.audit import AuditLog
-from searchtrail.dryrun import DryRunTransport
-from searchtrail.graph import GraphClient
+from searchtrail.gateway import PurviewGateway
+from searchtrail.gateway_dryrun import DryRunPurviewGateway
 from searchtrail.labels import LabelIndex
 from searchtrail.matter import MatterError, load_matter
 from searchtrail.workflow import CullWorkflow, ExportBlocked
@@ -17,10 +17,12 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "matter.json"
 
 @pytest.fixture
 def setup(tmp_path):
-    transport = DryRunTransport(verbose=False)
-    graph = GraphClient("https://graph.microsoft.com/v1.0", transport=transport)
-    wf = CullWorkflow(graph, LabelIndex.fetch(graph), tmp_path / "state", "tester@contoso.com",
-                      download_token=lambda: "t", log=lambda _msg: None)
+    # The workflow only sees the PurviewGateway interface; the dry-run transport sits behind it.
+    gateway = DryRunPurviewGateway(log=lambda _msg: None)
+    assert isinstance(gateway, PurviewGateway)
+    transport = gateway.transport
+    wf = CullWorkflow(gateway, LabelIndex.from_graph_items(gateway.list_labels()), tmp_path / "state",
+                      "tester@contoso.com", log=lambda _msg: None)
     matter_path = tmp_path / "matter.json"
     shutil.copy(EXAMPLE, matter_path)
     return wf, transport, matter_path

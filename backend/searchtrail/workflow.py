@@ -10,21 +10,19 @@ Defensibility rules built in:
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .audit import AuditLog, canonical, sha256_text
-from .ediscovery import EDiscovery
-from .graph import GraphClient, Log
+from .gateway import COUNT_FIELDS, PurviewGateway, counts_from_operation
+from .graph import Log
 from .labels import LabelIndex
 from .matter import Matter
 from .query import CullCriteria, build_kql, describe, term_queries, validate
 from .report import load_report, summarize, write_preview_csv
 
-COUNT_FIELDS = ("indexedItemCount", "indexedItemsSize", "unindexedItemCount", "unindexedItemsSize",
-                "mailboxCount", "siteCount")
+__all__ = ["COUNT_FIELDS", "CullWorkflow", "ExportBlocked", "Prepared", "sources_signature"]
 DRIFT_FIELDS = ("indexedItemCount", "unindexedItemCount")
 
 
@@ -48,8 +46,7 @@ def _stamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _counts(op: dict) -> dict:
-    return {k: op.get(k) for k in COUNT_FIELDS}
+_counts = counts_from_operation
 
 
 def sources_signature(matter: Matter) -> str:
@@ -61,15 +58,23 @@ def sources_signature(matter: Matter) -> str:
 
 
 class CullWorkflow:
-    def __init__(self, graph: GraphClient, labels: LabelIndex, state_root: Path, actor: str,
-                 download_token: Callable[[], str], log: Log = print):
-        self.graph = graph
-        self.ed = EDiscovery(graph, log)
+    def __init__(self, gateway: PurviewGateway, labels: LabelIndex, state_root: Path, actor: str, log: Log = print):
+        self.gw = gateway
         self.labels = labels
         self.state_root = Path(state_root)
         self.actor = actor
-        self.download_token = download_token
         self.log = log
+
+    def _estimate(self, case_id: str, search_id: str) -> dict:
+        return self.gw.wait_for_operation(self.gw.start_estimate(case_id, search_id), label="estimate")
+
+    def _download(self, url: str, dest: Path) -> Path:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        partial = dest.with_name(dest.name + ".part")
+        with open(partial, "wb") as f:
+            self.gw.download_file(url, f)
+        partial.replace(dest)
+        return dest
 
     # -- local state ---------------------------------------------------------------------------
     def matter_dir(self, matter: Matter) -> Path:
@@ -97,7 +102,7 @@ class CullWorkflow:
     def prepare(self, matter: Matter) -> Prepared:
         """Make sure the case, custodians, data sources and search exist and match the matter file."""
         state = self._load_state(matter)
-        case = self.ed.ensure_case(matter.case_name, matter.description, matter.matter_id, known_id=state.get("case_id"))
+        case = self.gw.ensure_case(matter.case_name, matter.description, matter.matter_id, known_id=state.get("case_id"))
         case_id = case["id"]
         if state.get("case_id") != case_id:
             state = {"case_id": case_id}
@@ -107,30 +112,30 @@ class CullWorkflow:
         for cust in matter.custodians:
             entry = custodians.get(cust.email.lower())
             if not entry:
-                c = self.ed.ensure_custodian(case_id, cust.email)
-                us = self.ed.ensure_user_source(case_id, c["id"], cust.email)
+                c = self.gw.ensure_custodian(case_id, cust.email)
+                us = self.gw.ensure_user_source(case_id, c["id"], cust.email)
                 entry = custodians[cust.email.lower()] = {"custodian_id": c["id"], "user_source_id": us["id"], "sites": {}}
-            source_urls.append(self.ed.source_url(case_id, entry["custodian_id"], "userSources", entry["user_source_id"]))
+            source_urls.append(self.gw.source_url(case_id, entry["custodian_id"], "userSources", entry["user_source_id"]))
             for site in cust.sites:
                 if site not in entry["sites"]:
-                    entry["sites"][site] = self.ed.add_site_source(case_id, entry["custodian_id"], site)["id"]
-                source_urls.append(self.ed.source_url(case_id, entry["custodian_id"], "siteSources", entry["sites"][site]))
+                    entry["sites"][site] = self.gw.add_site_source(case_id, entry["custodian_id"], site)["id"]
+                source_urls.append(self.gw.source_url(case_id, entry["custodian_id"], "siteSources", entry["sites"][site]))
 
         kql, criteria, warnings, _ = self.plan(matter)
         fingerprint = sha256_text(canonical({"sources": sorted(source_urls), "sites": sorted(matter.additional_sites)}))
         search = state.get("search")
         if search and search.get("fingerprint") == fingerprint:
             if search["kql"] != kql:
-                self.ed.update_query(case_id, search["id"], kql)
+                self.gw.update_query(case_id, search["id"], kql)
                 search["kql"] = kql
         else:
             # Different sources means a new search; earlier searches stay in the case as a record.
             history = state.setdefault("search_history", [])
             name = f"{matter.matter_id} cull v{len(history) + 1}"
-            created = self.ed.create_search(case_id, name, kql, source_urls,
+            created = self.gw.create_search(case_id, name, kql, source_urls,
                                             description="Created by SearchTrail; see the matter's culling log")
             for site in matter.additional_sites:
-                self.ed.add_additional_site(case_id, created["id"], site)
+                self.gw.add_additional_site(case_id, created["id"], site)
             search = state["search"] = {"id": created["id"], "name": name, "fingerprint": fingerprint, "kql": kql}
             history.append({"id": created["id"], "name": name, "created": _stamp()})
             state.pop("term_search", None)
@@ -140,19 +145,18 @@ class CullWorkflow:
     def preview(self, matter: Matter, *, with_report: bool = True) -> dict:
         p = self.prepare(matter)
         self.log(f"Estimating '{p.search_name}'...")
-        counts = _counts(self.ed.estimate(p.case_id, p.search_id))
+        counts = _counts(self._estimate(p.case_id, p.search_id))
         result: dict = {"case_id": p.case_id, "search_id": p.search_id, "search_name": p.search_name,
                         "kql": p.kql, "warnings": p.warnings, "counts": counts}
         if with_report:
             stamp = _stamp()
             self.log("Building the item report (metadata only)...")
-            op = self.ed.export_report(p.case_id, p.search_id, f"{matter.matter_id} preview {stamp}",
-                                       include_partially_indexed=matter.export.include_partially_indexed,
-                                       partially_indexed_scope=matter.export.partially_indexed_scope)
+            op_url = self.gw.start_report(p.case_id, p.search_id, f"{matter.matter_id} preview {stamp}",
+                                          include_partially_indexed=matter.export.include_partially_indexed,
+                                          partially_indexed_scope=matter.export.partially_indexed_scope)
+            op = self.gw.wait_for_operation(op_url, label="report")
             out_dir = self.matter_dir(matter) / "previews" / stamp
-            token = self.download_token()
-            files = [self.graph.download(f["downloadUrl"], out_dir / f["fileName"], token)
-                     for f in op.get("exportFileMetadata") or []]
+            files = [self._download(f["downloadUrl"], out_dir / f["fileName"]) for f in op.get("exportFileMetadata") or []]
             report = load_report(files)
             result.update(
                 report_summary=summarize(report, self.labels),
@@ -176,10 +180,10 @@ class CullWorkflow:
         state = self._load_state(matter)
         term_search = state.get("term_search")
         if not term_search:
-            created = self.ed.create_search(p.case_id, f"{matter.matter_id} term report", p.kql, p.source_urls,
+            created = self.gw.create_search(p.case_id, f"{matter.matter_id} term report", p.kql, p.source_urls,
                                             description="Per-term hit counts (SearchTrail)")
             for site in matter.additional_sites:
-                self.ed.add_additional_site(p.case_id, created["id"], site)
+                self.gw.add_additional_site(p.case_id, created["id"], site)
             term_search = state["term_search"] = {"id": created["id"]}
             self._save_state(matter, state)
 
@@ -187,8 +191,8 @@ class CullWorkflow:
         queries = term_queries(p.criteria) + [("(all terms combined)", p.kql)]
         for term, kql in queries:
             self.log(f"Counting: {term}")
-            self.ed.update_query(p.case_id, term_search["id"], kql)
-            est = self.ed.estimate(p.case_id, term_search["id"])
+            self.gw.update_query(p.case_id, term_search["id"], kql)
+            est = self._estimate(p.case_id, term_search["id"])
             rows.append({"term": term, "items": est.get("indexedItemCount"), "size_bytes": est.get("indexedItemsSize")})
         self.audit(matter).append(action="term_report", actor=self.actor, matter_id=matter.matter_id,
                                   case_id=p.case_id, kql_sha256=sha256_text(p.kql), rows=rows)
@@ -209,7 +213,7 @@ class CullWorkflow:
             raise not_previewed
 
         self.log("Re-checking counts against the preview...")
-        now = _counts(self.ed.estimate(p.case_id, p.search_id))
+        now = _counts(self._estimate(p.case_id, p.search_id))
         before = last.get("counts") or {}
         changes = {k: {"preview": before.get(k), "now": now.get(k)} for k in DRIFT_FIELDS if before.get(k) != now.get(k)}
         if changes and not accept_changes:
@@ -221,7 +225,7 @@ class CullWorkflow:
             return {"confirmed": False, "export_name": name, "counts": now, "changes": changes}
 
         settings = matter.export
-        op_url = self.ed.start_export(
+        op_url = self.gw.start_export(
             p.case_id, p.search_id, name, f"For Everlaw review. Previewed {last.get('ts')} by {last.get('actor')}.",
             include_partially_indexed=settings.include_partially_indexed,
             partially_indexed_scope=settings.partially_indexed_scope,
@@ -234,7 +238,7 @@ class CullWorkflow:
         result = {"confirmed": True, "export_name": name, "operation_url": op_url, "counts": now,
                   "case_name": p.case_name}
         if wait:
-            op = self.graph.wait_for_operation(op_url, label="export")
+            op = self.gw.wait_for_operation(op_url, label="export")
             files = [f.get("fileName") for f in op.get("exportFileMetadata") or []]
             log.append(action="export_finished", actor=self.actor, matter_id=matter.matter_id,
                        export_name=name, status=op.get("status"), files=files)

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .audit import AuditLog
 from .config import Settings
+from .gateway import GatewayNotImplemented, PurviewGateway
 from .graph import GraphClient, GraphError, OperationFailed
 from .labels import LabelError, LabelIndex
 from .matter import MatterError, load_matter
@@ -39,34 +40,35 @@ def _num(n) -> str:
     return f"{n:,}" if isinstance(n, int) else str(n)
 
 
-def _context(args):
+def _context(args) -> tuple[PurviewGateway, str, Path]:
+    """The Purview gateway, who is acting, and where state and the log are kept."""
     settings = Settings.from_env()
     if args.dry_run:
-        from .dryrun import DryRunTransport
+        from .gateway_dryrun import DryRunPurviewGateway
 
-        # Dry runs keep their own state and log, so they never mix with real culling records.
+        # Dry runs keep their own state and log, so they never mix with real search records.
         root = settings.state_dir / "dry-run"
-        transport = DryRunTransport(verbose=not args.quiet, state_file=root / "simulated-tenant.json")
-        graph = GraphClient(settings.graph_base, transport=transport)
-        actor = os.environ.get("SEARCHTRAIL_ACTOR", "dry-run-user")
-        return graph, (lambda: "dry-run-token"), actor, root
+        gateway = DryRunPurviewGateway(verbose=not args.quiet, state_file=root / "simulated-tenant.json",
+                                       graph_base=settings.graph_base)
+        return gateway, os.environ.get("SEARCHTRAIL_ACTOR", "dry-run-user"), root
     from .auth import TokenProvider
+    from .gateway_graph import GraphPurviewGateway
 
     tokens = TokenProvider(settings)
     graph = GraphClient(settings.graph_base, tokens.graph_token)
     tokens.graph_token()  # sign in up front, so the log knows who is acting
-    return graph, tokens.download_token, tokens.actor, settings.state_dir
+    return GraphPurviewGateway(graph, tokens.download_token), tokens.actor, settings.state_dir
 
 
 def _workflow(args) -> CullWorkflow:
-    graph, download_token, actor, state_root = _context(args)
-    labels = LabelIndex.fetch(graph)
-    return CullWorkflow(graph, labels, state_root, actor, download_token)
+    gateway, actor, state_root = _context(args)
+    labels = LabelIndex.from_graph_items(gateway.list_labels())
+    return CullWorkflow(gateway, labels, state_root, actor)
 
 
 def cmd_labels(args) -> None:
-    graph, *_ = _context(args)
-    for label in sorted(LabelIndex.fetch(graph).by_id.values(), key=lambda l: l.path.lower()):
+    gateway, *_ = _context(args)
+    for label in sorted(LabelIndex.from_graph_items(gateway.list_labels()).by_id.values(), key=lambda l: l.path.lower()):
         print(f"{label.id}  {label.path}")
 
 
@@ -139,8 +141,8 @@ def cmd_export(args) -> None:
 
 
 def cmd_status(args) -> None:
-    graph, *_ = _context(args)
-    op = graph.get(args.operation_url)
+    gateway, *_ = _context(args)
+    op = gateway.get_operation(args.operation_url)
     print(f"Status: {op.get('status')}  ({op.get('percentProgress')}%)")
     for f in op.get("exportFileMetadata") or []:
         print(f"  {f.get('fileName')}  {human_size(f.get('size'))}")
@@ -191,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         args.fn(args)
-    except (CriteriaError, MatterError, LabelError, ExportBlocked, ValueError) as exc:
+    except (CriteriaError, MatterError, LabelError, ExportBlocked, GatewayNotImplemented, ValueError) as exc:
         sys.stdout.flush()
         print(f"\nStopped: {exc}", file=sys.stderr)
         return 2

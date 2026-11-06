@@ -35,6 +35,23 @@ APPLIED_LABEL_IDS = [  # parent labels with sublabels can't be applied to files,
     "66666666-6666-4666-8666-666666666666", "",
 ]
 _ACTION_RE = re.compile(r"/searches/([^/?]+)/(estimateStatistics|exportReport|exportResult)$")
+# Actions with no counts or files: holds and adding a search to a review set.
+_PLAIN_ACTION_RE = re.compile(r"/(custodians/[^/?]+/(?:applyHold|removeHold)|reviewSets/[^/?]+/addToReviewSet)$")
+# People in the simulated directory (the sample data on the Define screen).
+SAMPLE_DIRECTORY = [
+    {"id": "3c1a7f5e-0000-4000-8000-0000000000a1", "displayName": "Alex Wilber", "mail": "alex.wilber@contoso.com",
+     "department": "Procurement"},
+    {"id": "3c1a7f5e-0000-4000-8000-0000000000b2", "displayName": "Megan Bowen", "mail": "megan.bowen@contoso.com",
+     "department": "Finance"},
+    {"id": "3c1a7f5e-0000-4000-8000-0000000000c3", "displayName": "Hannah Ortega", "mail": "hannah.ortega@contoso.com",
+     "department": "Finance"},
+    {"id": "3c1a7f5e-0000-4000-8000-0000000000d4", "displayName": "Ravi Menon", "mail": "ravi.menon@contoso.com",
+     "department": "Procurement"},
+    {"id": "3c1a7f5e-0000-4000-8000-0000000000e5", "displayName": "Tomas Becker", "mail": "tomas.becker@contoso.com",
+     "department": "Sales"},
+    {"id": "3c1a7f5e-0000-4000-8000-0000000000f6", "displayName": "Grace Okafor", "mail": "grace.okafor@contoso.com",
+     "department": "Legal"},
+]
 
 
 def _h(text: str) -> int:
@@ -71,6 +88,7 @@ class DryRunTransport:
         self.count_offset = 0  # tests bump this to simulate data changing between preview and export
         self._ops: dict[str, dict] = {}
         self._downloads: dict[str, dict] = {}
+        self._review_sets: dict[str, dict] = {}
         # Remembered between CLI runs (when state_file is set), like a real tenant would.
         self.state_file = Path(state_file) if state_file else None
         saved = json.loads(self.state_file.read_text()) if self.state_file and self.state_file.exists() else {}
@@ -102,6 +120,20 @@ class DryRunTransport:
 
         if method == "GET" and path.endswith("/sensitivityLabels"):
             return ok({"value": SAMPLE_LABELS})
+        if method == "GET" and path == "/users":
+            return ok({"value": SAMPLE_DIRECTORY})
+        if method == "GET" and path.endswith("/reviewSets"):
+            return ok({"value": list(self._review_sets.values())})
+        if method == "POST" and path.endswith("/reviewSets"):
+            rs = {"id": self._new_id("reviewset"), "displayName": body["displayName"]}
+            self._review_sets[rs["id"]] = rs
+            return ok(rs, 201)
+        if method == "POST" and (m := _PLAIN_ACTION_RE.search(path)):
+            op_id = self._new_id("op")
+            self._ops[op_id] = {"action": m.group(1).rsplit("/", 1)[-1], "search": "", "body": body}
+            case_url = re.match(r"(.*/ediscoveryCases/[^/]+)", url.split("?", 1)[0]).group(1)
+            location = f"{case_url}/operations/{op_id}"
+            return ok(status=202, headers={"Location": location})
         if method == "GET" and re.search(r"/(ediscoveryCases|custodians|userSources)$", path):
             return ok({"value": []})
         if method == "GET" and re.search(r"/ediscoveryCases/[^/]+$", path):
@@ -138,6 +170,8 @@ class DryRunTransport:
         op = self._ops.get(op_id, {"action": "estimateStatistics", "search": ""})
         count = fake_count(self._queries.get(op["search"], "")) + self.count_offset
         result: dict[str, Any] = {"id": op_id, "status": "succeeded", "percentProgress": 100}
+        if op["action"] in ("applyHold", "removeHold", "addToReviewSet"):
+            return result
         if op["action"] == "estimateStatistics":
             result.update(indexedItemCount=count, indexedItemsSize=count * 48_213,
                           unindexedItemCount=count // 25, unindexedItemsSize=(count // 25) * 911_000,
