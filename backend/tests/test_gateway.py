@@ -110,3 +110,15 @@ def test_dry_run_gateway_accepts_an_existing_transport():
     gw = DryRunPurviewGateway(transport, log=lambda _msg: None)
     gw.list_labels()
     assert gw.transport is transport and transport.calls
+
+
+def test_live_gateway_never_sends_tokens_to_other_hosts(live):
+    from searchtrail.gateway_graph import UntrustedUrl
+
+    for url in ("https://evil.example.com/operations/1", "http://graph.microsoft.com/v1.0/x"):
+        with pytest.raises(UntrustedUrl):
+            live.get_operation(url)
+        with pytest.raises(UntrustedUrl):
+            live.wait_for_operation(url)
+    with pytest.raises(UntrustedUrl):
+        live.download_file("http://example.com/export.zip", io.BytesIO())

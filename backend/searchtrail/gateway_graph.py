@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import BinaryIO
+from urllib.parse import urlsplit
 
 from .ediscovery import EDiscovery, export_criteria
 from .gateway import GatewayNotImplemented
@@ -14,6 +15,10 @@ from .graph import GraphClient, GraphError, Log
 from .labels import LABELS_PATH
 
 DOWNLOAD_CHUNK = 8 * 1024 * 1024
+
+
+class UntrustedUrl(ValueError):
+    """A URL that would receive the user's token is not one Microsoft gave us."""
 
 
 class GraphPurviewGateway:
@@ -83,16 +88,28 @@ class GraphPurviewGateway:
             "POST .../reviewSets/{reviewSet}/addToReviewSet with search@odata.bind",
         )
 
+    def _check_operation_url(self, url: str) -> str:
+        """Operation URLs are stored (jobs table) and later sent the Graph token, so only accept
+        URLs on the Graph host this gateway talks to."""
+        want, got = urlsplit(self.graph.base_url), urlsplit(url)
+        if (got.scheme, got.netloc) != (want.scheme, want.netloc):
+            raise UntrustedUrl(f"Refusing to send the Graph token to {got.scheme}://{got.netloc}: "
+                               f"operation URLs must be on {want.scheme}://{want.netloc}")
+        return url
+
     def get_operation(self, url: str) -> dict:
-        return self.graph.get(url)
+        return self.graph.get(self._check_operation_url(url))
 
     def wait_for_operation(self, url: str, *, label: str = "operation") -> dict:
-        return self.graph.wait_for_operation(url, label=label)
+        return self.graph.wait_for_operation(self._check_operation_url(url), label=label)
 
     # -- files ----------------------------------------------------------------------------------
     def download_file(self, url: str, dest_stream: BinaryIO) -> int:
         """Not yet verified against a live tenant: check the download app ID and whether the
         X-AllowWithAADToken header is still needed (docs/V1_PLAN.md section 8)."""
+        if urlsplit(url).scheme != "https":
+            raise UntrustedUrl("Refusing to send the download token over a non-HTTPS URL")
+        # TODO(WS-C): once WS-H records the real download hosts, allow only those.
         headers = {"Authorization": f"Bearer {self.download_token()}", "X-AllowWithAADToken": "true"}
         written = 0
         with self.graph.session.get(url, headers=headers, stream=True, timeout=self.graph.timeout) as r:

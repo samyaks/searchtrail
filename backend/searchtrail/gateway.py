@@ -49,7 +49,12 @@ class PurviewGateway(Protocol):
 
     def ensure_user_source(self, case_id: str, custodian_id: str, email: str,
                            included_sources: str = "mailbox, site") -> dict:
-        """The custodian's mailbox (and Teams chats) and OneDrive, as a user source."""
+        """The custodian's mailbox (and Teams chats) and OneDrive, as a user source.
+
+        `included_sources` is Graph's flags string: "mailbox", "site" (OneDrive) or "mailbox, site".
+        Known gap (WS-C): an existing source is returned as-is, even if its flags differ, so turning
+        a custodian's mailbox or OneDrive off must replace the source, not reuse it.
+        """
         ...
 
     def add_site_source(self, case_id: str, custodian_id: str, web_url: str) -> dict:
@@ -91,7 +96,8 @@ class PurviewGateway(Protocol):
         ...
 
     def get_operation(self, url: str) -> dict:
-        """Current state of an operation: status, percentProgress, and results when finished."""
+        """Current state of an operation: status, percentProgress, and results when finished.
+        Implementations must refuse URLs outside the Graph host (the URL is sent the user's token)."""
         ...
 
     def wait_for_operation(self, url: str, *, label: str = "operation") -> dict:
