@@ -5,11 +5,13 @@ import threading
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.db import repositories
 from app.db.base import new_id
-from app.db.models import AuditEntryRow, CustodianRow, MatterRow, PreviewItemRow, QueryVersionRow, SiteRow
+from app.db.models import AuditEntryRow, CustodianRow, MatterRow, PreviewItemRow, QueryVersionRow, SiteRow, UserRow
 from searchtrail.audit import AuditLog, canonical
 
 
@@ -41,6 +43,20 @@ def test_a_run_starts_running_and_finishes_with_counts(sessions):
         s.commit()
         assert (run.status, run.counts, run.files) == ("succeeded", counts, [{"name": "report.csv"}])
         assert run.finished_at is not None
+
+
+def test_a_run_finishes_once_with_valid_counts(sessions):
+    with sessions() as s:
+        version = add_version(s, add_matter(s))
+        run = repositories.create_run(s, matter_id=version.matter_id, query_version_id=version.id, kind="estimate",
+                                      created_by=None)
+        with pytest.raises(ValidationError):  # the Matters list reads items and partial_items
+            repositories.finish_run(s, run, status="succeeded", counts={"items": 10})
+        assert run.status == "running"
+        repositories.finish_run(s, run, status="failed")
+        with pytest.raises(ValueError, match="already finished"):  # a resumed job can't overwrite the result
+            repositories.finish_run(s, run, status="succeeded")
+        assert run.status == "failed"
 
 
 def test_runs_refuse_unknown_kinds_and_statuses(sessions):
@@ -140,6 +156,67 @@ def test_concurrent_appends_to_one_matter_are_serialised(pg_sessions):
                             .order_by(AuditEntryRow.seq)).all()
     assert [e.seq for e in entries] == list(range(1, 46))
     assert [e.prev_hash for e in entries[1:]] == [e.hash for e in entries[:-1]]
+
+
+# -- users -----------------------------------------------------------------------------------------
+DANA = {"entra_object_id": "obj-dana", "tenant_id": "t", "email": "dana@contoso.com", "display_name": "Dana"}
+
+
+def test_ensure_user_creates_once_and_keeps_details_current(sessions):
+    with sessions() as s:
+        user, changed = repositories.ensure_user(s, **DANA, id="usr_dana")
+        assert (user.id, changed) == ("usr_dana", True)
+        s.commit()
+        assert repositories.ensure_user(s, **DANA) == (user, False)
+        renamed, changed = repositories.ensure_user(s, **{**DANA, "display_name": "Dana Whitfield"})
+        assert renamed is user and changed and user.display_name == "Dana Whitfield"
+
+
+def test_ensure_user_reports_a_clash_it_cannot_resolve(sessions):
+    with sessions() as s:
+        repositories.ensure_user(s, **DANA, id="usr_dana")
+        s.commit()
+        with pytest.raises(IntegrityError):  # same fixed ID, different person: not silently someone else
+            repositories.ensure_user(s, **{**DANA, "entra_object_id": "obj-other"}, id="usr_dana")
+
+
+@pytest.mark.postgres
+def test_ensure_user_loses_a_race_without_losing_the_callers_work(pg_sessions, wait_until_blocked_on_a_lock):
+    first = pg_sessions()
+    first.add(UserRow(id="usr_first", **DANA))
+    first.flush()  # holds the unique key, not committed yet
+    outcome = {}
+
+    def second_sign_in() -> None:
+        try:
+            with pg_sessions() as s:
+                s.add(MatterRow(id="mat_kept", matter_number="M-1", name="Kept", type="investigation"))
+                s.flush()  # earlier work in the same transaction
+                user, changed = repositories.ensure_user(s, **DANA)  # its insert waits for `first`, then clashes
+                s.commit()
+                outcome.update(user=user.id, changed=changed)
+        except Exception as exc:  # noqa: BLE001 - reported below
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=second_sign_in)
+    thread.start()
+    wait_until_blocked_on_a_lock(pg_sessions)
+    first.commit()
+    first.close()
+    thread.join(10)
+    assert outcome == {"user": "usr_first", "changed": False}
+    with pg_sessions() as s:
+        assert s.get(MatterRow, "mat_kept") is not None
+        assert s.scalars(select(UserRow.id)).all() == ["usr_first"]
+
+
+# -- datetimes -------------------------------------------------------------------------------------
+def test_datetimes_load_timezone_aware_on_sqlite_too(sessions):
+    with sessions() as s:
+        matter_id = add_matter(s).id
+        s.commit()
+    with sessions() as s:
+        assert s.get(MatterRow, matter_id).created_at.tzinfo is not None
 
 
 # -- sources fingerprint ---------------------------------------------------------------------------

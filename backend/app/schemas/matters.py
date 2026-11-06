@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.db.models import CustodianRow, HoldRow, UserRow
-from app.db.repositories.matters import MatterDetail, MatterListing, as_utc
+from app.db.repositories.matters import MatterDetail, MatterListing
 
 from . import contract
 
@@ -24,7 +24,7 @@ def user_ref(user: UserRow | None) -> contract.UserRef:
 def hold(row: HoldRow | None) -> contract.Hold:
     if row is None:
         return contract.Hold(status=contract.HoldStatus.OFF, since=None)
-    return contract.Hold(status=row.status, since=as_utc(row.since) if row.since else None)
+    return contract.Hold(status=row.status, since=row.since)
 
 
 def custodian(row: CustodianRow, hold_row: HoldRow | None) -> contract.Custodian:
@@ -61,7 +61,7 @@ def matter(detail: MatterDetail) -> contract.Matter:
         description=m.description,
         stage=m.stage,
         purview_case_id=m.purview_case_id,
-        created_at=as_utc(m.created_at),
+        created_at=m.created_at,
         created_by=user_ref(detail.owner),
         custodians=[custodian(c, h) for c, h in detail.custodians],
         sites=[contract.Site(id=s.id, url=s.url) for s in detail.sites],

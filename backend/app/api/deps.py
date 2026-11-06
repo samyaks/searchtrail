@@ -31,6 +31,7 @@ def current_user(session: Session = Depends(get_session), settings: AppSettings 
     if not settings.dry_run:
         raise ApiError(401, "session_expired", "Sign-in with Microsoft isn't available in this build yet. "
                        "Run SearchTrail in dry-run mode (SEARCHTRAIL_DRY_RUN=1).")
-    user = repositories.ensure_user(session, **DRY_RUN_USER)
-    session.commit()  # keep a new user even when the request itself only reads (flushed rows aren't in session.new)
+    user, changed = repositories.ensure_user(session, **DRY_RUN_USER)
+    if changed:
+        session.commit()  # keep a new user even when the request itself only reads
     return user

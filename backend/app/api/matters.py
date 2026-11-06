@@ -53,16 +53,18 @@ def list_matters(session: DbSession, user: User, stage: contract.MatterStage | N
 def create_matter(body: contract.MatterCreate, session: DbSession, user: User) -> contract.Matter:
     if repositories.matter_number_taken(session, body.matter_number):
         raise _duplicate(body.matter_number)
-    matter = repositories.create_matter(session, matter_number=body.matter_number, name=body.name,
-                                        type=body.type.value, description=body.description or "",
-                                        created_by=user.id)
-    repositories.append_log(session, matter.id, contract.LogAction.MATTER_CREATED, actor=user.display_name,
-                            actor_email=user.email, summary=f"{matter.matter_number} · {matter.name}",
-                            matter={"matter_number": matter.matter_number, "name": matter.name,
-                                    "type": matter.type, "description": matter.description})
     try:
+        matter = repositories.create_matter(session, matter_number=body.matter_number, name=body.name,
+                                            type=body.type.value, description=body.description or "",
+                                            created_by=user.id)
+        repositories.append_log(session, matter.id, contract.LogAction.MATTER_CREATED, actor=user.display_name,
+                                actor_email=user.email, summary=f"{matter.matter_number} · {matter.name}",
+                                matter={"matter_number": matter.matter_number, "name": matter.name,
+                                        "type": matter.type, "description": matter.description})
         session.commit()
-    except IntegrityError:  # created by someone else between the check and the commit
+    except IntegrityError:
+        # Created by someone else since the check. On Postgres the insert waits for their commit and
+        # then fails at the flush in create_matter; elsewhere it can fail at the commit.
         session.rollback()
         raise _duplicate(body.matter_number) from None
     return convert.matter(repositories.matter_detail(session, matter))
@@ -77,8 +79,14 @@ def get_matter(matter_id: MatterId, session: DbSession, user: User) -> contract.
 @router.patch("/matters/{matterId}", response_model=contract.Matter, operation_id="updateMatter",
               responses=errors(400, 401, 404))
 def update_matter(matter_id: MatterId, body: contract.MatterUpdate, session: DbSession, user: User) -> contract.Matter:
+    values = body.model_dump(mode="json", exclude_unset=True)
+    nulls = [field for field, value in values.items() if value is None]
+    if nulls:  # the contract's fields are strings; leave a field out to keep it, send "" to clear the description
+        raise ApiError(400, "validation_failed", "The request is not valid.",
+                       {"errors": [{"loc": ["body", field], "msg": "Must not be null. Leave the field out to keep it."}
+                                   for field in nulls]})
     matter = load_matter(session, matter_id, for_update=True)
-    changes = repositories.update_matter(session, matter, body.model_dump(mode="json", exclude_none=True))
+    changes = repositories.update_matter(session, matter, values)
     if changes:
         repositories.append_log(session, matter.id, contract.LogAction.MATTER_UPDATED, actor=user.display_name,
                                 actor_email=user.email, summary="Changed the " + " and ".join(changes),

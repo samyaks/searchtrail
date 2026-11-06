@@ -43,3 +43,27 @@ def pg_sessions():
     yield sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+@pytest.fixture
+def wait_until_blocked_on_a_lock():
+    return _wait_until_blocked_on_a_lock
+
+
+def _wait_until_blocked_on_a_lock(sessions, timeout: float = 10.0) -> None:
+    """Postgres only: wait until another connection is waiting for a lock (e.g. an INSERT stuck behind
+    an uncommitted row with the same unique key), so race tests run the conflict path every time."""
+    import time
+
+    from sqlalchemy import text
+
+    deadline = time.monotonic() + timeout
+    with sessions() as s:
+        while time.monotonic() < deadline:
+            waiting = s.scalar(text("SELECT count(*) FROM pg_stat_activity "
+                                    "WHERE datname = current_database() AND wait_event_type = 'Lock'"))
+            if waiting:
+                return
+            s.rollback()
+            time.sleep(0.05)
+    raise AssertionError("no connection ever waited for the lock")

@@ -1,8 +1,9 @@
 """Matters, and the facts the Matters list and the matter header show about them."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -25,11 +26,6 @@ from ..models import (
 )
 
 EDITABLE = ("name", "type", "description")
-
-
-def as_utc(value: datetime) -> datetime:
-    """SQLite hands back naive datetimes; everything stored is UTC."""
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
 def get_matter(session: Session, matter_id: str, *, for_update: bool = False) -> MatterRow | None:
@@ -70,21 +66,24 @@ def sources_fingerprint(session: Session, matter_id: str) -> str:
     """SHA-256 of who and where the matter searches: each custodian (email, mailbox, OneDrive, linked
     sites) and the sites without a custodian. A query version stores it when it's created, and an export
     is allowed only if the preview's fingerprint still matches."""
-    custodians = session.execute(
-        select(CustodianRow.email, CustodianRow.mailbox, CustodianRow.onedrive, CustodianRow.sites)
-        .where(CustodianRow.matter_id == matter_id)
-    ).all()
+    custodians = session.scalars(select(CustodianRow).where(CustodianRow.matter_id == matter_id)).all()
     sites = session.scalars(select(SiteRow.url).where(SiteRow.matter_id == matter_id)).all()
+    return fingerprint(custodians, sites)
+
+
+def fingerprint(custodians: Iterable[CustodianRow], site_urls: Iterable[str]) -> str:
+    """sources_fingerprint for rows already loaded."""
     return sha256_text(canonical({
-        "custodians": sorted([email.lower(), bool(mailbox), bool(onedrive), sorted(linked or [])]
-                             for email, mailbox, onedrive, linked in custodians),
-        "sites": sorted(sites),
+        "custodians": sorted([c.email.lower(), bool(c.mailbox), bool(c.onedrive), sorted(c.sites or [])]
+                             for c in custodians),
+        "sites": sorted(site_urls),
     }))
 
 
-def draft_changed(session: Session, matter: MatterRow) -> bool:
+def draft_changed(session: Session, matter: MatterRow, *, sources: str | None = None) -> bool:
     """True when the draft criteria or the sources differ from the current query version. False before
-    the first estimate: there is nothing to compare with yet."""
+    the first estimate: there is nothing to compare with yet. `sources` is the matter's current
+    fingerprint, if the caller already has it."""
     if matter.current_version is None:
         return False
     version = session.scalars(select(QueryVersionRow).where(
@@ -94,7 +93,7 @@ def draft_changed(session: Session, matter: MatterRow) -> bool:
     draft = session.get(CriteriaDraftRow, matter.id)
     if draft is not None and canonical(draft.criteria) != canonical(version.criteria):
         return True
-    return sources_fingerprint(session, matter.id) != version.sources_fingerprint
+    return (sources or sources_fingerprint(session, matter.id)) != version.sources_fingerprint
 
 
 # -- the Matters list ------------------------------------------------------------------------------
@@ -130,36 +129,34 @@ def list_matters(session: Session, *, stage: str | None = None, q: str | None = 
         select(AuditEntryRow.matter_id, func.max(AuditEntryRow.ts))
         .where(AuditEntryRow.matter_id.in_(ids)).group_by(AuditEntryRow.matter_id)
     ).all())
-    counts = _latest_counts(session, {matter.id: matter.current_version for matter, _ in rows})
+    counts = _latest_counts(session, [matter.id for matter, _ in rows if matter.current_version is not None])
     progress = _export_progress(session, [matter.id for matter, _ in rows if matter.stage == "exporting"])
 
     listings = [
         MatterListing(matter=matter, owner=owner, custodian_count=custodians.get(matter.id, 0),
                       latest_counts=counts.get(matter.id), export_progress=progress.get(matter.id),
-                      last_activity_at=as_utc(activity.get(matter.id) or matter.updated_at))
+                      last_activity_at=activity.get(matter.id) or matter.updated_at)
         for matter, owner in rows
     ]
     # Log timestamps are to the second; newer matters first when activity ties.
-    listings.sort(key=lambda listing: (listing.last_activity_at, as_utc(listing.matter.created_at)), reverse=True)
+    listings.sort(key=lambda listing: (listing.last_activity_at, listing.matter.created_at), reverse=True)
     return listings
 
 
-def _latest_counts(session: Session, current_versions: dict[str, int | None]) -> dict[str, dict[str, Any]]:
-    """Counts of the latest succeeded estimate or preview of each matter's current version."""
-    ids = [matter_id for matter_id, version in current_versions.items() if version is not None]
+def _latest_counts(session: Session, ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Counts of the latest succeeded estimate or preview of each matter's current version. Only the
+    current version's runs are read, however many versions a matter has had."""
     if not ids:
         return {}
     runs = session.execute(
-        select(RunRow.matter_id, QueryVersionRow.version, RunRow.counts)
+        select(RunRow.matter_id, RunRow.counts)
         .join(QueryVersionRow, QueryVersionRow.id == RunRow.query_version_id)
-        .where(RunRow.matter_id.in_(ids), RunRow.status == "succeeded", RunRow.kind.in_(("estimate", "preview")))
+        .join(MatterRow, MatterRow.id == RunRow.matter_id)
+        .where(RunRow.matter_id.in_(ids), QueryVersionRow.version == MatterRow.current_version,
+               RunRow.status == "succeeded", RunRow.kind.in_(("estimate", "preview")))
         .order_by(RunRow.finished_at, RunRow.created_at)
     ).all()
-    latest = {}
-    for matter_id, version, counts in runs:  # oldest first, so the latest wins
-        if counts and version == current_versions[matter_id]:
-            latest[matter_id] = counts
-    return latest
+    return {matter_id: counts for matter_id, counts in runs if counts}  # oldest first, so the latest wins
 
 
 def _export_progress(session: Session, exporting: list[str]) -> dict[str, float]:
@@ -209,6 +206,6 @@ def matter_detail(session: Session, matter: MatterRow) -> MatterDetail:
         custodians=[(c, holds.get(c.id)) for c in custodians],
         sites=list(sites),
         previewed_version=previewed.version if previewed else None,
-        last_previewed_at=as_utc(previewed.finished_at) if previewed and previewed.finished_at else None,
-        draft_changed=draft_changed(session, matter),
+        last_previewed_at=previewed.finished_at if previewed else None,
+        draft_changed=draft_changed(session, matter, sources=fingerprint(custodians, [s.url for s in sites])),
     )

@@ -94,6 +94,27 @@ def test_create_rejects_invalid_input(api, body):
     assert_error(api.post("/api/v1/matters", json=body), 400, "validation_failed")
 
 
+@pytest.mark.postgres
+def test_a_create_that_loses_a_race_is_a_conflict_not_a_crash(pg_sessions, wait_until_blocked_on_a_lock):
+    import threading
+
+    api = make_client(pg_sessions)
+    api.get("/api/v1/matters")  # create the dry-run user first
+    first = pg_sessions()
+    first.add(MatterRow(id="mat_first", matter_number="M-2026-0142", name="First", type="investigation",
+                        created_by="usr_dana"))
+    first.flush()  # holds the matter number, not committed yet
+    responses = []
+    thread = threading.Thread(target=lambda: responses.append(
+        api.post("/api/v1/matters", json={**FALCON, "matter_number": "m-2026-0142"})))  # passes the pre-check
+    thread.start()
+    wait_until_blocked_on_a_lock(pg_sessions)  # its insert waits on the case-insensitive unique index
+    first.commit()
+    first.close()
+    thread.join(10)
+    assert_error(responses[0], 409, "conflict")
+
+
 def test_the_dry_run_user_is_created_once(api, sessions):
     api.get("/api/v1/matters")
     api.get("/api/v1/matters")
@@ -271,7 +292,13 @@ def test_update_changes_the_details_and_logs_what_changed(api, sessions):
     assert log_actions(sessions, created.id) == ["matter_created", "matter_updated"]  # nothing changed, nothing logged
 
 
-def test_update_refuses_the_matter_number_and_unknown_matters(api):
+def test_update_refuses_the_matter_number_nulls_and_unknown_matters(api, sessions):
     created = create(api)
     assert_error(api.patch(f"/api/v1/matters/{created.id}", json={"matter_number": "M-9"}), 400, "validation_failed")
+    error = assert_error(api.patch(f"/api/v1/matters/{created.id}", json={"description": None}), 400,
+                         "validation_failed")
+    assert [e["loc"] for e in error.details["errors"]] == [["body", "description"]]
+    assert log_actions(sessions, created.id) == ["matter_created"]
+    cleared = api.patch(f"/api/v1/matters/{created.id}", json={"description": ""})  # "" clears it
+    assert cleared.status_code == 200 and cleared.json()["description"] == ""
     assert_error(api.patch("/api/v1/matters/mat_nope", json={"name": "X"}), 404, "not_found")

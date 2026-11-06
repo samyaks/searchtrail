@@ -10,21 +10,26 @@ from ..models import UserRow
 
 
 def ensure_user(session: Session, *, entra_object_id: str, tenant_id: str, email: str, display_name: str,
-                id: str | None = None) -> UserRow:
-    """Find the user by Entra object ID, or create them (flushed, not committed). Keeps the email and
-    display name current. `id` fixes the new row's ID (the dry-run user is always `usr_dana`)."""
+                id: str | None = None) -> tuple[UserRow, bool]:
+    """Find the user by Entra object ID, or create them; keep the email and display name current.
+    Returns (user, changed): `changed` is True when a row was written, so the caller knows whether
+    there's anything to commit. Flushes, never commits. `id` fixes a new row's ID (the dry-run user
+    is always `usr_dana`)."""
     query = select(UserRow).where(UserRow.entra_object_id == entra_object_id)
     user = session.scalars(query).one_or_none()
     if user is None:
-        user = UserRow(id=id or new_id("usr"), entra_object_id=entra_object_id, tenant_id=tenant_id,
-                       email=email, display_name=display_name)
-        session.add(user)
         try:
-            session.flush()
-        except IntegrityError:  # another request created them first
-            session.rollback()
-            user = session.scalars(query).one()
-    elif (user.email, user.display_name) != (email, display_name):
+            with session.begin_nested():  # a savepoint: losing a race undoes only this insert
+                user = UserRow(id=id or new_id("usr"), entra_object_id=entra_object_id, tenant_id=tenant_id,
+                               email=email, display_name=display_name)
+                session.add(user)
+            return user, True
+        except IntegrityError:  # someone else created them first
+            user = session.scalars(query).one_or_none()
+            if user is None:  # the clash was on something else, such as a fixed `id` already in use
+                raise
+    if (user.email, user.display_name) != (email, display_name):
         user.email, user.display_name = email, display_name
         session.flush()
-    return user
+        return user, True
+    return user, False

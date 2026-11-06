@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
+from app.schemas.contract import Counts
+
 from ..base import new_id, utcnow
 from ..models import PreviewItemRow, RunRow
 
@@ -32,12 +34,16 @@ def create_run(session: Session, *, matter_id: str, query_version_id: str, kind:
 
 def finish_run(session: Session, run: RunRow, *, status: str, counts: dict[str, Any] | None = None,
                result: dict[str, Any] | None = None, files: list[dict[str, Any]] | None = None) -> None:
-    """Finish a run. `counts` is a contract Counts dict; `result` holds breakdowns or term rows;
-    `files` lists stored report files (left unchanged when None)."""
+    """Finish a running run, once. `counts` must be a contract Counts dict (checked here, because the
+    Matters list and the header read it); `result` holds breakdowns or term rows; `files` lists stored
+    report files (left unchanged when None)."""
     if status not in FINISHED:
         raise ValueError(f"finish_run: status must be one of {FINISHED}, not {status!r}")
+    if run.status != "running":
+        raise ValueError(f"finish_run: run {run.id} already finished ({run.status}); a resumed job must not finish it again")
+    checked = None if counts is None else Counts.model_validate(counts).model_dump(mode="json")  # before changing anything
     run.status = status
-    run.counts = counts
+    run.counts = checked
     run.result = result
     if files is not None:
         run.files = files
