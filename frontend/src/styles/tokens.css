@@ -1,0 +1,42 @@
+/* SearchTrail design tokens (docs/V1_PLAN.md section 5.6, from docs/design/). Light theme only.
+   Use these variables, never raw hex values, in components and screens. Mirrored in src/styles/tokens.ts. */
+:root {
+  /* colour */
+  --st-paper: #f5f6f3; /* page background */
+  --st-sheet: #ffffff; /* cards, nav, tables */
+  --st-ink: #16181d; /* text, primary buttons, selected states */
+  --st-muted: #5a606b; /* secondary text */
+  --st-rule: #dadcd5; /* borders and dividers */
+  --st-margin-red: #b42318; /* errors, blocked states, "exclude" */
+  --st-highlighter: #ffe14d; /* the current thing: previewed, "only", matched terms */
+  --st-ok-green: #1e7a46; /* passed checks, exported */
+
+  /* supporting shades used in the design files */
+  --st-rule-strong: #c9ccc3; /* chip and input borders */
+  --st-rule-soft: #ecede8; /* table row dividers */
+  --st-highlighter-ink: #17150a; /* text on highlighter */
+  --st-highlighter-soft: #fff6c2; /* selected row */
+  --st-red-soft: #f6d9d5; /* removed lines in diffs */
+
+  /* type */
+  --st-font-heading: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
+  --st-font-body: 'Public Sans', 'Segoe UI', system-ui, sans-serif;
+  --st-font-mono: 'Courier Prime', 'Courier New', monospace; /* queries, terms, IDs, methodology */
+  --st-text-sm: 13px;
+  --st-text-md: 15px;
+  --st-text-lg: 18px;
+  --st-text-xl: 28px;
+
+  /* shape and space */
+  --st-radius-sm: 4px;
+  --st-radius-md: 6px;
+  --st-radius-lg: 10px;
+  --st-radius-pill: 999px;
+  --st-space-1: 4px;
+  --st-space-2: 8px;
+  --st-space-3: 12px;
+  --st-space-4: 16px;
+  --st-space-5: 24px;
+  --st-space-6: 32px;
+  --st-focus: 2px solid var(--st-ink);
+}

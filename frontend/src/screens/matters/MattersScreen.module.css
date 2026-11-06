@@ -1,0 +1,102 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.intro {
+  color: var(--st-muted);
+  margin: 6px 0 0;
+}
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--st-radius-pill);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--st-sheet);
+  color: var(--st-ink);
+  border: 1px solid var(--st-rule-strong);
+}
+.chip[aria-pressed='true'] {
+  background: var(--st-ink);
+  color: var(--st-sheet);
+  border-color: var(--st-ink);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--st-sheet);
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-lg);
+  overflow: hidden;
+}
+.table th {
+  text-align: left;
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  color: var(--st-muted);
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--st-rule);
+}
+.table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--st-rule-soft);
+  vertical-align: top;
+}
+.id {
+  display: block;
+  font-family: var(--st-font-mono);
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.name {
+  font-weight: 600;
+}
+.pill {
+  display: inline-flex;
+  padding: 3px 10px;
+  border-radius: var(--st-radius-pill);
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--st-rule-strong);
+  color: var(--st-muted);
+}
+.pill[data-stage='previewed'] {
+  background: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+  border-color: var(--st-highlighter);
+}
+.pill[data-stage='exporting'] {
+  background: var(--st-ink);
+  color: var(--st-sheet);
+  border-color: var(--st-ink);
+}
+.pill[data-stage='exported'] {
+  border-color: var(--st-ok-green);
+  color: var(--st-ok-green);
+}
+.version {
+  display: block;
+  font-family: var(--st-font-mono);
+}
+.muted {
+  color: var(--st-muted);
+  font-size: var(--st-text-sm);
+}
+.error {
+  color: var(--st-margin-red);
+}
