@@ -1,0 +1,94 @@
+# Who owns which paths. The single source for .github/CODEOWNERS (generated) and the ownership
+# check in CI (scripts/check_ownership.py). Workstreams and their paths come from docs/agents/.
+#
+# To change ownership: edit this file, run `python scripts/check_ownership.py --write-codeowners`,
+# and commit both files. When people join, replace "@samyaks" with their GitHub handles or a team
+# (for example "@your-org/searchtrail-frontend").
+#
+# Paths ending in "/" cover everything under that folder. The most specific match wins, so
+# `shared` and `generated` entries override a workstream folder that contains them.
+
+default_owners: ["@samyaks"]
+
+# Changing any of these needs a contract PR: title starting with "[contract]", approved by the
+# integrator, with regenerated code (scripts/codegen.sh) and updated implementations.
+contract:
+  owners: ["@samyaks"]
+  paths:
+    - contracts/
+    - backend/searchtrail/gateway.py
+
+# Generated from the contract. Never edited by hand; the CI drift check fails if they don't match.
+generated:
+  owners: ["@samyaks"]
+  paths:
+    - backend/app/schemas/contract.py
+    - frontend/src/api/schema.d.ts
+    - frontend/src/mocks/examples.json
+
+# Integrator-owned files that every workstream depends on. Tests (backend/tests/,
+# frontend/tests/unit/) are deliberately unowned: every workstream adds its own.
+shared:
+  owners: ["@samyaks"]
+  paths:
+    - backend/searchtrail/          # core library; workstream-owned files inside it override this
+    - backend/pyproject.toml        # dependencies
+    - README.md
+    - .env.example
+    - .gitignore
+    - .spectral.yaml
+    - examples/
+    - docs/design/
+    - marketing/
+    - .github/ownership.yml
+    - .github/CODEOWNERS
+    - .github/pull_request_template.md
+    - scripts/
+    - docs/V1_PLAN.md
+    - docs/adr/
+    - docs/agents/
+    - CONTRIBUTING.md
+
+workstreams:
+  B1:
+    name: Backend API and data
+    owners: ["@samyaks"]
+    paths: [backend/app/api/, backend/app/schemas/, backend/app/db/, backend/app/main.py, backend/app/settings.py,
+            backend/app/__init__.py, backend/alembic.ini, backend/.dockerignore]
+  B2:
+    name: Jobs and Purview workflow
+    owners: ["@samyaks"]
+    paths: [backend/app/jobs/, backend/app/storage/, backend/searchtrail/workflow.py]
+  C:
+    name: Microsoft sign-in and Graph
+    owners: ["@samyaks"]
+    paths:
+      - backend/app/auth/
+      - backend/app/microsoft/
+      - backend/searchtrail/graph.py
+      - backend/searchtrail/dryrun.py
+      - backend/searchtrail/gateway_graph.py
+      - backend/searchtrail/gateway_dryrun.py
+      - backend/searchtrail/auth.py
+      - backend/searchtrail/config.py
+  D:
+    name: Frontend foundation and components
+    owners: ["@samyaks"]
+    # frontend/ covers build config, public/, scripts/ and src/main.tsx; screens and e2e override it.
+    paths: [frontend/, frontend/src/app/, frontend/src/components/, frontend/src/api/, frontend/src/mocks/, frontend/src/styles/]
+  E:
+    name: "Screens: Matters, Define, Scope"
+    owners: ["@samyaks"]
+    paths: [frontend/src/screens/matters/, frontend/src/screens/define/, frontend/src/screens/scope/]
+  F:
+    name: "Screens: Preview, Terms, Export, Log"
+    owners: ["@samyaks"]
+    paths: [frontend/src/screens/preview/, frontend/src/screens/terms/, frontend/src/screens/export/, frontend/src/screens/log/]
+  G:
+    name: Quality, packaging and docs
+    owners: ["@samyaks"]
+    paths: [deploy/, .github/workflows/, frontend/tests/e2e/, docs/install/]
+  H:
+    name: Live tenant validation
+    owners: ["@samyaks"]
+    paths: [backend/tests/fixtures/live/, docs/validation/]

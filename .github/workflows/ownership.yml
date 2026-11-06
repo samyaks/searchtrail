@@ -1,0 +1,33 @@
+# Which workstreams a PR touches, and whether contract changes are in a [contract] PR.
+# Runs again when the PR title is edited, because the title says which workstream it is.
+name: Ownership
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ownership:
+    name: Ownership check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: CODEOWNERS matches ownership.yml
+        run: python scripts/check_ownership.py --check-codeowners
+      - name: Check the PR's changed files
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/check_ownership.py --pr "$BASE_SHA"

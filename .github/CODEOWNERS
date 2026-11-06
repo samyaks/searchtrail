@@ -1,0 +1,64 @@
+# GENERATED from .github/ownership.yml by scripts/check_ownership.py --write-codeowners.
+# Do not edit by hand. GitHub requests a review from these owners on PRs touching their paths;
+# turn on 'Require review from Code Owners' in branch protection to make it required.
+
+/deploy/                                          @samyaks             # WS-G Quality, packaging and docs
+/scripts/                                         @samyaks             # shared
+/README.md                                        @samyaks             # shared
+/docs/adr/                                        @samyaks             # shared
+/examples/                                        @samyaks             # shared
+/frontend/                                        @samyaks             # WS-D Frontend foundation and components
+/.gitignore                                       @samyaks             # shared
+/contracts/                                       @samyaks             # contract
+/marketing/                                       @samyaks             # shared
+/.env.example                                     @samyaks             # shared
+/docs/agents/                                     @samyaks             # shared
+/docs/design/                                     @samyaks             # shared
+/docs/install/                                    @samyaks             # WS-G Quality, packaging and docs
+/.spectral.yaml                                   @samyaks             # shared
+/CONTRIBUTING.md                                  @samyaks             # shared
+/backend/app/db/                                  @samyaks             # WS-B1 Backend API and data
+/docs/V1_PLAN.md                                  @samyaks             # shared
+/backend/app/api/                                 @samyaks             # WS-B1 Backend API and data
+/docs/validation/                                 @samyaks             # WS-H Live tenant validation
+/backend/app/auth/                                @samyaks             # WS-C Microsoft sign-in and Graph
+/backend/app/jobs/                                @samyaks             # WS-B2 Jobs and Purview workflow
+/frontend/src/api/                                @samyaks             # WS-D Frontend foundation and components
+/frontend/src/app/                                @samyaks             # WS-D Frontend foundation and components
+/.github/CODEOWNERS                               @samyaks             # shared
+/.github/workflows/                               @samyaks             # WS-G Quality, packaging and docs
+/backend/alembic.ini                              @samyaks             # WS-B1 Backend API and data
+/backend/app/main.py                              @samyaks             # WS-B1 Backend API and data
+/frontend/src/mocks/                              @samyaks             # WS-D Frontend foundation and components
+/frontend/tests/e2e/                              @samyaks             # WS-G Quality, packaging and docs
+/backend/app/schemas/                             @samyaks             # WS-B1 Backend API and data
+/backend/app/storage/                             @samyaks             # WS-B2 Jobs and Purview workflow
+/backend/searchtrail/                             @samyaks             # shared
+/frontend/src/styles/                             @samyaks             # WS-D Frontend foundation and components
+/.github/ownership.yml                            @samyaks             # shared
+/backend/.dockerignore                            @samyaks             # WS-B1 Backend API and data
+/backend/app/microsoft/                           @samyaks             # WS-C Microsoft sign-in and Graph
+/backend/pyproject.toml                           @samyaks             # shared
+/backend/app/__init__.py                          @samyaks             # WS-B1 Backend API and data
+/backend/app/settings.py                          @samyaks             # WS-B1 Backend API and data
+/frontend/src/components/                         @samyaks             # WS-D Frontend foundation and components
+/frontend/src/screens/log/                        @samyaks             # WS-F Screens: Preview, Terms, Export, Log
+/backend/searchtrail/auth.py                      @samyaks             # WS-C Microsoft sign-in and Graph
+/frontend/src/screens/scope/                      @samyaks             # WS-E Screens: Matters, Define, Scope
+/frontend/src/screens/terms/                      @samyaks             # WS-F Screens: Preview, Terms, Export, Log
+/backend/searchtrail/graph.py                     @samyaks             # WS-C Microsoft sign-in and Graph
+/backend/tests/fixtures/live/                     @samyaks             # WS-H Live tenant validation
+/frontend/src/api/schema.d.ts                     @samyaks             # generated
+/frontend/src/screens/define/                     @samyaks             # WS-E Screens: Matters, Define, Scope
+/frontend/src/screens/export/                     @samyaks             # WS-F Screens: Preview, Terms, Export, Log
+/backend/searchtrail/config.py                    @samyaks             # WS-C Microsoft sign-in and Graph
+/backend/searchtrail/dryrun.py                    @samyaks             # WS-C Microsoft sign-in and Graph
+/frontend/src/screens/matters/                    @samyaks             # WS-E Screens: Matters, Define, Scope
+/frontend/src/screens/preview/                    @samyaks             # WS-F Screens: Preview, Terms, Export, Log
+/backend/searchtrail/gateway.py                   @samyaks             # contract
+/backend/app/schemas/contract.py                  @samyaks             # generated
+/backend/searchtrail/workflow.py                  @samyaks             # WS-B2 Jobs and Purview workflow
+/.github/pull_request_template.md                 @samyaks             # shared
+/frontend/src/mocks/examples.json                 @samyaks             # generated
+/backend/searchtrail/gateway_graph.py             @samyaks             # WS-C Microsoft sign-in and Graph
+/backend/searchtrail/gateway_dryrun.py            @samyaks             # WS-C Microsoft sign-in and Graph
