@@ -47,9 +47,14 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 ```
 
 ## Tasks (in order)
-1. Repository helpers in `app/db/` (sessions per request via `get_session`), a `current_user`
-   dependency stub that WS-C replaces (dry run: a fixed sample user).
-2. Matters: `GET/POST /matters`, `GET/PATCH /matters/{id}` with stage and latest counts.
+1. In your first PR, before WS-B2 and WS-C build on it:
+   - repository helpers in `app/db/repositories/` (sessions per request via `get_session`),
+     including the functions WS-B2 writes through: `create_run`, `finish_run`, `add_preview_items`
+     and `append_log`, with the signatures in `docs/PHASE1_PLAN.md` ("The B1 and B2 seams");
+   - a `current_user` dependency stub that WS-C replaces (dry run: a fixed sample user);
+   - the router layout in `app/api/__init__.py` that WS-C adds `/me`, `/labels` and
+     `/directory/users` to.
+2. Matters: `GET/POST /matters`, `GET/PATCH /matters/{id}` with stage and latest counts (same PR).
 3. Custodians and sites: `PUT/DELETE /matters/{id}/custodians/{userId}`, `POST/DELETE .../sites`.
    The hold endpoint stores the request and calls the gateway's `apply_hold`/`remove_hold`.
 4. Drafts and versions: `GET/PUT /matters/{id}/draft` (save any schema-valid criteria; only
@@ -62,8 +67,9 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
    `GET /matters/{id}/jobs?active=true&kind=`.
 6. Previews and term reports: `GET .../previews/latest`, items paging and filters, `items.csv`
    (same columns as the CLI's `preview.csv`), `GET .../term-reports/latest`.
-7. Exports: `GET .../exports`, `GET /exports/{id}`, `POST .../exports/check` using B2's reusable
-   check function; `confirmation_mismatch` when the typed matter number differs.
+7. Exports: `GET .../exports`, `GET /exports/{id}`, `POST .../exports/check` calling B2's
+   `check_export()` (`app/jobs/export_checks.py`); `confirmation_mismatch` when the typed matter
+   number differs.
 8. Log: `GET .../log` (newest first, paged), `POST .../log/verify`; every state change writes a log
    entry with the action names in the contract's `LogAction`, and both `actor` (display name) and
    `actor_email` (UPN) so people are identified unambiguously.

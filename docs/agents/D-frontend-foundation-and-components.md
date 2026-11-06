@@ -40,20 +40,22 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 ```
 
 ## Tasks (in order)
-1. **First, within a day or two** (E and F are waiting): buttons, chips, segmented controls,
-   switches, cards and data tables, using the tokens. Publish them from `src/components/index.ts`.
+1. **First, in one PR** (E and F are waiting):
+   - buttons, chips, segmented controls, switches, cards and data tables, using the tokens, published
+     from `src/components/index.ts`;
+   - MSW handlers for every operation in the contract (Phase 0 mocked 5 of 39), with enough state
+     (draft edits, job progress) for E and F to build against. Add examples to the contract (contract
+     PR, merged first) rather than inventing data. A test fails if an operation has no handler.
 2. The shell to match the design: side navigation (tenant, connection state, links, user), the
    matter header (number, name, sub line, version and preview chips) and the tabs.
-3. Count tiles, bar breakdowns (clickable filters), the month chart, the pleading-paper methodology
-   card (numbered lines, Courier Prime), banners, empty and error states.
-4. `useJob(jobId)`: polls `GET /jobs/{id}` every 3 to 10 seconds until `succeeded`/`failed`, exposing
+3. `useJob(jobId)`: polls `GET /jobs/{id}` every 3 to 10 seconds until `succeeded`/`failed`, exposing
    progress and the typed result; invalidates related queries when done. On load, screens resume
    jobs already running via `GET /matters/{id}/jobs?active=true` (survives reloads and other tabs).
-5. Error handling for every code in the contract's `ErrorCode` (section 5.3): a shared mapping from
+4. Error handling for every code in the contract's `ErrorCode` (section 5.3): a shared mapping from
    code to UI treatment; `session_expired` redirects to `/api/v1/auth/login?return_to=...`.
-6. MSW handlers for every endpoint in the contract, with enough state (draft edits, job progress)
-   for E and F to build against. Add examples to the contract (contract PR) rather than inventing data.
-7. A component gallery route (`/_gallery`, dev only) showing every component and state.
+5. Count tiles, bar breakdowns (clickable filters), the month chart, the pleading-paper methodology
+   card (numbered lines, Courier Prime), banners, empty and error states.
+6. A component gallery route (`/_gallery`, dev only) showing every component and state.
 
 ## Done when
 - The gallery shows every component; axe checks pass (keyboard and screen reader) in Vitest.

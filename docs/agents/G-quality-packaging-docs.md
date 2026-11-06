@@ -15,6 +15,11 @@ worker with health checks, dry run on), `deploy/.env.example`, and `.github/work
 (backend, frontend, contract drift, compose smoke test). There is no web image and no e2e suite yet
 (ADR 0010). Baseline API security headers are in `backend/app/main.py`.
 
+Order (see `docs/PHASE1_PLAN.md`): the `web` image and the Playwright harness come first (task 1 and
+the start of task 3), the full-flow e2e suite once the screens are done (that's M1), and security,
+the install guide and CI hygiene after M1. WS-C adds empty Entra entries to `deploy/.env.example`
+after M1, with a PR note.
+
 ## Run locally
 ```bash
 # Backend (Python 3.12)

@@ -6,7 +6,7 @@ them, export them, and keep a tamper-evident record of how the search was done. 
 docs/V1_PLAN.md sections 1, 3 and 5, and your section in 6; skim `docs/adr/`.
 
 **You own:** `backend/app/auth/`, `backend/app/microsoft/`, `backend/searchtrail/graph.py`, `backend/searchtrail/dryrun.py`, `backend/searchtrail/gateway_graph.py`, `backend/searchtrail/gateway_dryrun.py`, `backend/searchtrail/auth.py`, `backend/searchtrail/config.py`.
-**Do not edit:** `backend/searchtrail/gateway.py` (shared contract: changes by approved PR only), `backend/app/api/` (B1; you add `api/auth.py`, `api/me.py`, `api/setup.py`, `api/directory.py` with a PR note), `backend/app/db/` (B1), `frontend/`, except through a PR note to the owner.
+**Do not edit:** `backend/searchtrail/gateway.py` (shared contract: changes by approved PR only), `backend/app/api/` (B1; you add `api/auth.py`, `api/me.py`, `api/labels.py`, `api/setup.py`, `api/directory.py` with a PR note), `backend/app/db/` (B1), `frontend/`, except through a PR note to the owner.
 
 ## Your starting point
 Sign-in is a backend-for-frontend (ADR 0004): authorization code flow with PKCE (MSAL confidential
@@ -40,24 +40,32 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 ```
 
 ## Tasks (in order)
-1. Settings for the Entra app (tenant, client ID, secret or certificate, redirect URI, session secret,
-   token encryption key) in `app/settings.py`, with empty entries in `deploy/.env.example`.
-2. `/auth/login`, `/auth/callback`, `/auth/logout`: PKCE and state, user upsert into `users`, a
+Task 1 comes first because the shell, Define and Scope need it against the dry-run backend for M1.
+Tasks 2 to 9 come after M1 (see `docs/PHASE1_PLAN.md`): live sign-in can't be tested without a tenant.
+
+1. **Dry run first:** `/me`, `/labels` and `/directory/users`, backed by the dry-run gateway and a
+   fixed sample user (Dana Whitfield) with no sign-in. Add `api/me.py`, `api/labels.py` and
+   `api/directory.py` to the router layout WS-B1's first PR sets up in `app/api/__init__.py`, with a
+   PR note.
+2. Settings for the Entra app (tenant, client ID, secret or certificate, redirect URI, session secret,
+   token encryption key) in `app/settings.py` (B1's file) with empty entries in `deploy/.env.example`
+   (G's file); say so in the PR.
+3. `/auth/login`, `/auth/callback`, `/auth/logout`: PKCE and state, user upsert into `users`, a
    `sessions` row, the cookie (HttpOnly, Secure, SameSite=Lax), `401 session_expired` handling.
-3. Encrypted per-user MSAL token cache (`token_cache`), refresh for long jobs; a `current_user`
-   dependency for B1. Dry run: a fixed sample user (Dana Whitfield) with no sign-in.
-4. A per-user live gateway: `get_gateway(settings, user)` building `GraphPurviewGateway` with that
+4. Encrypted per-user MSAL token cache (`token_cache`), refresh for long jobs; a `current_user`
+   dependency that replaces B1's stub. Dry run keeps the fixed sample user.
+5. A per-user live gateway: `get_gateway(settings, user)` building `GraphPurviewGateway` with that
    user's Graph and MicrosoftPurviewEDiscovery tokens.
-5. Implement live: `search_users` (`/users?$search`, ConsistencyLevel), `apply_hold`/`remove_hold`,
+6. Implement live: `search_users` (`/users?$search`, ConsistencyLevel), `apply_hold`/`remove_hold`,
    `add_to_review_set` (create review set if missing, `addToReviewSet` from the search), and confirm
    streaming `download_file`, then restrict downloads to the real download hosts WS-H records
    (operation URLs are already restricted to the Graph host). Fix the known gap in
    `ensure_user_source`: it reuses an existing user source even when its `includedSources` differ,
    so turning a custodian's mailbox or OneDrive off must replace the source (tests in both gateways). Unit-test each against recorded responses (no network in tests).
-6. `/me`, `/setup/check` (licence, Purview role, download consent, labels permission), `/labels`,
-   `/directory/users`.
-7. Cloud endpoints configurable (Graph and login hosts) so GCC High can be added later.
-8. Admin notes for the Entra app registration and permissions, handed to WS-G for the install guide.
+7. `/setup/check` (licence, Purview role, download consent, labels permission), and live `/me`,
+   `/labels` and `/directory/users`.
+8. Cloud endpoints configurable (Graph and login hosts) so GCC High can be added later.
+9. Admin notes for the Entra app registration and permissions, handed to WS-G for the install guide.
 
 ## Done when
 - Sign-in works against a test tenant (with WS-H).

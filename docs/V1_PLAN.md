@@ -259,6 +259,8 @@ Start all seven when Phase 0 is merged. Each has an agent brief in `docs/agents/
   per user; `GraphPurviewGateway` including the new calls (directory search, holds, add to
   review set, streaming export download); cloud endpoints configurable for GCC High later;
   `/me` and `/setup/check`; matching dry-run behavior for every new call.
+- **First deliverable:** the dry-run `/me`, `/labels` and `/directory/users`, which the shell,
+  Define and Scope need for M1. Live sign-in and the live Graph calls follow.
 - **Done when:** sign-in works against a test tenant; every gateway method has a dry-run and a
   unit-tested live implementation.
 
@@ -269,7 +271,7 @@ Start all seven when Phase 0 is merged. Each has an agent brief in `docs/agents/
   breakdowns, month chart, the pleading-paper methodology card, banners and error states; job
   polling hook; error handling from 5.3; session-expiry redirect; MSW mocks for every endpoint.
 - **First deliverable (within the first day or two):** tokens plus buttons, chips, cards and
-  tables, so WS-E and WS-F can start.
+  tables, and MSW handlers for every endpoint, so WS-E and WS-F can start on every screen.
 - **Done when:** a component gallery page shows every component; keyboard and screen-reader
   checks pass (axe).
 
@@ -307,6 +309,10 @@ Start all seven when Phase 0 is merged. Each has an agent brief in `docs/agents/
 ---
 
 ## 7. Timeline
+
+**Phase 1 is run one workstream at a time, by one agent, in the order in
+[PHASE1_PLAN.md](PHASE1_PLAN.md), aiming at M1 first.** The chart below is the original parallel
+estimate and is kept for reference.
 
 ```
 Days 1–3      Phase 0 foundation ──────────────►
