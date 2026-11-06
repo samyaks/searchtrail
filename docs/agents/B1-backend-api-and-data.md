@@ -57,13 +57,16 @@ npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=w
    estimate (criteria, KQL, `kql_sha256`, methodology, `sources_fingerprint`), `GET .../versions`,
    `GET .../versions/compare` (plain-English differences from the methodology lines, count delta).
 5. The `202` endpoints (`estimates`, `previews`, `term-reports`, `exports`, `download`,
-   `review-set`): validate, create the version, enqueue, return the job; `GET /jobs/{id}`.
+   `review-set`): validate, create the version, enqueue, return the job (`409 conflict` with
+   `details.job_id` if one of that kind is already queued or running); `GET /jobs/{id}` and
+   `GET /matters/{id}/jobs?active=true&kind=`.
 6. Previews and term reports: `GET .../previews/latest`, items paging and filters, `items.csv`
    (same columns as the CLI's `preview.csv`), `GET .../term-reports/latest`.
 7. Exports: `GET .../exports`, `GET /exports/{id}`, `POST .../exports/check` using B2's reusable
    check function; `confirmation_mismatch` when the typed matter number differs.
 8. Log: `GET .../log` (newest first, paged), `POST .../log/verify`; every state change writes a log
-   entry with the action names in the contract's `LogAction`.
+   entry with the action names in the contract's `LogAction`, and both `actor` (display name) and
+   `actor_email` (UPN) so people are identified unambiguously.
 9. Contract tests per endpoint (status codes, bodies validate against `app.schemas.contract`), and one
    test that runs the whole flow through the API in dry run (create, custodians, draft, estimate,
    preview, terms, check, export, log verify), driving jobs with `app.jobs.worker.run_one`.

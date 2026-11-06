@@ -47,7 +47,8 @@ npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=w
 3. Count tiles, bar breakdowns (clickable filters), the month chart, the pleading-paper methodology
    card (numbered lines, Courier Prime), banners, empty and error states.
 4. `useJob(jobId)`: polls `GET /jobs/{id}` every 3 to 10 seconds until `succeeded`/`failed`, exposing
-   progress and the typed result; invalidates related queries when done.
+   progress and the typed result; invalidates related queries when done. On load, screens resume
+   jobs already running via `GET /matters/{id}/jobs?active=true` (survives reloads and other tabs).
 5. Error handling for every code in the contract's `ErrorCode` (section 5.3): a shared mapping from
    code to UI treatment; `session_expired` redirects to `/api/v1/auth/login?return_to=...`.
 6. MSW handlers for every endpoint in the contract, with enough state (draft edits, job progress)

@@ -50,7 +50,10 @@ npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=w
    user's Graph and MicrosoftPurviewEDiscovery tokens.
 5. Implement live: `search_users` (`/users?$search`, ConsistencyLevel), `apply_hold`/`remove_hold`,
    `add_to_review_set` (create review set if missing, `addToReviewSet` from the search), and confirm
-   streaming `download_file`. Unit-test each against recorded responses (no network in tests).
+   streaming `download_file`, then restrict downloads to the real download hosts WS-H records
+   (operation URLs are already restricted to the Graph host). Fix the known gap in
+   `ensure_user_source`: it reuses an existing user source even when its `includedSources` differ,
+   so turning a custodian's mailbox or OneDrive off must replace the source (tests in both gateways). Unit-test each against recorded responses (no network in tests).
 6. `/me`, `/setup/check` (licence, Purview role, download consent, labels permission), `/labels`,
    `/directory/users`.
 7. Cloud endpoints configurable (Graph and login hosts) so GCC High can be added later.
