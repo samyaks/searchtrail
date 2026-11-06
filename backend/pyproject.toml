@@ -33,9 +33,6 @@ searchtrail-worker = "app.jobs.worker:main"
 [tool.setuptools.packages.find]
 include = ["searchtrail*", "app*"]
 
-[tool.setuptools.package-data]
-app = ["db/alembic.ini", "db/migrations/*.py", "db/migrations/*.mako", "db/migrations/versions/*.py"]
-
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

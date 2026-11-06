@@ -1,0 +1,135 @@
+# CI for every PR and for main. All jobs must pass before merging (turn this on in branch protection).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: searchtrail
+          POSTGRES_PASSWORD: searchtrail
+          POSTGRES_DB: searchtrail
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U searchtrail" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SEARCHTRAIL_DATABASE_URL: postgresql+psycopg://searchtrail:searchtrail@localhost:5432/searchtrail
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Migrations apply, roll back, and match the models
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
+      - name: Tests (including Postgres-only tests)
+        env:
+          SEARCHTRAIL_TEST_DATABASE_URL: postgresql+psycopg://searchtrail:searchtrail@localhost:5432/searchtrail_test
+        run: |
+          PGPASSWORD=searchtrail psql -h localhost -U searchtrail -d searchtrail -c "CREATE DATABASE searchtrail_test"
+          pytest -q
+      - name: CLI dry run end to end
+        working-directory: .
+        run: |
+          searchtrail --dry-run --quiet preview examples/matter.json
+          searchtrail --dry-run --quiet export examples/matter.json --confirm --wait
+          searchtrail --dry-run verify-log examples/matter.json
+
+  frontend:
+    name: Frontend lint, type check and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  contract:
+    name: Contract lint and drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Lint contracts/openapi.yaml (Spectral)
+        run: npx --yes @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=warn
+      - name: Install code generators
+        run: |
+          pip install -e "backend[dev]"
+          npm ci --prefix frontend
+      - name: Regenerate code from the contract
+        run: scripts/codegen.sh
+      - name: Fail if generated code is out of date
+        run: |
+          if ! git diff --exit-code --stat; then
+            echo "::error::Generated code doesn't match contracts/openapi.yaml. Run scripts/codegen.sh and commit the result."
+            exit 1
+          fi
+      # Routes vs contract and examples vs the generated Pydantic models run in the backend
+      # tests (backend/tests/test_contract.py); the frontend type check covers the TS side.
+
+  compose:
+    name: Docker Compose smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack (dry run)
+        run: docker compose -f deploy/docker-compose.yml up --build -d --wait --wait-timeout 300
+      - name: API is healthy
+        run: |
+          curl -fsS http://localhost:8000/api/v1/health | tee health.json
+          grep -q '"dry_run":true' health.json
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs
+      - name: Stop
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml down -v
