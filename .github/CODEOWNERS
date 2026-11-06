@@ -16,6 +16,7 @@
 /docs/design/                                     @samyaks             # shared
 /docs/install/                                    @samyaks             # WS-G Quality, packaging and docs
 /.spectral.yaml                                   @samyaks             # shared
+/backend/tests/                                                        # tests (no owner)
 /CONTRIBUTING.md                                  @samyaks             # shared
 /backend/app/db/                                  @samyaks             # WS-B1 Backend API and data
 /docs/V1_PLAN.md                                  @samyaks             # shared
@@ -35,12 +36,14 @@
 /backend/app/storage/                             @samyaks             # WS-B2 Jobs and Purview workflow
 /backend/searchtrail/                             @samyaks             # shared
 /frontend/src/styles/                             @samyaks             # WS-D Frontend foundation and components
+/frontend/tests/unit/                                                  # tests (no owner)
 /.github/ownership.yml                            @samyaks             # shared
 /backend/.dockerignore                            @samyaks             # WS-B1 Backend API and data
 /backend/app/microsoft/                           @samyaks             # WS-C Microsoft sign-in and Graph
 /backend/pyproject.toml                           @samyaks             # shared
 /backend/app/__init__.py                          @samyaks             # WS-B1 Backend API and data
 /backend/app/settings.py                          @samyaks             # WS-B1 Backend API and data
+/frontend/tests/setup.ts                                               # tests (no owner)
 /frontend/src/components/                         @samyaks             # WS-D Frontend foundation and components
 /frontend/src/screens/log/                        @samyaks             # WS-F Screens: Preview, Terms, Export, Log
 /backend/searchtrail/auth.py                      @samyaks             # WS-C Microsoft sign-in and Graph

@@ -40,3 +40,12 @@ def test_unknown_route_uses_the_error_shape(sessions):
     r = client(sessions).get("/api/v1/nope")
     assert r.status_code == 404
     assert r.json() == {"code": "not_found", "message": "Not Found", "details": {}}
+
+
+def test_security_headers_except_csp_on_the_api_docs(sessions):
+    c = client(sessions)
+    assert c.get("/api/v1/health").headers["content-security-policy"].startswith("default-src 'none'")
+    docs = c.get("/api/docs")
+    assert docs.status_code == 200
+    assert "content-security-policy" not in docs.headers
+    assert docs.headers["x-content-type-options"] == "nosniff"

@@ -34,6 +34,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
+            # Swagger UI loads its own scripts and styles; the API's CSP would blank it.
+            if name == "Content-Security-Policy" and request.url.path == app.docs_url:
+                continue
             response.headers.setdefault(name, value)
         return response
 

@@ -26,7 +26,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 OWNERSHIP = ROOT / ".github" / "ownership.yml"
 CODEOWNERS = ROOT / ".github" / "CODEOWNERS"
-SPECIAL = ("contract", "generated", "shared")
+SPECIAL = ("contract", "generated", "shared", "tests")
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,9 @@ def render_codeowners(areas: list[Area]) -> str:
     entries.sort(key=lambda e: (len(e[0]), e[0]))
     for pattern, area in entries:
         label = area.key if area.key in SPECIAL else f"WS-{area.key} {area.name}"
-        lines.append(f"/{pattern:<48} {' '.join(area.owners):<20} # {label}")
+        # A pattern with no owner is valid CODEOWNERS: it overrides a broader earlier match.
+        owners = " ".join(area.owners) if area.owners else ""
+        lines.append(f"/{pattern:<48} {owners:<20} # {label}{'' if area.owners else ' (no owner)'}")
     return "\n".join(lines) + "\n"
 
 

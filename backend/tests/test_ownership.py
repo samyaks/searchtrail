@@ -51,3 +51,15 @@ def test_crossing_workstreams_warns():
 def test_missing_title_prefix_and_hand_edited_generated_files_warn():
     _, warnings, _ = own.check_pr(["frontend/src/api/schema.d.ts"], "fix types", AREAS)
     assert len(warnings) == 2
+
+
+def test_unit_tests_belong_to_no_workstream():
+    assert own.owner_of("frontend/tests/unit/scope.test.tsx", AREAS).key == "tests"
+    assert own.owner_of("backend/tests/test_matters.py", AREAS).key == "tests"
+    errors, warnings, _ = own.check_pr(
+        ["frontend/src/screens/scope/ScopeScreen.tsx", "frontend/tests/unit/scope.test.tsx"], "[E] Scope", AREAS)
+    assert not errors and not warnings
+    # CODEOWNERS carries an ownerless entry, which overrides the broader frontend/ pattern on GitHub.
+    assert "/frontend/tests/unit/" in own.render_codeowners(AREAS)
+    line = next(l for l in own.render_codeowners(AREAS).splitlines() if l.startswith("/frontend/tests/unit/"))
+    assert "@" not in line

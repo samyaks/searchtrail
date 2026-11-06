@@ -26,8 +26,16 @@ generated:
     - frontend/src/api/schema.d.ts
     - frontend/src/mocks/examples.json
 
-# Integrator-owned files that every workstream depends on. Tests (backend/tests/,
-# frontend/tests/unit/) are deliberately unowned: every workstream adds its own.
+# Unit tests: every workstream adds its own, so no owner is requested and touching them never
+# counts as crossing into another workstream. (End-to-end tests in frontend/tests/e2e/ are WS-G's.)
+tests:
+  owners: []
+  paths:
+    - backend/tests/
+    - frontend/tests/unit/
+    - frontend/tests/setup.ts
+
+# Integrator-owned files that every workstream depends on.
 shared:
   owners: ["@samyaks"]
   paths:

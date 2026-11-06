@@ -21,4 +21,5 @@ export const handlers = [
     }
     return HttpResponse.json(matter);
   }),
+  http.delete(`${API}/matters/:matterId/sites/:siteId`, () => new HttpResponse(null, { status: 204 })),
 ];

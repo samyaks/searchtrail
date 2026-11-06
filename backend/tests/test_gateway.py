@@ -122,3 +122,11 @@ def test_live_gateway_never_sends_tokens_to_other_hosts(live):
             live.wait_for_operation(url)
     with pytest.raises(UntrustedUrl):
         live.download_file("http://example.com/export.zip", io.BytesIO())
+
+
+def test_dry_run_works_against_any_graph_cloud():
+    gw = DryRunPurviewGateway(log=lambda _m: None, graph_base="https://dod-graph.microsoft.us/v1.0")
+    case = gw.ensure_case("M-1 test", "t")
+    assert case["id"].startswith("case-")
+    url = gw.start_estimate(case["id"], gw.create_search(case["id"], "s", "kickback", [])["id"])
+    assert url.startswith("https://dod-graph.microsoft.us/v1.0/") and gw.get_operation(url)["status"] == "succeeded"
