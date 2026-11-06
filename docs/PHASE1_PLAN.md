@@ -94,6 +94,8 @@ def check_export(session, gateway: PurviewGateway, matter_id: str) -> ExportChec
     # app.schemas.contract.ExportCheck. "previewed" and "same_sources" come from the database with no
     # Purview calls; "counts_unchanged" runs one estimate, only when both passed. No other Purview calls.
     # Raises LookupError for an unknown matter (B1 maps it to 404).
+    # May write: it sets the version's Purview search to the version's KQL before estimating (versions with
+    # the same sources share a search), noted in matters.purview_state. Flushes; the caller commits.
 
 # Job payloads: WS-B1's 202 endpoints enqueue these (app.jobs.queue.enqueue), WS-B2's handlers read them.
 # Every job sets matter_id and created_by (the user, who becomes the log's actor).

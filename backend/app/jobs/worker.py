@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -24,7 +25,7 @@ from app.settings import AppSettings, get_settings
 from searchtrail.gateway import PurviewGateway
 
 from . import queue
-from .handlers import HANDLERS, JobContext, JobFailed
+from .handlers import HANDLERS, JobContext, JobFailed, JobRetry
 
 log = logging.getLogger("searchtrail.worker")
 
@@ -62,10 +63,12 @@ class Heartbeat(threading.Thread):
 
 
 def run_one(session: Session, worker_id: str, gateway_for: GatewayFactory, *,
-            sessions: sessionmaker[Session] | None = None, beat: Callable[[], None] = lambda: None) -> bool:
+            sessions: sessionmaker[Session] | None = None, beat: Callable[[], None] = lambda: None,
+            stop: threading.Event | None = None) -> bool:
     """Claim and run one job. Returns False when there was nothing to do.
 
-    `sessions` (a session factory) turns on the background heartbeat while the handler runs."""
+    `sessions` (a session factory) turns on the background heartbeat while the handler runs. `stop` is
+    the worker's stop request, passed to the handler so long waits can end early."""
     job = queue.claim_next(session, worker_id)
     if job is None:
         return False
@@ -79,8 +82,16 @@ def run_one(session: Session, worker_id: str, gateway_for: GatewayFactory, *,
         heartbeat.start()
     try:
         # Built per job: the live gateway acts as the user who started the job.
-        queue.finish(session, job, handler(JobContext(session, job, gateway_for(job))))
+        queue.finish(session, job, handler(JobContext(session, job, gateway_for(job), stop)))
         log.info("job %s succeeded", job.id)
+    except JobRetry as exc:
+        session.rollback()
+        if exc.counts_as_attempt and job.attempts >= queue.MAX_ATTEMPTS:
+            queue.fail(session, job, exc.code, exc.message, {**exc.details, "attempts": job.attempts})
+            log.warning("job %s gave up after %d attempts: %s", job.id, job.attempts, exc.message)
+        else:
+            queue.retry_later(session, job, timedelta(seconds=exc.after_seconds), counts_as_attempt=exc.counts_as_attempt)
+            log.info("job %s will run again in %.0fs: %s", job.id, exc.after_seconds, exc.message)
     except JobFailed as exc:
         session.rollback()
         queue.fail(session, job, exc.code, exc.message, exc.details)
@@ -103,7 +114,15 @@ class Worker:
         self.sessions = sessions or session_factory(settings.database_url)
         self.gateway_for = gateway_for or (lambda _job: get_gateway(settings))
         self.worker_id = f"{socket.gethostname()}:{os.getpid()}"
-        self.stopping = False
+        self.stop_event = threading.Event()
+
+    @property
+    def stopping(self) -> bool:
+        return self.stop_event.is_set()
+
+    @stopping.setter
+    def stopping(self, value: bool) -> None:
+        self.stop_event.set() if value else self.stop_event.clear()
 
     def beat(self) -> None:
         if self.settings.worker_heartbeat_file:
@@ -123,11 +142,12 @@ class Worker:
                 self.requeue_stale()
                 last_requeue = time.monotonic()
             with self.sessions() as session:
-                did_work = run_one(session, self.worker_id, self.gateway_for, sessions=self.sessions, beat=self.beat)
+                did_work = run_one(session, self.worker_id, self.gateway_for, sessions=self.sessions, beat=self.beat,
+                                   stop=self.stop_event)
             if once:
                 return
             if not did_work:
-                time.sleep(self.settings.worker_poll_seconds)
+                self.stop_event.wait(self.settings.worker_poll_seconds)
 
 
 def main(argv: list[str] | None = None) -> int:

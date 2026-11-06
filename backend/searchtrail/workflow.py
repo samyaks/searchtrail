@@ -23,12 +23,29 @@ from .query import CullCriteria, build_kql, describe, term_queries, validate
 from .report import load_report, summarize, write_preview_csv
 
 __all__ = ["COUNT_FIELDS", "CullWorkflow", "CustodianSources", "ExportBlocked", "Prepared", "PurviewTarget",
-           "Synced", "sources_signature", "sync_purview"]
+           "SourcesMismatch", "Synced", "sources_signature", "sync_purview"]
 DRIFT_FIELDS = ("indexedItemCount", "unindexedItemCount")
 
 
 class ExportBlocked(RuntimeError):
     """The export would not match what was previewed."""
+
+
+class SourcesMismatch(RuntimeError):
+    """Purview already has a user source for a custodian, but with other settings than the matter wants
+    (say OneDrive was turned on after the mailbox-only source was made). The gateway can't change or
+    replace a source yet (WS-C), so this stops rather than search different data than the matter says."""
+
+    def __init__(self, email: str, wanted: str, found: str):
+        super().__init__(f"Purview already has a source for {email} that searches '{found}', but the matter wants "
+                         f"'{wanted}'. Changing an existing source isn't supported yet: remove the custodian's source "
+                         "in the Purview case, then run this again.")
+        self.email, self.wanted, self.found = email, wanted, found
+
+
+def _flags(included_sources: str) -> frozenset[str]:
+    """'mailbox, site' and 'site,mailbox' are the same setting."""
+    return frozenset(part.strip().lower() for part in included_sources.split(",") if part.strip())
 
 
 @dataclass
@@ -55,6 +72,9 @@ class CustodianSources:
     # What the custodian's user source covers: "mailbox" (mail and Teams chats), "site" (OneDrive).
     # Empty means no user source, only the linked sites.
     included_sources: str = "mailbox, site"
+    # Refuse (SourcesMismatch) if Purview's existing source has other settings. The CLI turns this off:
+    # its matter file has no per-custodian toggles, so it has always used whatever source exists.
+    check_source_settings: bool = True
 
 
 @dataclass
@@ -86,7 +106,10 @@ def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Sync
     Different sources: a new search, numbered, and the earlier ones stay in the case as a record.
 
     Not idempotent for site sources and searches: if the process dies between creating one and saving
-    `state`, a rerun creates another. Harmless (an unused source or search in the case), and rare.
+    `state`, a rerun creates another. That leaves an extra, unused source or search in the Purview case,
+    where eDiscovery managers can see it, so it needs explaining if asked. It's rare (the window is the
+    time between the create call and the save), and closing it means looking searches up by name before
+    creating, as ensure_case does.
     """
     case = gw.ensure_case(target.case_name, target.description, target.matter_number, known_id=state.get("case_id"))
     case_id = case["id"]
@@ -104,6 +127,9 @@ def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Sync
         if cust.included_sources and (not entry.get("user_source_id")
                                       or entry.get("included_sources", "mailbox, site") != cust.included_sources):
             us = gw.ensure_user_source(case_id, entry["custodian_id"], cust.email, cust.included_sources)
+            found = us.get("includedSources")  # Graph says what the source really covers; None: not reported
+            if cust.check_source_settings and found is not None and _flags(found) != _flags(cust.included_sources):
+                raise SourcesMismatch(cust.email, cust.included_sources, found)
             entry["user_source_id"], entry["included_sources"] = us["id"], cust.included_sources
         if cust.included_sources:
             source_urls.append(gw.source_url(case_id, entry["custodian_id"], "userSources", entry["user_source_id"]))
@@ -190,7 +216,7 @@ class CullWorkflow:
         state = self._load_state(matter)
         target = PurviewTarget(
             matter_number=matter.matter_id, case_name=matter.case_name, description=matter.description,
-            custodians=[CustodianSources(c.email, list(c.sites)) for c in matter.custodians],
+            custodians=[CustodianSources(c.email, list(c.sites), check_source_settings=False) for c in matter.custodians],
             additional_sites=list(matter.additional_sites), kql=kql,
         )
         synced = sync_purview(self.gw, state, target)

@@ -14,6 +14,8 @@ from app.db.models import JobRow
 JOB_KINDS = ("estimate", "preview", "term_report", "export", "download", "review_set")
 # A running job whose worker hasn't sent a heartbeat for this long is assumed dead and requeued.
 STALE_AFTER = timedelta(minutes=5)
+# A job that keeps asking to be retried (JobRetry) fails for good after this many attempts.
+MAX_ATTEMPTS = 6
 
 
 def enqueue(session: Session, kind: str, *, matter_id: str | None = None, payload: dict[str, Any] | None = None,
@@ -81,6 +83,16 @@ def fail(session: Session, job: JobRow, code: str, message: str, details: dict[s
     job.status = "failed"
     job.error = {"code": code, "message": message, "details": details or {}}
     job.locked_by = None
+    job.updated_at = utcnow()
+    session.commit()
+
+
+def retry_later(session: Session, job: JobRow, after: timedelta, *, counts_as_attempt: bool = True) -> None:
+    """Put a running job back in the queue, due after `after`, with its checkpoint and progress kept.
+    A requested stop doesn't count as an attempt."""
+    if not counts_as_attempt:
+        job.attempts = max(0, job.attempts - 1)
+    job.status, job.locked_by, job.run_after = "queued", None, utcnow() + after
     job.updated_at = utcnow()
     session.commit()
 

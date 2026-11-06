@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import text
 
 from app.db import repositories
 from app.db.models import MatterRow, QueryVersionRow, RunRow
@@ -19,7 +19,7 @@ from app.schemas import contract
 
 from . import purview
 from .handlers import JobContext, JobFailed, register
-from .steps import actor_of, counts_from_operation, counts_summary, poll_operation
+from .steps import actor_of, counts_from_operation, counts_summary, poll_operation, purview_errors
 
 
 def load_version(ctx: JobContext) -> QueryVersionRow:
@@ -31,10 +31,16 @@ def load_version(ctx: JobContext) -> QueryVersionRow:
 
 
 def lock_matter(ctx: JobContext, matter_id: str) -> MatterRow:
-    """Lock the matter while its case and search are changed and the operation started, so two jobs on
-    one matter never interleave their Purview writes. The checkpoint's commit releases it, so the lock
-    is never held while polling."""
-    return ctx.session.scalars(select(MatterRow).where(MatterRow.id == matter_id).with_for_update()).one()
+    """Make this the only job changing the matter's Purview case and search, until the next commit
+    (the checkpoint's), so two jobs on one matter never interleave their Purview writes.
+
+    A Postgres advisory lock, not a lock on the matter's row: syncing makes a dozen Graph calls, and a
+    row lock would stop B1's edits and every log append for the whole matter meanwhile. Other sessions
+    still read and write the matter freely; only other jobs wait. (SQLite, used in unit tests, has one
+    writer at a time anyway.)"""
+    if ctx.session.get_bind().dialect.name == "postgresql":
+        ctx.session.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"matter:{matter_id}"})
+    return ctx.session.get(MatterRow, matter_id)
 
 
 def result_of(run: RunRow, version: QueryVersionRow) -> dict[str, Any]:
@@ -48,10 +54,11 @@ def estimate(ctx: JobContext) -> dict[str, Any]:
 
     if "operation_url" not in checkpoint:
         matter = lock_matter(ctx, version.matter_id)
-        synced = purview.prepare(ctx.session, ctx.gateway, matter, version)
-        run = repositories.create_run(ctx.session, matter_id=version.matter_id, query_version_id=version.id, kind="estimate",
-                                      created_by=ctx.job.created_by)
-        url = ctx.gateway.start_estimate(synced.case_id, synced.search_id)
+        with purview_errors(ctx):
+            synced = purview.prepare(ctx.session, ctx.gateway, matter, version)
+            run = repositories.create_run(ctx.session, matter_id=version.matter_id, query_version_id=version.id,
+                                          kind="estimate", created_by=ctx.job.created_by)
+            url = ctx.gateway.start_estimate(synced.case_id, synced.search_id)
         checkpoint = {"step": "polling", "run_id": run.id, "operation_url": url,
                       "case_id": synced.case_id, "search_id": synced.search_id}
         ctx.heartbeat(progress=0.1, checkpoint=checkpoint)  # commits: the operation is now resumable
@@ -62,7 +69,7 @@ def estimate(ctx: JobContext) -> dict[str, Any]:
 
     try:
         op = poll_operation(ctx, checkpoint["operation_url"], progress=(0.1, 0.95), label="estimate")
-    except JobFailed:
+    except JobFailed:  # not JobRetry: a retried job polls the same run again, so the run stays running
         repositories.finish_run(ctx.session, run, status="failed")
         ctx.session.commit()  # the worker rolls back before recording the failure; keep the run's outcome
         raise
