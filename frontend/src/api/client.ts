@@ -28,7 +28,8 @@ export class ApiRequestError extends Error {
 
 /** Unwrap an openapi-fetch result: return the data or throw ApiRequestError. */
 export function unwrap<T>(result: { data?: T; error?: unknown; response: Response }): T {
-  if (result.error !== undefined || result.data === undefined) {
+  // A successful 204 (logout, DELETE) has no data; only a non-2xx response is an error.
+  if (result.error !== undefined || !result.response.ok) {
     const body = (result.error as ApiError | undefined) ?? {
       code: 'internal_error',
       message: `Request failed (${result.response.status})`,
@@ -36,5 +37,5 @@ export function unwrap<T>(result: { data?: T; error?: unknown; response: Respons
     };
     throw new ApiRequestError(result.response.status, body);
   }
-  return result.data;
+  return result.data as T;
 }

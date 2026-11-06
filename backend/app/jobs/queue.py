@@ -62,6 +62,13 @@ def heartbeat(session: Session, job: JobRow, *, progress: float | None = None,
     session.commit()
 
 
+def touch(session: Session, job_id: str) -> None:
+    """Heartbeat by ID from another session (the worker's background thread)."""
+    session.execute(update(JobRow).where(JobRow.id == job_id, JobRow.status == "running")
+                    .values(heartbeat_at=utcnow()))
+    session.commit()
+
+
 def finish(session: Session, job: JobRow, result: dict[str, Any] | None) -> None:
     job.status, job.progress, job.result, job.error = "succeeded", 1.0, result, None
     job.locked_by = None

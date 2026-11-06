@@ -43,7 +43,7 @@ npm run lint && npm run typecheck && npm test
 
 # After any contract change (contract PRs only)
 scripts/codegen.sh                          # regenerates Pydantic models, TS types, mock examples
-npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=warn
+npm run --prefix frontend lint:contract     # Spectral, version locked
 ```
 
 ## Tasks (in order)
@@ -84,6 +84,8 @@ npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=w
   updated implementations and a one-line reason. The integrator approves it. Then rebase.
 
 ## Ground rules
+- Read `CONTRIBUTING.md`. Title every PR `[B1] ...` (contract PRs: `[contract] ...`); the
+  ownership check in CI uses it. Your paths are listed under `B1` in `.github/ownership.yml`.
 - Stay in your paths. Touching another workstream's paths needs a note in the PR and that owner's review.
 - One branch and one git worktree for this workstream; small PRs into `main`; CI green (lint, type
   check, unit tests, contract drift, compose smoke test).

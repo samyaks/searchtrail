@@ -32,6 +32,10 @@ def _created() -> Mapped[datetime]:
     return mapped_column(TZ, default=utcnow, nullable=False)
 
 
+def _updated() -> Mapped[datetime]:
+    return mapped_column(TZ, default=utcnow, onupdate=utcnow, nullable=False)
+
+
 # -- people, sessions, tokens ------------------------------------------------------------------
 class UserRow(Base):
     __tablename__ = "users"
@@ -63,7 +67,7 @@ class TokenCacheRow(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
     key_id: Mapped[str] = mapped_column(String(64))
-    updated_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
 
 
 # -- matters and their sources -----------------------------------------------------------------
@@ -79,7 +83,7 @@ class MatterRow(Base):
     current_version: Mapped[int | None] = mapped_column(Integer)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = _created()
-    updated_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
 
 
 class CustodianRow(Base):
@@ -129,7 +133,7 @@ class CriteriaDraftRow(Base):
     criteria: Mapped[dict[str, Any]] = mapped_column(JsonType)
     based_on_version: Mapped[int | None] = mapped_column(Integer)
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
-    updated_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
 
 
 class QueryVersionRow(Base):
@@ -237,7 +241,7 @@ class JobRow(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(TZ)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = _created()
-    updated_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
 
 
 # -- the log ---------------------------------------------------------------------------------------

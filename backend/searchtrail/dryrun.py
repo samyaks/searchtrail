@@ -109,7 +109,8 @@ class DryRunTransport:
 
     def handle(self, method: str, url: str, body: dict | None) -> Response:
         self.calls.append((method, url, body))
-        path = re.sub(r"^https://graph\.microsoft\.com/v1\.0", "", url).split("?", 1)[0]
+        # Any Graph host and API version (commercial, GCC High, DoD, beta): match on the resource path.
+        path = re.sub(r"^https?://[^/]+/(v1\.0|beta)", "", url).split("?", 1)[0]
         if self.verbose:
             self.log(f"  [dry-run] {method:5} {path}")
             if body:

@@ -11,10 +11,16 @@ async function startMocks() {
   }
 }
 
-startMocks().then(() => {
+function render() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />
     </StrictMode>,
   );
-});
+}
+
+// Render even if the mocks fail to start, so a broken service worker gives a visible app and a
+// console error instead of a blank page.
+startMocks()
+  .catch((error: unknown) => console.error('API mocks failed to start; requests go to the real API.', error))
+  .finally(render);

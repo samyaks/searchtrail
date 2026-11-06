@@ -38,7 +38,8 @@ scripts/codegen.sh
 ```
 
 Start with [`docs/V1_PLAN.md`](docs/V1_PLAN.md), the [ADRs](docs/adr/README.md) and the
-[agent briefs](docs/agents/README.md).
+[agent briefs](docs/agents/README.md). Contributing (ownership, PR titles, contract changes):
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## The command-line tool
 

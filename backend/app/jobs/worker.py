@@ -10,6 +10,7 @@ import logging
 import os
 import signal
 import socket
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -29,10 +30,42 @@ log = logging.getLogger("searchtrail.worker")
 
 
 GatewayFactory = Callable[[JobRow], PurviewGateway]
+# How often the worker proves a running job is alive. Must be well under queue.STALE_AFTER.
+HEARTBEAT_SECONDS = 30.0
+# How often a worker looks for jobs left `running` by a worker that died.
+REQUEUE_SECONDS = 60.0
 
 
-def run_one(session: Session, worker_id: str, gateway_for: GatewayFactory) -> bool:
-    """Claim and run one job. Returns False when there was nothing to do."""
+class Heartbeat(threading.Thread):
+    """Keeps a running job's heartbeat_at fresh (and the liveness file, if any) in its own session,
+    so a handler blocked for an hour on one Purview call is never mistaken for a dead worker."""
+
+    def __init__(self, sessions: sessionmaker[Session], job_id: str, beat: Callable[[], None],
+                 interval: float | None = None):
+        super().__init__(name=f"heartbeat-{job_id}", daemon=True)
+        self.sessions, self.job_id, self.beat = sessions, job_id, beat
+        self.interval = HEARTBEAT_SECONDS if interval is None else interval
+        self._stopping = threading.Event()  # not `_stop`: Thread has a private method by that name
+
+    def run(self) -> None:
+        while not self._stopping.wait(self.interval):
+            self.beat()
+            try:
+                with self.sessions() as session:
+                    queue.touch(session, self.job_id)
+            except Exception:  # noqa: BLE001 - a failed heartbeat must not kill the job
+                log.exception("heartbeat for job %s failed", self.job_id)
+
+    def stop(self) -> None:
+        self._stopping.set()
+        self.join(timeout=5)
+
+
+def run_one(session: Session, worker_id: str, gateway_for: GatewayFactory, *,
+            sessions: sessionmaker[Session] | None = None, beat: Callable[[], None] = lambda: None) -> bool:
+    """Claim and run one job. Returns False when there was nothing to do.
+
+    `sessions` (a session factory) turns on the background heartbeat while the handler runs."""
     job = queue.claim_next(session, worker_id)
     if job is None:
         return False
@@ -41,6 +74,9 @@ def run_one(session: Session, worker_id: str, gateway_for: GatewayFactory) -> bo
     if handler is None:
         queue.fail(session, job, "internal_error", f"This version of SearchTrail can't run '{job.kind}' jobs yet.")
         return True
+    heartbeat = Heartbeat(sessions, job.id, beat) if sessions else None
+    if heartbeat:
+        heartbeat.start()
     try:
         # Built per job: the live gateway acts as the user who started the job.
         queue.finish(session, job, handler(JobContext(session, job, gateway_for(job))))
@@ -54,6 +90,9 @@ def run_one(session: Session, worker_id: str, gateway_for: GatewayFactory) -> bo
         queue.fail(session, job, "internal_error", "Something went wrong running this job. It has been logged.",
                    {"type": type(exc).__name__})
         log.exception("job %s crashed", job.id)
+    finally:
+        if heartbeat:
+            heartbeat.stop()
     return True
 
 
@@ -70,15 +109,21 @@ class Worker:
         if self.settings.worker_heartbeat_file:
             Path(self.settings.worker_heartbeat_file).write_text(str(time.time()))
 
-    def loop(self, *, once: bool = False) -> None:
+    def requeue_stale(self) -> None:
         with self.sessions() as session:
             requeued = queue.requeue_stale(session)
-            if requeued:
-                log.info("requeued %d job(s) left running by a stopped worker", requeued)
+        if requeued:
+            log.info("requeued %d job(s) left running by a stopped worker", requeued)
+
+    def loop(self, *, once: bool = False) -> None:
+        last_requeue: float | None = None  # None: sweep at once (monotonic() starts near 0 after boot)
         while not self.stopping:
             self.beat()
+            if last_requeue is None or time.monotonic() - last_requeue >= REQUEUE_SECONDS:
+                self.requeue_stale()
+                last_requeue = time.monotonic()
             with self.sessions() as session:
-                did_work = run_one(session, self.worker_id, self.gateway_for)
+                did_work = run_one(session, self.worker_id, self.gateway_for, sessions=self.sessions, beat=self.beat)
             if once:
                 return
             if not did_work:

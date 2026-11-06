@@ -21,6 +21,13 @@ def handlers():
     HANDLERS.update(saved)
 
 
+def _aware(dt):
+    """SQLite hands back naive datetimes; the app stores UTC."""
+    from datetime import UTC
+
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
 def gw(_job=None):
     return DryRunPurviewGateway(log=lambda _m: None)
 
@@ -121,3 +128,59 @@ def test_two_workers_never_claim_the_same_job(pg_sessions):
     for t in threads:
         t.join()
     assert None not in claimed and len(set(claimed)) == 2
+
+
+def test_heartbeat_keeps_a_slow_job_alive(sessions, handlers, monkeypatch):
+    import time
+
+    from app.jobs import worker as worker_module
+
+    monkeypatch.setattr(worker_module, "HEARTBEAT_SECONDS", 0.05)
+    seen: list = []
+
+    def slow(ctx):
+        # A handler blocked on one long call (a download, say) never calls ctx.heartbeat itself.
+        started = utcnow()
+        time.sleep(0.4)
+        with sessions() as s:
+            seen.append((started, s.get(JobRow, ctx.job.id).heartbeat_at))
+        return {}
+
+    handlers["download"] = slow
+    with sessions() as s:
+        job_id = queue.enqueue(s, "download").id
+        s.commit()
+    beats: list = []
+    with sessions() as s:
+        run_one(s, "w1", gw, sessions=sessions, beat=lambda: beats.append(1))
+    started, heartbeat_at = seen[0]
+    assert _aware(heartbeat_at) > started  # the background thread touched the row while the handler slept
+    assert beats  # and the liveness beat ran too
+    with sessions() as s:
+        assert s.get(JobRow, job_id).status == "succeeded"
+
+
+def test_default_heartbeat_is_well_under_the_stale_threshold():
+    from app.jobs.worker import HEARTBEAT_SECONDS
+
+    assert HEARTBEAT_SECONDS * 4 <= queue.STALE_AFTER.total_seconds()
+
+
+def test_loop_requeues_stale_jobs_then_runs_them(sessions, handlers, monkeypatch):
+    from app.jobs import worker as worker_module
+
+    # On a machine booted less than a minute ago, monotonic() is under REQUEUE_SECONDS; the first
+    # sweep must still happen (this failed on a fresh CI runner).
+    monkeypatch.setattr(worker_module.time, "monotonic", lambda: 5.0)
+    handlers["estimate"] = lambda _ctx: {"ok": True}
+    with sessions() as s:
+        job = queue.enqueue(s, "estimate")
+        s.commit()
+        claimed = queue.claim_next(s, "dead-worker")
+        claimed.heartbeat_at = utcnow() - timedelta(minutes=10)
+        s.commit()
+    w = Worker(AppSettings(dry_run=True), sessions=sessions, gateway_for=gw)
+    w.loop(once=True)
+    with sessions() as s:
+        done = s.get(JobRow, job.id)
+        assert done.status == "succeeded" and done.attempts == 2
