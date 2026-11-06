@@ -531,7 +531,11 @@ paths:
       tags: [criteria]
       operationId: saveDraft
       summary: Save the criteria being edited
-      description: Saves the draft. Nothing is sent to Purview until the draft is estimated.
+      description: |
+        Saves the draft. Nothing is sent to Purview until the draft is estimated. Any criteria that
+        match the schema are saved, even ones `/kql/preview` would reject (a leading wildcard, say),
+        so work in progress is never lost; `POST .../estimates` refuses invalid criteria with
+        `criteria_invalid`.
       requestBody:
         required: true
         content:
@@ -549,12 +553,12 @@ paths:
               examples:
                 falcon:
                   $ref: "#/components/examples/DraftFalcon"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-        "422":
-          $ref: "#/components/responses/CriteriaInvalid"
 
   /kql/preview:
     post:
@@ -618,6 +622,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/JobAlreadyRunning"
         "422":
           $ref: "#/components/responses/CriteriaInvalid"
 
@@ -654,7 +660,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          $ref: "#/components/responses/JobAlreadyRunning"
 
   /matters/{matterId}/previews/latest:
     parameters:
@@ -773,6 +779,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/JobAlreadyRunning"
         "422":
           $ref: "#/components/responses/CriteriaInvalid"
 
@@ -1130,6 +1138,49 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /matters/{matterId}/jobs:
+    parameters:
+      - $ref: "#/components/parameters/MatterId"
+    get:
+      tags: [jobs]
+      operationId: listMatterJobs
+      summary: Jobs for a matter
+      description: |
+        The matter's jobs, newest first. Screens call this with `active=true` when they load, so a
+        long action started earlier (or in another tab) is picked up and followed after a reload.
+      parameters:
+        - name: active
+          in: query
+          description: Only queued or running jobs
+          schema: { type: boolean, default: false }
+        - name: kind
+          in: query
+          description: Only jobs of this kind
+          schema: { $ref: "#/components/schemas/JobKind" }
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobList" }
+              examples:
+                previewRunning:
+                  value:
+                    items:
+                      - id: job_01HF3PRV
+                        kind: preview
+                        status: running
+                        progress: 0.42
+                        matter_id: mat_falcon
+                        created_at: "2026-11-05T10:41:30Z"
+                        updated_at: "2026-11-05T10:42:05Z"
+                        result: null
+                        error: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /jobs/{jobId}:
     parameters:
       - name: jobId
@@ -1277,6 +1328,14 @@ components:
           examples:
             duplicate:
               value: { code: conflict, message: A matter with number M-2026-0142 already exists., details: {} }
+    JobAlreadyRunning:
+      description: A job of this kind is already queued or running for this matter. Follow it instead (details.job_id).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          examples:
+            running:
+              value: { code: conflict, message: A preview is already running for this matter., details: { job_id: job_01HF3PRV } }
     CriteriaInvalid:
       description: The criteria are invalid. Nothing was sent to Purview.
       content:
@@ -1645,14 +1704,14 @@ components:
     LogFalcon:
       value:
         items:
-          - { seq: 8, ts: "2026-11-05T10:51:00Z", action: term_report, actor: Dana Whitfield, summary: Query v3 · 4 terms counted, version: 3, prev_hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", hash: "cd7c2de3013d2eeac2f7d8bb6abd56515813a04e172e75a17e9b79002a003329", details: {} }
-          - { seq: 7, ts: "2026-11-05T10:42:00Z", action: preview, actor: Dana Whitfield, summary: Query v3 · 630 items + 25 partially indexed, version: 3, prev_hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", details: {} }
-          - { seq: 6, ts: "2026-11-04T16:52:00Z", action: export_finished, actor: SearchTrail, summary: M-2026-0142 EVERLAW 20261104T1630Z · ready in Purview, version: 2, prev_hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", details: {} }
-          - { seq: 5, ts: "2026-11-04T16:30:00Z", action: export_started, actor: Dana Whitfield, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", details: {} }
-          - { seq: 4, ts: "2026-11-04T15:58:00Z", action: term_report, actor: Sam Ortiz, summary: Query v2 · 3 terms counted, version: 2, prev_hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", details: {} }
-          - { seq: 3, ts: "2026-11-04T15:41:00Z", action: preview, actor: Dana Whitfield, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", details: {} }
-          - { seq: 2, ts: "2026-11-03T09:30:00Z", action: preview, actor: Dana Whitfield, summary: Query v1 · 3,912 items + 160 partially indexed, version: 1, prev_hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", details: {} }
-          - { seq: 1, ts: "2026-11-03T09:12:00Z", action: matter_created, actor: Dana Whitfield, summary: Purview case M-2026-0142 with 2 custodians, version: null, prev_hash: "0000000000000000000000000000000000000000000000000000000000000000", hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", details: {} }
+          - { seq: 8, ts: "2026-11-05T10:51:00Z", action: term_report, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v3 · 4 terms counted, version: 3, prev_hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", hash: "cd7c2de3013d2eeac2f7d8bb6abd56515813a04e172e75a17e9b79002a003329", details: {} }
+          - { seq: 7, ts: "2026-11-05T10:42:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v3 · 630 items + 25 partially indexed, version: 3, prev_hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", details: {} }
+          - { seq: 6, ts: "2026-11-04T16:52:00Z", action: export_finished, actor: SearchTrail, actor_email: null, summary: M-2026-0142 EVERLAW 20261104T1630Z · ready in Purview, version: 2, prev_hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", details: {} }
+          - { seq: 5, ts: "2026-11-04T16:30:00Z", action: export_started, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", details: {} }
+          - { seq: 4, ts: "2026-11-04T15:58:00Z", action: term_report, actor: Sam Ortiz, actor_email: sam.ortiz@contoso.com, summary: Query v2 · 3 terms counted, version: 2, prev_hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", details: {} }
+          - { seq: 3, ts: "2026-11-04T15:41:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", details: {} }
+          - { seq: 2, ts: "2026-11-03T09:30:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v1 · 3,912 items + 160 partially indexed, version: 1, prev_hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", details: {} }
+          - { seq: 1, ts: "2026-11-03T09:12:00Z", action: matter_created, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Purview case M-2026-0142 with 2 custodians, version: null, prev_hash: "0000000000000000000000000000000000000000000000000000000000000000", hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", details: {} }
         total: 8
         page: 1
         page_size: 50
@@ -2391,12 +2450,13 @@ components:
     LogEntry:
       type: object
       description: One hash-chained log entry (same chain format as `backend/searchtrail/audit.py`)
-      required: [seq, ts, action, actor, summary, version, prev_hash, hash, details]
+      required: [seq, ts, action, actor, actor_email, summary, version, prev_hash, hash, details]
       properties:
         seq: { type: integer, minimum: 1 }
         ts: { type: string, format: date-time }
         action: { $ref: "#/components/schemas/LogAction" }
         actor: { type: string, description: "Display name of the person, or SearchTrail for automatic steps" }
+        actor_email: { type: [string, "null"], description: "The person's sign-in name (UPN), which identifies them unambiguously; null for automatic steps" }
         summary: { type: string }
         version: { type: [integer, "null"] }
         prev_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
@@ -2438,6 +2498,15 @@ components:
       type: string
       description: Job state
       enum: [queued, running, succeeded, failed]
+
+    JobList:
+      type: object
+      description: Jobs, newest first
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Job" }
 
     Job:
       type: object

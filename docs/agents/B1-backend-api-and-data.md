@@ -52,7 +52,8 @@ npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=w
 2. Matters: `GET/POST /matters`, `GET/PATCH /matters/{id}` with stage and latest counts.
 3. Custodians and sites: `PUT/DELETE /matters/{id}/custodians/{userId}`, `POST/DELETE .../sites`.
    The hold endpoint stores the request and calls the gateway's `apply_hold`/`remove_hold`.
-4. Drafts and versions: `GET/PUT /matters/{id}/draft`; `POST /kql/preview`; version creation on
+4. Drafts and versions: `GET/PUT /matters/{id}/draft` (save any schema-valid criteria; only
+   estimating rejects `criteria_invalid`); `POST /kql/preview`; version creation on
    estimate (criteria, KQL, `kql_sha256`, methodology, `sources_fingerprint`), `GET .../versions`,
    `GET .../versions/compare` (plain-English differences from the methodology lines, count delta).
 5. The `202` endpoints (`estimates`, `previews`, `term-reports`, `exports`, `download`,

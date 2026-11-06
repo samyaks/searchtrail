@@ -601,6 +601,9 @@ class LogEntry(BaseModel):
     ts: AwareDatetime
     action: LogAction
     actor: Annotated[str, Field(description='Display name of the person, or SearchTrail for automatic steps')]
+    actor_email: Annotated[
+        str | None, Field(description="The person's sign-in name (UPN), which identifies them unambiguously; null for automatic steps")
+    ]
     summary: str
     version: int | None
     prev_hash: Annotated[str, Field(pattern='^[0-9a-f]{64}$')]
@@ -675,6 +678,10 @@ class Matter(BaseModel):
     previewed_version: int | None
     last_previewed_at: AwareDatetime | None
     draft_changed: Annotated[bool, Field(description='True when the draft criteria or sources differ from the current version')]
+
+
+class JobList(BaseModel):
+    items: list[Job]
 
 
 Label.model_rebuild()

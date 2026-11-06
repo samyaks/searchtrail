@@ -335,7 +335,10 @@ export interface paths {
         get: operations["getDraft"];
         /**
          * Save the criteria being edited
-         * @description Saves the draft. Nothing is sent to Purview until the draft is estimated.
+         * @description Saves the draft. Nothing is sent to Purview until the draft is estimated. Any criteria that
+         *     match the schema are saved, even ones `/kql/preview` would reject (a leading wildcard, say),
+         *     so work in progress is never lost; `POST .../estimates` refuses invalid criteria with
+         *     `criteria_invalid`.
          */
         put: operations["saveDraft"];
         post?: never;
@@ -737,6 +740,30 @@ export interface paths {
          * @description Recomputes every entry's hash. Reports the first entry that was changed, removed or reordered.
          */
         post: operations["verifyLog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/matters/{matterId}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Matter ID (not the matter number) */
+                matterId: components["parameters"]["MatterId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Jobs for a matter
+         * @description The matter's jobs, newest first. Screens call this with `active=true` when they load, so a
+         *     long action started earlier (or in another tab) is picked up and followed after a reload.
+         */
+        get: operations["listMatterJobs"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1333,6 +1360,8 @@ export interface components {
             action: components["schemas"]["LogAction"];
             /** @description Display name of the person, or SearchTrail for automatic steps */
             actor: string;
+            /** @description The person's sign-in name (UPN), which identifies them unambiguously; null for automatic steps */
+            actor_email: string | null;
             summary: string;
             version: number | null;
             prev_hash: string;
@@ -1368,6 +1397,10 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "succeeded" | "failed";
+        /** @description Jobs, newest first */
+        JobList: {
+            items: components["schemas"]["Job"][];
+        };
         /**
          * @description A long action. `result` is set when `status` is `succeeded`: an `EstimateResult`
          *     (estimate), `Preview` (preview), `TermReport` (term_report) or `Export` (export, download,
@@ -1426,6 +1459,15 @@ export interface components {
         };
         /** @description The request conflicts with the current state */
         Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description A job of this kind is already queued or running for this matter. Follow it instead (details.job_id). */
+        JobAlreadyRunning: {
             headers: {
                 [name: string]: unknown;
             };
@@ -1974,9 +2016,9 @@ export interface operations {
                     "application/json": components["schemas"]["Draft"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            422: components["responses"]["CriteriaInvalid"];
         };
     };
     previewKql: {
@@ -2029,6 +2071,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["JobAlreadyRunning"];
             422: components["responses"]["CriteriaInvalid"];
         };
     };
@@ -2055,7 +2098,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
+            409: components["responses"]["JobAlreadyRunning"];
         };
     };
     getLatestPreview: {
@@ -2169,6 +2212,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["JobAlreadyRunning"];
             422: components["responses"]["CriteriaInvalid"];
         };
     };
@@ -2483,6 +2527,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogVerification"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listMatterJobs: {
+        parameters: {
+            query?: {
+                /** @description Only queued or running jobs */
+                active?: boolean;
+                /** @description Only jobs of this kind */
+                kind?: components["schemas"]["JobKind"];
+            };
+            header?: never;
+            path: {
+                /** @description Matter ID (not the matter number) */
+                matterId: components["parameters"]["MatterId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Jobs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobList"];
                 };
             };
             401: components["responses"]["Unauthorized"];

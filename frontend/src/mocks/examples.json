@@ -1172,6 +1172,7 @@
               "ts": "2026-11-05T10:51:00Z",
               "action": "term_report",
               "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
               "summary": "Query v3 · 4 terms counted",
               "version": 3,
               "prev_hash": "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b",
@@ -1183,6 +1184,7 @@
               "ts": "2026-11-05T10:42:00Z",
               "action": "preview",
               "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
               "summary": "Query v3 · 630 items + 25 partially indexed",
               "version": 3,
               "prev_hash": "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291",
@@ -1194,6 +1196,7 @@
               "ts": "2026-11-04T16:52:00Z",
               "action": "export_finished",
               "actor": "SearchTrail",
+              "actor_email": null,
               "summary": "M-2026-0142 EVERLAW 20261104T1630Z · ready in Purview",
               "version": 2,
               "prev_hash": "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1",
@@ -1205,6 +1208,7 @@
               "ts": "2026-11-04T16:30:00Z",
               "action": "export_started",
               "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
               "summary": "Query v2 · 1",
               "148 items + 41 partially indexed": null,
               "version": 2,
@@ -1217,6 +1221,7 @@
               "ts": "2026-11-04T15:58:00Z",
               "action": "term_report",
               "actor": "Sam Ortiz",
+              "actor_email": "sam.ortiz@contoso.com",
               "summary": "Query v2 · 3 terms counted",
               "version": 2,
               "prev_hash": "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6",
@@ -1228,6 +1233,7 @@
               "ts": "2026-11-04T15:41:00Z",
               "action": "preview",
               "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
               "summary": "Query v2 · 1",
               "148 items + 41 partially indexed": null,
               "version": 2,
@@ -1240,6 +1246,7 @@
               "ts": "2026-11-03T09:30:00Z",
               "action": "preview",
               "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
               "summary": "Query v1 · 3",
               "912 items + 160 partially indexed": null,
               "version": 1,
@@ -1252,6 +1259,7 @@
               "ts": "2026-11-03T09:12:00Z",
               "action": "matter_created",
               "actor": "Dana Whitfield",
+              "actor_email": "dana.whitfield@contoso.com",
               "summary": "Purview case M-2026-0142 with 2 custodians",
               "version": null,
               "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -1262,6 +1270,43 @@
           "total": 8,
           "page": 1,
           "page_size": 50
+        }
+      },
+      "401": {
+        "expired": {
+          "code": "session_expired",
+          "message": "Your session has ended. Sign in again to continue.",
+          "details": {}
+        }
+      },
+      "404": {
+        "notFound": {
+          "code": "not_found",
+          "message": "No matter with that ID.",
+          "details": {}
+        }
+      }
+    }
+  },
+  "listMatterJobs": {
+    "method": "GET",
+    "path": "/matters/{matterId}/jobs",
+    "examples": {
+      "200": {
+        "previewRunning": {
+          "items": [
+            {
+              "id": "job_01HF3PRV",
+              "kind": "preview",
+              "status": "running",
+              "progress": 0.42,
+              "matter_id": "mat_falcon",
+              "created_at": "2026-11-05T10:41:30Z",
+              "updated_at": "2026-11-05T10:42:05Z",
+              "result": null,
+              "error": null
+            }
+          ]
         }
       },
       "401": {
@@ -1889,6 +1934,15 @@
           "changed_since_version": false
         }
       },
+      "400": {
+        "badRequest": {
+          "code": "validation_failed",
+          "message": "matter_number must be letters, digits, dots, dashes or underscores.",
+          "details": {
+            "field": "matter_number"
+          }
+        }
+      },
       "401": {
         "expired": {
           "code": "session_expired",
@@ -1901,16 +1955,6 @@
           "code": "not_found",
           "message": "No matter with that ID.",
           "details": {}
-        }
-      },
-      "422": {
-        "leadingWildcard": {
-          "code": "criteria_invalid",
-          "message": "Search term '*voice' starts with a wildcard, which Purview doesn't support. Use a prefix like invoic* instead.",
-          "details": {
-            "field": "keywords",
-            "value": "*voice"
-          }
         }
       },
       "request": {
@@ -2105,6 +2149,15 @@
           "details": {}
         }
       },
+      "409": {
+        "running": {
+          "code": "conflict",
+          "message": "A preview is already running for this matter.",
+          "details": {
+            "job_id": "job_01HF3PRV"
+          }
+        }
+      },
       "422": {
         "leadingWildcard": {
           "code": "criteria_invalid",
@@ -2284,10 +2337,12 @@
         }
       },
       "409": {
-        "duplicate": {
+        "running": {
           "code": "conflict",
-          "message": "A matter with number M-2026-0142 already exists.",
-          "details": {}
+          "message": "A preview is already running for this matter.",
+          "details": {
+            "job_id": "job_01HF3PRV"
+          }
         }
       }
     }
@@ -2380,6 +2435,15 @@
           "code": "not_found",
           "message": "No matter with that ID.",
           "details": {}
+        }
+      },
+      "409": {
+        "running": {
+          "code": "conflict",
+          "message": "A preview is already running for this matter.",
+          "details": {
+            "job_id": "job_01HF3PRV"
+          }
         }
       },
       "422": {
