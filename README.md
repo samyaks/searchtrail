@@ -20,15 +20,25 @@ command-line tool it grew from:
 ## Run the web app locally
 
 ```bash
-# Everything in Docker, dry-run on (no tenant needed): API on :8000, web on :5173
+# Backend: Postgres, migrations, API (:8000) and worker in Docker, dry run on (no tenant needed)
 docker compose -f deploy/docker-compose.yml up --build
 curl localhost:8000/api/v1/health
 
-# Or run pieces directly
+# Backend tests and lint
 cd backend && python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 pytest && ruff check .
-cd ../frontend && npm ci && npm run dev    # MSW mocks on; opens the Matters screen with sample data
+
+# Frontend on :5173 with MSW mocks (the Matters screen shows sample data); no backend needed
+cd frontend && npm ci && npm run dev
+npm run dev:api        # mocks off, /api proxied to the backend on :8000
+npm run lint && npm run typecheck && npm test
+
+# After changing contracts/openapi.yaml (contract PRs only): regenerate the derived code
+scripts/codegen.sh
 ```
+
+Start with [`docs/V1_PLAN.md`](docs/V1_PLAN.md), the [ADRs](docs/adr/README.md) and the
+[agent briefs](docs/agents/README.md).
 
 ## The command-line tool
 
