@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: SearchTrail API
   version: 1.0.0-phase0
-  summary: Evidence of how you searched.
+  summary: Evidence of how you searched. (branch protection test)
   description: |
     The SearchTrail V1 API. This file is the **source of truth** for the frontend and the
     backend (see `docs/adr/0006-contract-first-openapi.md`). Changes go through a small PR
