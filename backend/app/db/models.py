@@ -11,7 +11,6 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    DateTime,
     Float,
     ForeignKey,
     Index,
@@ -20,12 +19,13 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, JsonType, utcnow
+from .base import Base, JsonType, UTCDateTime, utcnow
 
-TZ = DateTime(timezone=True)
+TZ = UTCDateTime()
 
 
 def _created() -> Mapped[datetime]:
@@ -74,7 +74,7 @@ class TokenCacheRow(Base):
 class MatterRow(Base):
     __tablename__ = "matters"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    matter_number: Mapped[str] = mapped_column(String(64), unique=True)
+    matter_number: Mapped[str] = mapped_column(String(64))  # unique ignoring case: see the index below
     name: Mapped[str] = mapped_column(String(200))
     type: Mapped[str] = mapped_column(String(32))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -85,6 +85,10 @@ class MatterRow(Base):
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
+
+
+# M-2026-0142 and m-2026-0142 are the same matter number (migration 0002).
+Index("uq_matters_matter_number_lower", func.lower(MatterRow.matter_number), unique=True)
 
 class CustodianRow(Base):
     __tablename__ = "custodians"

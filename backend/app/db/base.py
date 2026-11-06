@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, MetaData
+from sqlalchemy import JSON, DateTime, MetaData, TypeDecorator
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase
 
@@ -18,6 +18,18 @@ NAMING = {
 
 # JSONB on Postgres, plain JSON elsewhere (SQLite in unit tests).
 JsonType = JSON().with_variant(JSONB(), "postgresql")
+
+
+class UTCDateTime(TypeDecorator):
+    """TIMESTAMP WITH TIME ZONE that always loads timezone-aware. Postgres already does; SQLite drops the
+    zone, and everything stored is UTC, so naive values get UTC attached. Code reading rows never needs
+    to fix up datetimes (the contract's timestamps are all timezone-aware)."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
 
 
 class Base(DeclarativeBase):
