@@ -10,7 +10,7 @@ Defensibility rules built in:
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,7 +22,8 @@ from .matter import Matter
 from .query import CullCriteria, build_kql, describe, term_queries, validate
 from .report import load_report, summarize, write_preview_csv
 
-__all__ = ["COUNT_FIELDS", "CullWorkflow", "ExportBlocked", "Prepared", "sources_signature"]
+__all__ = ["COUNT_FIELDS", "CullWorkflow", "CustodianSources", "ExportBlocked", "Prepared", "PurviewTarget",
+           "Synced", "sources_signature", "sync_purview"]
 DRIFT_FIELDS = ("indexedItemCount", "unindexedItemCount")
 
 
@@ -44,6 +45,90 @@ class Prepared:
 
 def _stamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+# -- syncing Purview to a matter (shared by the CLI and the web app's jobs) ---------------------
+@dataclass
+class CustodianSources:
+    email: str
+    sites: list[str] = field(default_factory=list)
+    # What the custodian's user source covers: "mailbox" (mail and Teams chats), "site" (OneDrive).
+    # Empty means no user source, only the linked sites.
+    included_sources: str = "mailbox, site"
+
+
+@dataclass
+class PurviewTarget:
+    """What the Purview case and search must look like."""
+
+    matter_number: str
+    case_name: str
+    description: str
+    custodians: list[CustodianSources]
+    additional_sites: list[str]
+    kql: str
+
+
+@dataclass
+class Synced:
+    case_id: str
+    search_id: str
+    search_name: str
+    source_urls: list[str]
+
+
+def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Synced:
+    """Make sure the case, custodians, data sources and search exist and match `target`, creating only
+    what's missing. `state` remembers the Purview IDs between runs (the CLI keeps it in state.json, the
+    web app in matters.purview_state) and is updated in place; save it as soon as this returns.
+
+    Same sources as last time: the existing search is reused and its query patched if it changed.
+    Different sources: a new search, numbered, and the earlier ones stay in the case as a record.
+
+    Not idempotent for site sources and searches: if the process dies between creating one and saving
+    `state`, a rerun creates another. Harmless (an unused source or search in the case), and rare.
+    """
+    case = gw.ensure_case(target.case_name, target.description, target.matter_number, known_id=state.get("case_id"))
+    case_id = case["id"]
+    if state.get("case_id") != case_id:
+        state.clear()
+        state["case_id"] = case_id
+
+    custodians = state.setdefault("custodians", {})
+    source_urls: list[str] = []
+    for cust in target.custodians:
+        entry = custodians.get(cust.email.lower())
+        if not entry:
+            c = gw.ensure_custodian(case_id, cust.email)
+            entry = custodians[cust.email.lower()] = {"custodian_id": c["id"], "sites": {}}
+        if cust.included_sources and (not entry.get("user_source_id")
+                                      or entry.get("included_sources", "mailbox, site") != cust.included_sources):
+            us = gw.ensure_user_source(case_id, entry["custodian_id"], cust.email, cust.included_sources)
+            entry["user_source_id"], entry["included_sources"] = us["id"], cust.included_sources
+        if cust.included_sources:
+            source_urls.append(gw.source_url(case_id, entry["custodian_id"], "userSources", entry["user_source_id"]))
+        for site in cust.sites:
+            if site not in entry["sites"]:
+                entry["sites"][site] = gw.add_site_source(case_id, entry["custodian_id"], site)["id"]
+            source_urls.append(gw.source_url(case_id, entry["custodian_id"], "siteSources", entry["sites"][site]))
+
+    fingerprint = sha256_text(canonical({"sources": sorted(source_urls), "sites": sorted(target.additional_sites)}))
+    search = state.get("search")
+    if search and search.get("fingerprint") == fingerprint:
+        if search["kql"] != target.kql:
+            gw.update_query(case_id, search["id"], target.kql)
+            search["kql"] = target.kql
+    else:
+        history = state.setdefault("search_history", [])
+        name = f"{target.matter_number} cull v{len(history) + 1}"
+        created = gw.create_search(case_id, name, target.kql, source_urls,
+                                   description="Created by SearchTrail; see the matter's culling log")
+        for site in target.additional_sites:
+            gw.add_additional_site(case_id, created["id"], site)
+        search = state["search"] = {"id": created["id"], "name": name, "fingerprint": fingerprint, "kql": target.kql}
+        history.append({"id": created["id"], "name": name, "created": _stamp()})
+        state.pop("term_search", None)
+    return Synced(case_id, search["id"], search["name"], source_urls)
 
 
 _counts = counts_from_operation
@@ -101,46 +186,17 @@ class CullWorkflow:
 
     def prepare(self, matter: Matter) -> Prepared:
         """Make sure the case, custodians, data sources and search exist and match the matter file."""
-        state = self._load_state(matter)
-        case = self.gw.ensure_case(matter.case_name, matter.description, matter.matter_id, known_id=state.get("case_id"))
-        case_id = case["id"]
-        if state.get("case_id") != case_id:
-            state = {"case_id": case_id}
-
-        custodians = state.setdefault("custodians", {})
-        source_urls: list[str] = []
-        for cust in matter.custodians:
-            entry = custodians.get(cust.email.lower())
-            if not entry:
-                c = self.gw.ensure_custodian(case_id, cust.email)
-                us = self.gw.ensure_user_source(case_id, c["id"], cust.email)
-                entry = custodians[cust.email.lower()] = {"custodian_id": c["id"], "user_source_id": us["id"], "sites": {}}
-            source_urls.append(self.gw.source_url(case_id, entry["custodian_id"], "userSources", entry["user_source_id"]))
-            for site in cust.sites:
-                if site not in entry["sites"]:
-                    entry["sites"][site] = self.gw.add_site_source(case_id, entry["custodian_id"], site)["id"]
-                source_urls.append(self.gw.source_url(case_id, entry["custodian_id"], "siteSources", entry["sites"][site]))
-
         kql, criteria, warnings, _ = self.plan(matter)
-        fingerprint = sha256_text(canonical({"sources": sorted(source_urls), "sites": sorted(matter.additional_sites)}))
-        search = state.get("search")
-        if search and search.get("fingerprint") == fingerprint:
-            if search["kql"] != kql:
-                self.gw.update_query(case_id, search["id"], kql)
-                search["kql"] = kql
-        else:
-            # Different sources means a new search; earlier searches stay in the case as a record.
-            history = state.setdefault("search_history", [])
-            name = f"{matter.matter_id} cull v{len(history) + 1}"
-            created = self.gw.create_search(case_id, name, kql, source_urls,
-                                            description="Created by SearchTrail; see the matter's culling log")
-            for site in matter.additional_sites:
-                self.gw.add_additional_site(case_id, created["id"], site)
-            search = state["search"] = {"id": created["id"], "name": name, "fingerprint": fingerprint, "kql": kql}
-            history.append({"id": created["id"], "name": name, "created": _stamp()})
-            state.pop("term_search", None)
+        state = self._load_state(matter)
+        target = PurviewTarget(
+            matter_number=matter.matter_id, case_name=matter.case_name, description=matter.description,
+            custodians=[CustodianSources(c.email, list(c.sites)) for c in matter.custodians],
+            additional_sites=list(matter.additional_sites), kql=kql,
+        )
+        synced = sync_purview(self.gw, state, target)
         self._save_state(matter, state)
-        return Prepared(case_id, matter.case_name, search["id"], search["name"], kql, criteria, warnings, source_urls)
+        return Prepared(synced.case_id, matter.case_name, synced.search_id, synced.search_name, kql, criteria,
+                        warnings, synced.source_urls)
 
     def preview(self, matter: Matter, *, with_report: bool = True) -> dict:
         p = self.prepare(matter)

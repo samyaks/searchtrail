@@ -39,7 +39,7 @@ anywhere it's needed (for example, mock examples for WS-D). It merges before the
 |---|---|---|---|
 | 1 | `[B1] Repositories, current user, matters` | `app/db/repositories/` with the seam functions below; a `current_user` stub (dry run: Dana Whitfield); the router layout in `app/api/__init__.py`; `GET/POST /matters`, `GET/PATCH /matters/{id}` with stage and latest counts | Contract tests pass for the four operations; `npm run dev:api` shows the Matters list from the real API |
 | 2 | `[B2] Resumable jobs, storage, export checks` | The start, checkpoint, poll, finish pattern, proven on the `estimate` handler; the storage interface with a local-volume implementation; `check_export` | A test kills a worker mid-estimate and a second worker finishes it with exactly one Purview start call; `check_export` is tested for each check; a blocked export makes only GET calls; CLI tests still pass |
-| 3 | `[C] Dry-run /me, /labels, /directory/users` | The three routers, added to B1's router layout with a PR note, backed by the dry-run gateway and user | Contract tests pass; the shell shows tenant and user from the real API |
+| 3 | `[C] Dry-run /me, /labels, /directory/users, one dry-run tenant` | The three routers, added to B1's router layout with a PR note, backed by the dry-run gateway and user. One dry-run "tenant" shared by every job and by the API: today `get_gateway` builds a fresh `DryRunTransport` per job, so a job can't see the searches and operations an earlier job created (a resumed or later job reads 0 items). Keep the transport's state, operations included, in one place under `SEARCHTRAIL_STORAGE_DIR`, safe for the API and the worker to use at once | Contract tests pass; the shell shows tenant and user from the real API; an estimate then a second job on the same matter in the running stack see the same search and counts |
 | 4 | `[D] Component kit and mocks for every operation` | Buttons, chips, segmented controls, switches, cards and data tables from `src/components/index.ts`; MSW handlers for all 39 operations, with state for draft edits and job progress | A test fails if any `operationId` has no handler; each component has Vitest and axe tests |
 | 5 | `[G] Web image and end-to-end harness` | A `web` image (the built frontend behind a reverse proxy that also proxies `/api`) in compose; Playwright in `frontend/tests/e2e/` against the compose stack, `--trace off` | One smoke test (the Matters list) passes in CI against the dry-run stack |
 
@@ -93,7 +93,20 @@ def sources_fingerprint(session, matter_id: str) -> str: ...
 def check_export(session, gateway: PurviewGateway, matter_id: str) -> ExportCheck: ...
     # app.schemas.contract.ExportCheck. "previewed" and "same_sources" come from the database with no
     # Purview calls; "counts_unchanged" runs one estimate, only when both passed. No other Purview calls.
+    # Raises LookupError for an unknown matter (B1 maps it to 404).
+
+# Job payloads: WS-B1's 202 endpoints enqueue these (app.jobs.queue.enqueue), WS-B2's handlers read them.
+# Every job sets matter_id and created_by (the user, who becomes the log's actor).
+#   estimate   {"query_version_id": str}   B1 creates the version first: criteria, KQL, kql_sha256,
+#                                          methodology and sources_fingerprint, and sets matters.current_version.
+#   (PR 7 adds the payloads for preview, term_report, export, download and review_set here.)
+# A handler refuses with `conflict` if the sources changed after the version was created.
 ```
+
+The Purview IDs a matter's jobs create (case, custodians, sources, searches) live in
+`matters.purview_state`, in the same shape as the CLI's `state.json`, and both go through
+`searchtrail.workflow.sync_purview`. `app.jobs.purview.prepare` copies them onto the rows that show
+them: `matters.purview_case_id`, the custodians' Purview IDs and `query_versions.purview_search_id`.
 
 ## Working rules for this phase
 - One branch per PR (`ws-b1/matters`, `ws-e/scope`), cut from the latest `main`. If the PR before it
