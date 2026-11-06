@@ -11,9 +11,9 @@ import io
 import re
 import zipfile
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from .labels import LabelIndex
 

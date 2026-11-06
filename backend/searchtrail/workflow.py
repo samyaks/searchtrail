@@ -10,10 +10,10 @@ Defensibility rules built in:
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from .audit import AuditLog, canonical, sha256_text
 from .ediscovery import EDiscovery
@@ -45,7 +45,7 @@ class Prepared:
 
 
 def _stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _counts(op: dict) -> dict:
@@ -128,7 +128,7 @@ class CullWorkflow:
             history = state.setdefault("search_history", [])
             name = f"{matter.matter_id} cull v{len(history) + 1}"
             created = self.ed.create_search(case_id, name, kql, source_urls,
-                                            description="Created by culltool; see the matter's culling log")
+                                            description="Created by SearchTrail; see the matter's culling log")
             for site in matter.additional_sites:
                 self.ed.add_additional_site(case_id, created["id"], site)
             search = state["search"] = {"id": created["id"], "name": name, "fingerprint": fingerprint, "kql": kql}
@@ -177,7 +177,7 @@ class CullWorkflow:
         term_search = state.get("term_search")
         if not term_search:
             created = self.ed.create_search(p.case_id, f"{matter.matter_id} term report", p.kql, p.source_urls,
-                                            description="Per-term hit counts (culltool)")
+                                            description="Per-term hit counts (SearchTrail)")
             for site in matter.additional_sites:
                 self.ed.add_additional_site(p.case_id, created["id"], site)
             term_search = state["term_search"] = {"id": created["id"]}

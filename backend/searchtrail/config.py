@@ -38,7 +38,7 @@ class Settings:
     state_dir: Path
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         load_dotenv()
         mode = os.environ.get("AUTH_MODE", "delegated").strip().lower()
         if mode not in ("delegated", "app"):
@@ -53,7 +53,7 @@ class Settings:
             token_cache_path=os.environ.get("TOKEN_CACHE_PATH") or None,
             graph_base=os.environ.get("GRAPH_BASE", "https://graph.microsoft.com/v1.0").rstrip("/"),
             download_app_id=os.environ.get("EDISCOVERY_DOWNLOAD_APP_ID", DEFAULT_EDISCOVERY_DOWNLOAD_APP_ID),
-            state_dir=Path(os.environ.get("CULLTOOL_STATE_DIR", ".culltool")),
+            state_dir=Path(os.environ.get("SEARCHTRAIL_STATE_DIR", ".searchtrail")),
         )
 
     def require_credentials(self) -> None:

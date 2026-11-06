@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping
+from typing import TYPE_CHECKING, Any
 
 import requests
 
@@ -53,7 +54,7 @@ class GraphClient:
         base_url: str,
         token_fn: Callable[[], str] | None = None,
         *,
-        transport: "DryRunTransport | None" = None,
+        transport: DryRunTransport | None = None,
         max_retries: int = 6,
         timeout: float = 60,
         log: Log = print,

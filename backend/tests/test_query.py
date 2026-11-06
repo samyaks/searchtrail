@@ -1,6 +1,6 @@
 import pytest
 
-from culltool.query import CriteriaError, CullCriteria, build_kql, describe, quote_term, term_queries, validate
+from searchtrail.query import CriteriaError, CullCriteria, build_kql, describe, quote_term, term_queries, validate
 
 GUID_A = "44444444-4444-4444-8444-444444444444"
 GUID_B = "66666666-6666-4666-8666-666666666666"

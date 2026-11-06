@@ -196,5 +196,5 @@ def write_sample_report(dest: Path, rows: int, emails: list[str], kql: str = "",
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, "w") as zf:
         zf.writestr("Items_0_2026-11-05.csv", buf.getvalue())
-        zf.writestr("Summary_2026-11-05.csv", "Name,Value\nItems,%d\n" % rows)
+        zf.writestr("Summary_2026-11-05.csv", f"Name,Value\nItems,{rows}\n")
     return dest

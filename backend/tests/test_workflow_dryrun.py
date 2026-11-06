@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from culltool.audit import AuditLog
-from culltool.dryrun import DryRunTransport
-from culltool.graph import GraphClient
-from culltool.labels import LabelIndex
-from culltool.matter import MatterError, load_matter
-from culltool.workflow import CullWorkflow, ExportBlocked
+from searchtrail.audit import AuditLog
+from searchtrail.dryrun import DryRunTransport
+from searchtrail.graph import GraphClient
+from searchtrail.labels import LabelIndex
+from searchtrail.matter import MatterError, load_matter
+from searchtrail.workflow import CullWorkflow, ExportBlocked
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "matter.json"
+EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "matter.json"
 
 
 @pytest.fixture
@@ -143,9 +143,9 @@ def test_term_report(setup):
 
 def test_cli_dry_run_across_separate_commands(tmp_path, monkeypatch, capsys):
     """Each CLI command is a new process; the simulated tenant must persist like a real one."""
-    from culltool.cli import main
+    from searchtrail.cli import main
 
-    monkeypatch.setenv("CULLTOOL_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SEARCHTRAIL_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     assert main(["--dry-run", "--quiet", "preview", str(EXAMPLE)]) == 0
     assert main(["--dry-run", "--quiet", "export", str(EXAMPLE), "--confirm", "--wait"]) == 0

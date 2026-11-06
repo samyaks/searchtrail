@@ -1,4 +1,4 @@
-"""Command line: culltool [--dry-run] <command> ...
+"""Command line: searchtrail [--dry-run] <command> ...
 
   labels                 list sensitivity labels
   kql MATTER             show the query and the plain-English methodology
@@ -48,7 +48,7 @@ def _context(args):
         root = settings.state_dir / "dry-run"
         transport = DryRunTransport(verbose=not args.quiet, state_file=root / "simulated-tenant.json")
         graph = GraphClient(settings.graph_base, transport=transport)
-        actor = os.environ.get("CULLTOOL_ACTOR", "dry-run-user")
+        actor = os.environ.get("SEARCHTRAIL_ACTOR", "dry-run-user")
         return graph, (lambda: "dry-run-token"), actor, root
     from .auth import TokenProvider
 
@@ -108,7 +108,7 @@ def cmd_preview(args) -> None:
         print(f"\nPreview table: {result['preview_csv']}")
         if result["unmapped_columns"]:
             print(f"Report columns not used (check report.COLUMN_CANDIDATES): {', '.join(result['unmapped_columns'])}")
-    print("\nLogged. When the set looks right: culltool export", args.matter, "--confirm")
+    print("\nLogged. When the set looks right: searchtrail export", args.matter, "--confirm")
 
 
 def cmd_terms(args) -> None:
@@ -130,7 +130,7 @@ def cmd_export(args) -> None:
         print("Nothing was exported. Re-run with --confirm to start it.")
         return
     print(f"\nExport started: '{result['export_name']}'")
-    print(f"Track it: culltool status '{result['operation_url']}'")
+    print(f"Track it: searchtrail status '{result['operation_url']}'")
     if result.get("status"):
         print(f"Finished with status: {result['status']}")
     print("\nNext, in Everlaw: open the Purview Cloud Connector, pick the case "
@@ -157,7 +157,7 @@ def cmd_verify_log(args) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="culltool", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="searchtrail", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="simulate Microsoft Graph offline and print every call")
     parser.add_argument("--quiet", action="store_true", help="in dry-run mode, don't print each simulated call")
     sub = parser.add_subparsers(dest="command", required=True)

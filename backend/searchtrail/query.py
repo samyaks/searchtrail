@@ -8,9 +8,9 @@ documents) gets its own clause, with only the filters that apply to it.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field, fields, replace
 from datetime import date
-from typing import Callable
 
 GUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _SIMPLE_TERM_RE = re.compile(r"^\w+\*?$", re.UNICODE)
@@ -53,7 +53,7 @@ class CullCriteria:
     raw_kql: str | None = None  # expert escape hatch, ANDed onto everything
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CullCriteria":
+    def from_dict(cls, data: dict) -> CullCriteria:
         known = {f.name for f in fields(cls)}
         unknown = sorted(set(data) - known)
         if unknown:

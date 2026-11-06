@@ -1,8 +1,8 @@
 """Sensitivity labels: fetch them from Purview, resolve names to IDs, and show IDs as names."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from .query import GUID_RE
 
@@ -26,11 +26,11 @@ class LabelIndex:
         self.by_id = {label.id: label for label in labels}
 
     @classmethod
-    def fetch(cls, graph) -> "LabelIndex":
+    def fetch(cls, graph) -> LabelIndex:
         return cls.from_graph_items(list(graph.get_all(LABELS_PATH)))
 
     @classmethod
-    def from_graph_items(cls, items: list[dict]) -> "LabelIndex":
+    def from_graph_items(cls, items: list[dict]) -> LabelIndex:
         """Accepts nested lists (sublabels inside parents) and flat lists (children point to a parent)."""
         labels: list[Label] = []
 

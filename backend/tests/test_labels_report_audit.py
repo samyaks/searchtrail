@@ -3,10 +3,10 @@ import zipfile
 
 import pytest
 
-from culltool.audit import AuditLog
-from culltool.dryrun import SAMPLE_LABELS, write_sample_report
-from culltool.labels import LabelError, LabelIndex
-from culltool.report import load_report, map_columns, summarize, write_preview_csv
+from searchtrail.audit import AuditLog
+from searchtrail.dryrun import SAMPLE_LABELS, write_sample_report
+from searchtrail.labels import LabelError, LabelIndex
+from searchtrail.report import load_report, map_columns, summarize, write_preview_csv
 
 FINANCE = "44444444-4444-4444-8444-444444444444"
 LEGAL = "55555555-5555-4555-8555-555555555555"
