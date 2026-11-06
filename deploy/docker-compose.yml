@@ -1,0 +1,75 @@
+# SearchTrail: Postgres, migrations, API and worker.
+#   docker compose -f deploy/docker-compose.yml up --build
+# Dry-run is on by default (SEARCHTRAIL_DRY_RUN=1): no Microsoft tenant is needed.
+# Settings: copy deploy/.env.example to deploy/.env.
+name: searchtrail
+
+x-backend-env: &backend-env
+  SEARCHTRAIL_DRY_RUN: ${SEARCHTRAIL_DRY_RUN:-1}
+  SEARCHTRAIL_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-searchtrail}:${POSTGRES_PASSWORD:-searchtrail}@db:5432/${POSTGRES_DB:-searchtrail}
+  SEARCHTRAIL_STORAGE_DIR: /data/storage
+
+x-backend: &backend
+  build:
+    context: ../backend
+    dockerfile: ../deploy/Dockerfile.backend
+  image: searchtrail-backend:dev
+  environment: *backend-env
+  volumes:
+    - storage:/data/storage
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-searchtrail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-searchtrail}
+      POSTGRES_DB: ${POSTGRES_DB:-searchtrail}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    <<: *backend
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3).status != 200)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command: ["searchtrail-worker"]
+    environment:
+      <<: *backend-env
+      SEARCHTRAIL_WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      # Healthy while the loop has written its heartbeat in the last 30 seconds.
+      test: ["CMD", "python", "-c", "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/worker-heartbeat') > 30)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  storage:

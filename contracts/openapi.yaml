@@ -423,7 +423,7 @@ paths:
             schema: { $ref: "#/components/schemas/HoldUpdate" }
             examples:
               place:
-                value: { on: true }
+                value: { on_hold: true }
       responses:
         "200":
           description: The custodian with the new hold state
@@ -1929,11 +1929,11 @@ components:
 
     HoldUpdate:
       type: object
-      description: "Place (`on`: true) or release (`on`: false) a hold"
-      required: ["on"]
+      description: "Place (`on_hold`: true) or release (`on_hold`: false) a hold"
+      required: [on_hold]
       additionalProperties: false
       properties:
-        "on": { type: boolean }
+        on_hold: { type: boolean }
 
     Custodian:
       type: object
