@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,6 +81,9 @@ class MatterRow(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     stage: Mapped[str] = mapped_column(String(16), default="scoping")
     purview_case_id: Mapped[str | None] = mapped_column(String(64))
+    # The Purview IDs SearchTrail created for this matter (case, custodians, sources, searches), in the
+    # same shape as the CLI's state.json; written by the jobs (searchtrail.workflow.sync_purview).
+    purview_state: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict, server_default=text("'{}'"))
     current_version: Mapped[int | None] = mapped_column(Integer)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = _created()
