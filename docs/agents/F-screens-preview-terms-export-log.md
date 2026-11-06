@@ -35,7 +35,7 @@ npm run lint && npm run typecheck && npm test
 
 # After any contract change (contract PRs only)
 scripts/codegen.sh                          # regenerates Pydantic models, TS types, mock examples
-npx @stoplight/spectral-cli@6.15.0 lint contracts/openapi.yaml --fail-severity=warn
+npm run --prefix frontend lint:contract     # Spectral, version locked
 ```
 
 ## Tasks (in order)

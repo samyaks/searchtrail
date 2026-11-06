@@ -166,7 +166,12 @@ def test_default_heartbeat_is_well_under_the_stale_threshold():
     assert HEARTBEAT_SECONDS * 4 <= queue.STALE_AFTER.total_seconds()
 
 
-def test_loop_requeues_stale_jobs_then_runs_them(sessions, handlers, tmp_path):
+def test_loop_requeues_stale_jobs_then_runs_them(sessions, handlers, monkeypatch):
+    from app.jobs import worker as worker_module
+
+    # On a machine booted less than a minute ago, monotonic() is under REQUEUE_SECONDS; the first
+    # sweep must still happen (this failed on a fresh CI runner).
+    monkeypatch.setattr(worker_module.time, "monotonic", lambda: 5.0)
     handlers["estimate"] = lambda _ctx: {"ok": True}
     with sessions() as s:
         job = queue.enqueue(s, "estimate")

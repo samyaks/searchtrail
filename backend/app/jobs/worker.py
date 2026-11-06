@@ -116,10 +116,10 @@ class Worker:
             log.info("requeued %d job(s) left running by a stopped worker", requeued)
 
     def loop(self, *, once: bool = False) -> None:
-        last_requeue = 0.0
+        last_requeue: float | None = None  # None: sweep at once (monotonic() starts near 0 after boot)
         while not self.stopping:
             self.beat()
-            if time.monotonic() - last_requeue >= REQUEUE_SECONDS:
+            if last_requeue is None or time.monotonic() - last_requeue >= REQUEUE_SECONDS:
                 self.requeue_stale()
                 last_requeue = time.monotonic()
             with self.sessions() as session:
