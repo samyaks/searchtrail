@@ -17,13 +17,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-import requests
-
 from app.db.models import UserRow
 from app.db.repositories import SYSTEM_ACTOR
+from app.microsoft.errors import classify
 from app.schemas import contract
 from searchtrail.gateway import counts_from_operation as purview_counts
-from searchtrail.graph import FAILED_STATES, TERMINAL_STATES, GraphError, OperationFailed
+from searchtrail.graph import FAILED_STATES, TERMINAL_STATES
 from searchtrail.workflow import SourcesMismatch
 
 from .handlers import JobContext, JobFailed, JobRetry
@@ -48,36 +47,27 @@ def wait(ctx: JobContext, seconds: float) -> None:
 
 @contextmanager
 def purview_errors(ctx: JobContext) -> Iterator[None]:
-    """Turn what Microsoft Graph raises into job outcomes (the contract's ErrorCodes):
+    """Turn what a Microsoft call raises into a job outcome, using app.microsoft.errors.classify (the
+    same codes the API returns):
 
-      429, 5xx, dropped connections   JobRetry: try again later, the checkpoint is kept
-      401, 403                        purview_permission_missing (the user lacks a role or consent)
-      other 4xx, failed operations    purview_operation_failed
-      a source with other settings    conflict (SourcesMismatch)
+      transient (429, 5xx, no connection)   JobRetry: try again later, the checkpoint is kept
+      anything else Microsoft                JobFailed with the classified code (401 session_expired,
+                                             403 purview_permission_missing, else purview_operation_failed)
+      a source with other settings           conflict (SourcesMismatch)
 
     Wrap every block of Purview calls in a handler with it."""
     try:
         yield
-    except GraphError as exc:
-        details = {"status": exc.status}
-        if exc.status == 429 or exc.status >= 500:
-            code = "graph_throttled" if exc.status == 429 else "purview_operation_failed"
-            raise JobRetry(min(RETRY_MAX_SECONDS, RETRY_STEP_SECONDS * ctx.job.attempts), code,
-                           "Microsoft is limiting requests right now. SearchTrail will try again shortly."
-                           if exc.status == 429 else "Microsoft Purview had a problem. SearchTrail will try again shortly.",
-                           details) from exc
-        if exc.status in (401, 403):
-            raise JobFailed("purview_permission_missing",
-                            "Microsoft refused the request. Check that you have the eDiscovery Manager role in Purview "
-                            "and that SearchTrail has been given the permissions it needs.", details) from exc
-        raise JobFailed("purview_operation_failed", "Microsoft Purview rejected the request.", details) from exc
-    except OperationFailed as exc:
-        raise JobFailed("purview_operation_failed", "Purview couldn't finish the operation.", {"detail": str(exc)}) from exc
-    except requests.RequestException as exc:
-        raise JobRetry(min(RETRY_MAX_SECONDS, RETRY_STEP_SECONDS * ctx.job.attempts), "purview_operation_failed",
-                       "SearchTrail couldn't reach Microsoft. It will try again shortly.", {"error": type(exc).__name__}) from exc
     except SourcesMismatch as exc:
         raise JobFailed("conflict", str(exc), {"custodian": exc.email, "wanted": exc.wanted, "found": exc.found}) from exc
+    except Exception as exc:
+        failure = classify(exc)
+        if failure is None:
+            raise
+        if failure.transient:
+            raise JobRetry(min(RETRY_MAX_SECONDS, RETRY_STEP_SECONDS * ctx.job.attempts), failure.code,
+                           f"{failure.message} SearchTrail will try again shortly.", failure.details) from exc
+        raise JobFailed(failure.code, failure.message, failure.details) from exc
 
 
 def poll_operation(ctx: JobContext, url: str, *, progress: tuple[float, float] = (0.0, 1.0),
