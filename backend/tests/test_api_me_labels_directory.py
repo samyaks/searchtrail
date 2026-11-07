@@ -154,7 +154,7 @@ class Broken:
 @pytest.mark.parametrize("error,status,code", [
     (GraphError(429, "GET", "u", ""), 429, "graph_throttled"),
     (GraphError(403, "GET", "u", ""), 403, "purview_permission_missing"),
-    (GraphError(401, "GET", "u", ""), 403, "purview_permission_missing"),
+    (GraphError(401, "GET", "u", ""), 401, "session_expired"),  # the Microsoft token, not a missing role
     (GraphError(503, "GET", "u", ""), 502, "purview_operation_failed"),
     (requests.ConnectionError("down"), 502, "purview_operation_failed"),
 ])
@@ -176,3 +176,15 @@ def test_the_sample_labels_carry_the_contracts_descriptions():
     assert [label.get("description") for label in SAMPLE_LABELS] == [
         "Approved for anyone", "Internal business data", "Includes the Finance and Legal sublabels",
         "Often encrypted; reviewers may not open these"]
+
+
+# -- the dry-run identity stays in dry run -----------------------------------------------------------------
+def test_the_sample_tenant_and_role_are_not_shown_outside_dry_run():
+    from app.db.models import UserRow
+    from app.microsoft import tenant_and_roles
+
+    user = UserRow(id="usr_x", entra_object_id="o", tenant_id="t-123", email="x@real.example", display_name="Real Person")
+    tenant, roles = tenant_and_roles(AppSettings(dry_run=True), user)
+    assert (tenant.id, tenant.name, roles) == ("t-123", "Contoso Ltd", ["eDiscovery Manager"])
+    with pytest.raises(RuntimeError, match="isn't wired up yet"):  # refuses rather than claim a role for a real person
+        tenant_and_roles(AppSettings(dry_run=False), user)

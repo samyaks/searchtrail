@@ -5,16 +5,20 @@ plausible responses come back. Counts are derived from the query text, so changi
 changes the numbers, which is enough to exercise the preview, term report and export checks.
 
 One tenant, however many processes. Without `state_file` the simulated tenant lives in this object
-(unit tests). With `state_file` everything it remembers (IDs, queries, custodians, operations,
+(unit tests). With `state_file` everything it remembers (IDs, cases, queries, custodians, operations,
 downloads, review sets, the count offset) is kept in that JSON file, and every Graph call runs under a
 file lock that re-reads the file first. So the CLI across separate commands, and the web app's API and
 worker processes (and their separate per-job gateways), all talk to the same tenant: a search created
 by one job is there for the next, and an operation started by one worker can be polled by another.
+Where there's no `fcntl` (Windows) the file still keeps the CLI's tenant between commands, but can't be
+shared by processes running at once.
+
+Like Microsoft, it answers 404 for a case, operation or search it never issued, so a stale ID (say after
+the state file was deleted) fails loudly instead of getting an invented answer.
 """
 from __future__ import annotations
 
 import csv
-import fcntl
 import hashlib
 import io
 import json
@@ -29,7 +33,12 @@ from typing import Any
 
 from requests.structures import CaseInsensitiveDict
 
-from .graph import Log, Response
+from .graph import GraphError, Log, Response
+
+try:
+    import fcntl
+except ImportError:  # Windows: no file locking, so a state file is for one process at a time (the CLI)
+    fcntl = None
 
 SAMPLE_LABELS = [
     {"id": "11111111-1111-4111-8111-111111111111", "displayName": "Public", "description": "Approved for anyone"},
@@ -107,6 +116,7 @@ class DryRunTransport:
         self._emails: list[str] = []
         # Shared between processes (and remembered between runs) when state_file is set, like a real tenant.
         self.state_file = Path(state_file) if state_file else None
+        self._cases: dict[str, str] = {}  # the cases created so far, by ID: asking for any other is a 404
         self._on_disk = ""
         self._depth = 0
         if self.state_file:
@@ -116,7 +126,8 @@ class DryRunTransport:
     # -- the tenant's memory -------------------------------------------------------------------
     def _state(self) -> dict[str, Any]:
         return {"next_id": self._next_id, "queries": self._queries, "emails": self._emails, "ops": self._ops,
-                "downloads": self._downloads, "review_sets": self._review_sets, "count_offset": self._count_offset}
+                "downloads": self._downloads, "review_sets": self._review_sets, "count_offset": self._count_offset,
+                "cases": self._cases}
 
     def _load(self) -> None:
         text = self.state_file.read_text() if self.state_file.exists() else ""
@@ -129,6 +140,7 @@ class DryRunTransport:
         self._downloads = saved.get("downloads", {})
         self._review_sets = saved.get("review_sets", {})
         self._count_offset = saved.get("count_offset", 0)
+        self._cases = saved.get("cases", {})
 
     def _save(self) -> None:
         text = json.dumps(self._state(), indent=2, sort_keys=True)
@@ -152,7 +164,8 @@ class DryRunTransport:
             return
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.state_file.with_name(self.state_file.name + ".lock"), "a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            if fcntl:
+                fcntl.flock(lock, fcntl.LOCK_EX)
             self._depth += 1
             try:
                 self._load()
@@ -160,7 +173,8 @@ class DryRunTransport:
                 self._save()
             finally:
                 self._depth -= 1
-                fcntl.flock(lock, fcntl.LOCK_UN)
+                if fcntl:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
 
     @property
     def count_offset(self) -> int:
@@ -215,11 +229,16 @@ class DryRunTransport:
         if method == "GET" and re.search(r"/(ediscoveryCases|custodians|userSources)$", path):
             return ok({"value": []})
         if method == "GET" and re.search(r"/ediscoveryCases/[^/]+$", path):
-            return ok({"id": path.rsplit("/", 1)[-1]})
+            case_id = path.rsplit("/", 1)[-1]
+            return ok({"id": case_id, "displayName": self._known(self._cases, case_id, method, url)})
         if method == "GET" and "/operations/" in path:
-            return ok(self._operation(path.rsplit("/", 1)[-1]))
+            op_id = path.rsplit("/", 1)[-1]
+            self._known(self._ops, op_id, method, url)
+            return ok(self._operation(op_id))
         if method == "POST" and path.endswith("/ediscoveryCases"):
-            return ok({"id": self._new_id("case"), "displayName": body["displayName"]}, 201)
+            case_id = self._new_id("case")
+            self._cases[case_id] = body["displayName"]
+            return ok({"id": case_id, "displayName": body["displayName"]}, 201)
         if method == "POST" and path.endswith("/custodians"):
             self._emails.append(body["email"])
             return ok({"id": self._new_id("custodian"), "email": body["email"]}, 201)
@@ -232,17 +251,29 @@ class DryRunTransport:
             self._queries[sid] = body.get("contentQuery", "")
             return ok({"id": sid, "displayName": body["displayName"]}, 201)
         if method == "PATCH" and "/searches/" in path:
-            self._queries[path.rsplit("/", 1)[-1]] = body.get("contentQuery", "")
+            search_id = path.rsplit("/", 1)[-1]
+            self._known(self._queries, search_id, method, url)
+            self._queries[search_id] = body.get("contentQuery", "")
             return ok(status=204)
         if method == "POST" and (m := _ACTION_RE.search(path)):
+            self._known(self._queries, m.group(1), method, url)
             op_id = self._new_id("op")
             self._ops[op_id] = {"action": m.group(2), "search": m.group(1), "body": body}
             location = url.split("/searches/", 1)[0] + f"/operations/{op_id}"
             return ok(status=202, headers={"Location": location})
         return ok()
 
+    @staticmethod
+    def _known(issued: dict, item_id: str, method: str, url: str):
+        """The tenant's record for an ID it handed out, or a 404 like Microsoft's for one it never did (or
+        lost, if the state file was deleted): a stale ID in a job's checkpoint or a matter's saved state is
+        then loud, not a made-up answer such as an estimate of 0 items."""
+        if item_id not in issued:
+            raise GraphError(404, method, url, '{"error": {"code": "itemNotFound", "message": "The item was not found."}}')
+        return issued[item_id]
+
     def _operation(self, op_id: str) -> dict:
-        op = self._ops.get(op_id, {"action": "estimateStatistics", "search": ""})
+        op = self._ops[op_id]
         count = fake_count(self._queries.get(op["search"], "")) + self.count_offset
         result: dict[str, Any] = {"id": op_id, "status": "succeeded", "percentProgress": 100}
         if op["action"] in ("applyHold", "removeHold", "addToReviewSet"):

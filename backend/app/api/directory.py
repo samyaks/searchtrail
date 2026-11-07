@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, Query
 from app.db.models import UserRow
 from app.microsoft.deps import purview_gateway
 from app.microsoft.directory import directory_users
-from app.microsoft.errors import graph_errors
 from app.schemas import contract
 from searchtrail.gateway import PurviewGateway
 
 from .deps import current_user
+from .graph import graph_errors
 from .matters import errors
 
 router = APIRouter(tags=["directory"])

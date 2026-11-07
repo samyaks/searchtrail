@@ -18,6 +18,7 @@ from app.microsoft import dry_run_tenant_file, get_gateway
 from app.settings import AppSettings
 from searchtrail.dryrun import DryRunTransport
 from searchtrail.gateway_dryrun import DryRunPurviewGateway
+from searchtrail.graph import GraphError
 
 
 @pytest.fixture(autouse=True)
@@ -172,3 +173,88 @@ def test_a_worker_takes_over_another_workers_operation_through_its_own_gateway(s
     assert calls(second_gateway, "POST", "/estimateStatistics") == []  # never started its own
     with sessions() as s:
         assert s.scalars(select(RunRow)).one().status == "succeeded"
+
+
+# -- IDs the tenant never issued ----------------------------------------------------------------------------
+def test_unknown_cases_operations_and_searches_are_404_like_microsoft(settings):
+    gw = get_gateway(settings)
+    case = gw.ensure_case("M-1 test", "d")
+    search = gw.create_search(case["id"], "s", KQL_V1, [])
+    for call in (
+        lambda: gw.graph.get("/security/cases/ediscoveryCases/case-999"),
+        lambda: gw.get_operation(f"{gw.graph.base_url}/security/cases/ediscoveryCases/{case['id']}/operations/op-999"),
+        lambda: gw.update_query(case["id"], "search-999", "x"),
+        lambda: gw.start_estimate(case["id"], "search-999"),
+    ):
+        with pytest.raises(GraphError) as caught:
+            call()
+        assert caught.value.status == 404
+    # ...and the ones it did issue still work, in any gateway.
+    other = get_gateway(settings)
+    assert other.ensure_case("M-1 test", "d", known_id=case["id"])["id"] == case["id"]
+    other.update_query(case["id"], search["id"], "kickback")
+    assert other.get_operation(other.start_estimate(case["id"], search["id"]))["indexedItemCount"] > 0
+
+
+def test_a_lost_tenant_makes_stale_checkpoints_fail_loudly_not_count_zero(sessions, settings, monkeypatch):
+    """The state file is deleted (a recreated volume) while the database still holds a job's checkpoint."""
+    class Killed(BaseException):
+        pass
+
+    gw = get_gateway(settings)
+    with sessions() as s:
+        job_id = enqueue_estimate(s, add_version(s, seed_matter(s)))
+    monkeypatch.setattr(gw, "get_operation", lambda _u: (_ for _ in ()).throw(Killed()))
+    with sessions() as s, pytest.raises(Killed):
+        run_one(s, "worker-1", lambda _j: gw)
+    monkeypatch.undo()
+    with sessions() as s:
+        s.get(JobRow, job_id).heartbeat_at = utcnow() - timedelta(minutes=10)
+        s.commit()
+        assert queue.requeue_stale(s) == 1
+
+    dry_run_tenant_file(settings).unlink()  # the simulated Purview forgets everything
+    run_all(sessions, get_gateway(settings), worker="worker-2")
+    failed = job(sessions, job_id)
+    assert failed.status == "failed" and failed.error["code"] == "purview_operation_failed", failed.result
+    assert failed.error["details"]["status"] == 404 and failed.result is None  # not a recorded "0 items"
+    with sessions() as s:
+        assert s.scalars(select(RunRow)).one().status == "failed"
+
+
+def test_a_matter_whose_tenant_was_lost_fails_loudly_on_its_next_estimate(sessions, settings):
+    """The state file is deleted but the matter still points at the old case and search. (The simulated IDs
+    restart, unlike Microsoft's GUIDs, so the dry run can't recover by itself: reset the database too, as
+    `docker compose down -v` does.) What matters is that it says so instead of inventing counts."""
+    with sessions() as s:
+        matter = seed_matter(s)
+        matter_id = matter.id
+        first = enqueue_estimate(s, add_version(s, matter, KQL_V1))
+    run_all(sessions, get_gateway(settings))
+    assert job(sessions, first).status == "succeeded"
+
+    dry_run_tenant_file(settings).unlink()
+    with sessions() as s:
+        second = enqueue_estimate(s, add_version(s, s.get(MatterRow, matter_id), KQL_V2))
+    run_all(sessions, get_gateway(settings))
+    failed = job(sessions, second)
+    assert failed.status == "failed" and failed.error["code"] == "purview_operation_failed"
+    assert failed.error["details"]["status"] == 404 and failed.result is None
+
+
+# -- without fcntl (Windows) ------------------------------------------------------------------------------------
+def test_the_dry_run_module_imports_and_works_where_there_is_no_fcntl(tmp_path):
+    code = """
+import sys
+sys.modules["fcntl"] = None  # `import fcntl` raises ImportError, as on Windows
+from searchtrail.gateway_dryrun import DryRunPurviewGateway
+gw = DryRunPurviewGateway(log=lambda _m: None, state_file=sys.argv[1])
+case = gw.ensure_case("M-1 win", "d")
+search = gw.create_search(case["id"], "s", "kickback", [])
+again = DryRunPurviewGateway(log=lambda _m: None, state_file=sys.argv[1])  # a second command, same tenant
+assert again.get_operation(again.start_estimate(case["id"], search["id"]))["indexedItemCount"] > 0
+print("ok")
+"""
+    result = subprocess.run([sys.executable, "-c", code, str(tmp_path / "state.json")], capture_output=True, text=True,
+                            timeout=60)
+    assert result.returncode == 0 and result.stdout.strip() == "ok", result.stderr[-600:]

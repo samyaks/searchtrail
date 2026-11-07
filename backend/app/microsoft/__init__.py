@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.db.models import UserRow
+from app.schemas import contract
 from app.settings import AppSettings
 from searchtrail.gateway import PurviewGateway
 from searchtrail.gateway_dryrun import DryRunPurviewGateway
@@ -22,6 +24,18 @@ DRY_RUN_TENANT_NAME = "Contoso Ltd"
 DRY_RUN_PURVIEW_ROLES = ("eDiscovery Manager",)
 # Where the simulated tenant is kept, under SEARCHTRAIL_STORAGE_DIR (the volume the API and the worker share).
 DRY_RUN_TENANT_FILE = Path("dry-run") / "tenant.json"
+
+
+def tenant_and_roles(settings: AppSettings, user: UserRow) -> tuple[contract.Tenant, list[str]]:
+    """The tenant the user signed in to and the Purview roles found for them (for /me).
+
+    Dry run says what the sample tenant says. Live has to ask Microsoft (the tenant's name from the
+    directory, the roles from Purview, with /setup/check: a later WS-C PR), so until then it refuses
+    rather than show the sample's name and role to a real person."""
+    if settings.dry_run:
+        return contract.Tenant(id=user.tenant_id, name=DRY_RUN_TENANT_NAME), list(DRY_RUN_PURVIEW_ROLES)
+    raise RuntimeError("Reading the tenant and Purview roles from Microsoft isn't wired up yet (WS-C). "
+                       "Set SEARCHTRAIL_DRY_RUN=1.")
 
 
 def dry_run_tenant_file(settings: AppSettings) -> Path:
