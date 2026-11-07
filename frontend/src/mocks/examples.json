@@ -458,6 +458,58 @@
             "name": null,
             "finished_at": null
           }
+        },
+        "readyV3": {
+          "id": "exp_falcon_v3",
+          "matter_id": "mat_falcon",
+          "name": "M-2026-0142 EVERLAW 20261105T1058Z",
+          "version": 3,
+          "status": "ready",
+          "progress": 1,
+          "counts": {
+            "items": 630,
+            "size_bytes": 30408704,
+            "partial_items": 25,
+            "partial_size_bytes": 22754099,
+            "mailboxes": 2,
+            "sites": 4
+          },
+          "options": {
+            "include_partially_indexed": true,
+            "partially_indexed_scope": "responsiveLocations",
+            "format": "pst",
+            "include_cloud_attachments": false,
+            "teams_transcripts": true
+          },
+          "changes_accepted": false,
+          "started_at": "2026-11-05T10:59:00Z",
+          "started_by": {
+            "id": "usr_dana",
+            "display_name": "Dana Whitfield"
+          },
+          "finished_at": "2026-11-05T11:21:00Z",
+          "expires_at": "2026-12-05T11:21:00Z",
+          "files": [
+            {
+              "name": "Exchange.zip",
+              "size_bytes": 33011712
+            },
+            {
+              "name": "SharePoint.zip",
+              "size_bytes": 17640448
+            }
+          ],
+          "download": {
+            "status": "none",
+            "progress": null,
+            "stored_path": null,
+            "finished_at": null
+          },
+          "review_set": {
+            "status": "none",
+            "name": null,
+            "finished_at": null
+          }
         }
       },
       "401": {
@@ -552,6 +604,405 @@
               "purview_status": "failed"
             }
           }
+        },
+        "previewDone": {
+          "id": "job_01HF3PRV",
+          "kind": "preview",
+          "status": "succeeded",
+          "progress": 1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:41:30Z",
+          "updated_at": "2026-11-05T10:42:00Z",
+          "result": {
+            "id": "prv_falcon_v3",
+            "matter_id": "mat_falcon",
+            "version": 3,
+            "created_at": "2026-11-05T10:42:00Z",
+            "created_by": {
+              "id": "usr_dana",
+              "display_name": "Dana Whitfield"
+            },
+            "stale": false,
+            "counts": {
+              "items": 630,
+              "size_bytes": 30408704,
+              "partial_items": 25,
+              "partial_size_bytes": 22754099,
+              "mailboxes": 2,
+              "sites": 4
+            },
+            "report_items": 655,
+            "encrypted_items": 41,
+            "breakdowns": {
+              "by_location": [
+                {
+                  "name": "Alex Wilber",
+                  "count": 312
+                },
+                {
+                  "name": "Megan Bowen",
+                  "count": 281
+                },
+                {
+                  "name": "sites/Finance",
+                  "count": 62
+                }
+              ],
+              "by_type": [
+                {
+                  "name": "Email",
+                  "count": 223
+                },
+                {
+                  "name": "Teams chat",
+                  "count": 223
+                },
+                {
+                  "name": "Document",
+                  "count": 209
+                }
+              ],
+              "by_label": [
+                {
+                  "name": "General",
+                  "count": 137
+                },
+                {
+                  "name": "Highly Confidential",
+                  "count": 136
+                },
+                {
+                  "name": "Confidential/Finance",
+                  "count": 133
+                },
+                {
+                  "name": "Confidential/Legal",
+                  "count": 130
+                },
+                {
+                  "name": "No label",
+                  "count": 119
+                }
+              ],
+              "by_month": [
+                {
+                  "month": "2024-01",
+                  "count": 39
+                },
+                {
+                  "month": "2024-02",
+                  "count": 39
+                },
+                {
+                  "month": "2024-03",
+                  "count": 31
+                },
+                {
+                  "month": "2024-04",
+                  "count": 32
+                },
+                {
+                  "month": "2024-05",
+                  "count": 40
+                },
+                {
+                  "month": "2024-06",
+                  "count": 49
+                },
+                {
+                  "month": "2024-07",
+                  "count": 35
+                },
+                {
+                  "month": "2024-08",
+                  "count": 36
+                },
+                {
+                  "month": "2024-09",
+                  "count": 50
+                },
+                {
+                  "month": "2024-10",
+                  "count": 36
+                },
+                {
+                  "month": "2024-11",
+                  "count": 36
+                },
+                {
+                  "month": "2024-12",
+                  "count": 36
+                },
+                {
+                  "month": "2025-01",
+                  "count": 28
+                },
+                {
+                  "month": "2025-02",
+                  "count": 31
+                },
+                {
+                  "month": "2025-03",
+                  "count": 38
+                },
+                {
+                  "month": "2025-04",
+                  "count": 39
+                },
+                {
+                  "month": "2025-05",
+                  "count": 29
+                },
+                {
+                  "month": "2025-06",
+                  "count": 31
+                }
+              ]
+            },
+            "unmapped_columns": []
+          },
+          "error": null
+        },
+        "termReportDone": {
+          "id": "job_01HF3TRM",
+          "kind": "term_report",
+          "status": "succeeded",
+          "progress": 1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:49:00Z",
+          "updated_at": "2026-11-05T10:51:00Z",
+          "result": {
+            "id": "trm_falcon_v3",
+            "matter_id": "mat_falcon",
+            "version": 3,
+            "created_at": "2026-11-05T10:51:00Z",
+            "created_by": {
+              "id": "usr_dana",
+              "display_name": "Dana Whitfield"
+            },
+            "stale": false,
+            "combined": {
+              "items": 630,
+              "size_bytes": 30408704
+            },
+            "rows": [
+              {
+                "term": "\"project falcon\"",
+                "items": 105,
+                "size_bytes": 5033164,
+                "previous_items": 188,
+                "previous_version": 2
+              },
+              {
+                "term": "invoic*",
+                "items": 440,
+                "size_bytes": 21181235,
+                "previous_items": 802,
+                "previous_version": 2
+              },
+              {
+                "term": "kickback",
+                "items": 258,
+                "size_bytes": 12478054,
+                "previous_items": 371,
+                "previous_version": 2
+              },
+              {
+                "term": "\"side letter\"",
+                "items": 316,
+                "size_bytes": 15204352,
+                "previous_items": null,
+                "previous_version": 2
+              }
+            ]
+          },
+          "error": null
+        },
+        "exportDone": {
+          "id": "job_01HF3EXP",
+          "kind": "export",
+          "status": "succeeded",
+          "progress": 1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T10:58:40Z",
+          "updated_at": "2026-11-05T11:21:00Z",
+          "result": {
+            "id": "exp_falcon_v3",
+            "matter_id": "mat_falcon",
+            "name": "M-2026-0142 EVERLAW 20261105T1058Z",
+            "version": 3,
+            "status": "ready",
+            "progress": 1,
+            "counts": {
+              "items": 630,
+              "size_bytes": 30408704,
+              "partial_items": 25,
+              "partial_size_bytes": 22754099,
+              "mailboxes": 2,
+              "sites": 4
+            },
+            "options": {
+              "include_partially_indexed": true,
+              "partially_indexed_scope": "responsiveLocations",
+              "format": "pst",
+              "include_cloud_attachments": false,
+              "teams_transcripts": true
+            },
+            "changes_accepted": false,
+            "started_at": "2026-11-05T10:59:00Z",
+            "started_by": {
+              "id": "usr_dana",
+              "display_name": "Dana Whitfield"
+            },
+            "finished_at": "2026-11-05T11:21:00Z",
+            "expires_at": "2026-12-05T11:21:00Z",
+            "files": [
+              {
+                "name": "Exchange.zip",
+                "size_bytes": 33011712
+              },
+              {
+                "name": "SharePoint.zip",
+                "size_bytes": 17640448
+              }
+            ],
+            "download": {
+              "status": "none",
+              "progress": null,
+              "stored_path": null,
+              "finished_at": null
+            },
+            "review_set": {
+              "status": "none",
+              "name": null,
+              "finished_at": null
+            }
+          },
+          "error": null
+        },
+        "downloadDone": {
+          "id": "job_01HF3DL1",
+          "kind": "download",
+          "status": "succeeded",
+          "progress": 1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T12:10:00Z",
+          "updated_at": "2026-11-05T12:19:00Z",
+          "result": {
+            "id": "exp_falcon_v2",
+            "matter_id": "mat_falcon",
+            "name": "M-2026-0142 EVERLAW 20261104T1630Z",
+            "version": 2,
+            "status": "ready",
+            "progress": 1,
+            "counts": {
+              "items": 1148,
+              "size_bytes": 55364812,
+              "partial_items": 41,
+              "partial_size_bytes": 37320704,
+              "mailboxes": 2,
+              "sites": 4
+            },
+            "options": {
+              "include_partially_indexed": true,
+              "partially_indexed_scope": "responsiveLocations",
+              "format": "pst",
+              "include_cloud_attachments": false,
+              "teams_transcripts": true
+            },
+            "changes_accepted": false,
+            "started_at": "2026-11-04T16:30:00Z",
+            "started_by": {
+              "id": "usr_dana",
+              "display_name": "Dana Whitfield"
+            },
+            "finished_at": "2026-11-04T16:52:00Z",
+            "expires_at": "2026-12-04T16:52:00Z",
+            "files": [
+              {
+                "name": "Exchange.zip",
+                "size_bytes": 61203456
+              },
+              {
+                "name": "SharePoint.zip",
+                "size_bytes": 31482060
+              }
+            ],
+            "download": {
+              "status": "done",
+              "progress": 1,
+              "stored_path": "matters/mat_falcon/exports/exp_falcon_v2",
+              "finished_at": "2026-11-05T12:19:00Z"
+            },
+            "review_set": {
+              "status": "none",
+              "name": null,
+              "finished_at": null
+            }
+          },
+          "error": null
+        },
+        "reviewSetDone": {
+          "id": "job_01HF3RS1",
+          "kind": "review_set",
+          "status": "succeeded",
+          "progress": 1,
+          "matter_id": "mat_falcon",
+          "created_at": "2026-11-05T12:12:00Z",
+          "updated_at": "2026-11-05T12:15:00Z",
+          "result": {
+            "id": "exp_falcon_v2",
+            "matter_id": "mat_falcon",
+            "name": "M-2026-0142 EVERLAW 20261104T1630Z",
+            "version": 2,
+            "status": "ready",
+            "progress": 1,
+            "counts": {
+              "items": 1148,
+              "size_bytes": 55364812,
+              "partial_items": 41,
+              "partial_size_bytes": 37320704,
+              "mailboxes": 2,
+              "sites": 4
+            },
+            "options": {
+              "include_partially_indexed": true,
+              "partially_indexed_scope": "responsiveLocations",
+              "format": "pst",
+              "include_cloud_attachments": false,
+              "teams_transcripts": true
+            },
+            "changes_accepted": false,
+            "started_at": "2026-11-04T16:30:00Z",
+            "started_by": {
+              "id": "usr_dana",
+              "display_name": "Dana Whitfield"
+            },
+            "finished_at": "2026-11-04T16:52:00Z",
+            "expires_at": "2026-12-04T16:52:00Z",
+            "files": [
+              {
+                "name": "Exchange.zip",
+                "size_bytes": 61203456
+              },
+              {
+                "name": "SharePoint.zip",
+                "size_bytes": 31482060
+              }
+            ],
+            "download": {
+              "status": "none",
+              "progress": null,
+              "stored_path": null,
+              "finished_at": null
+            },
+            "review_set": {
+              "status": "done",
+              "name": "M-2026-0142 review",
+              "finished_at": "2026-11-05T12:15:00Z"
+            }
+          },
+          "error": null
         }
       },
       "401": {
@@ -1209,8 +1660,7 @@
               "action": "export_started",
               "actor": "Dana Whitfield",
               "actor_email": "dana.whitfield@contoso.com",
-              "summary": "Query v2 · 1",
-              "148 items + 41 partially indexed": null,
+              "summary": "Query v2 · 1,148 items + 41 partially indexed",
               "version": 2,
               "prev_hash": "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6",
               "hash": "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1",
@@ -1234,8 +1684,7 @@
               "action": "preview",
               "actor": "Dana Whitfield",
               "actor_email": "dana.whitfield@contoso.com",
-              "summary": "Query v2 · 1",
-              "148 items + 41 partially indexed": null,
+              "summary": "Query v2 · 1,148 items + 41 partially indexed",
               "version": 2,
               "prev_hash": "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76",
               "hash": "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6",
@@ -1247,8 +1696,7 @@
               "action": "preview",
               "actor": "Dana Whitfield",
               "actor_email": "dana.whitfield@contoso.com",
-              "summary": "Query v1 · 3",
-              "912 items + 160 partially indexed": null,
+              "summary": "Query v1 · 3,912 items + 160 partially indexed",
               "version": 1,
               "prev_hash": "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff",
               "hash": "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76",

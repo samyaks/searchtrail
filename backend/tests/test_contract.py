@@ -9,6 +9,7 @@ Generated code being up to date is checked separately in CI (scripts/codegen.sh,
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,29 @@ def test_contract_examples_match_the_generated_models(schema, value):
     getattr(contract, schema).model_validate(value)
 
 
+def _key_paths(value, prefix: str = "") -> set[str]:
+    paths: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            paths |= {path} | _key_paths(item, path)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            paths |= _key_paths(item, f"{prefix}[{index}]")
+    return paths
+
+
+@pytest.mark.parametrize("schema,value", list(_json_examples()))
+def test_contract_examples_have_no_keys_the_models_do_not_know(schema, value):
+    """The generated models ignore unknown keys, so a typo in an example would pass the test above and
+    then reach the frontend mocks. The classic case is an unquoted `summary: ... 1,148 items` inside a
+    flow mapping: YAML splits it at the comma into a short summary and a stray key."""
+    model = getattr(contract, schema).model_validate(value)
+    known = json.loads(model.model_dump_json(exclude_unset=True, by_alias=True))
+    stray = sorted(_key_paths(value) - _key_paths(known))
+    assert not stray, f"keys in the example that {schema} does not define: {stray[:5]}"
+
+
 def test_kql_example_is_real_query_builder_output():
     from searchtrail.dryrun import SAMPLE_LABELS
     from searchtrail.labels import LabelIndex
@@ -92,3 +116,27 @@ def test_error_codes_cover_the_plan():
                 "purview_permission_missing", "license_missing", "graph_throttled", "purview_operation_failed",
                 "session_expired"}
     assert required <= {c.value for c in contract.ErrorCode}
+
+
+def test_every_kind_of_job_has_a_finished_example_with_the_right_result():
+    """Mocks (and the frontend's job screens) run a job to its end; they need a result for each kind."""
+    op = CONTRACT["paths"]["/jobs/{jobId}"]["get"]
+    examples = _resolve(op["responses"]["200"])["content"]["application/json"]["examples"]
+    finished = {}
+    for name, example in examples.items():
+        job = contract.Job.model_validate(_resolve(example)["value"])
+        if job.status.value == "succeeded":
+            finished[job.kind.value] = (name, job)
+    assert set(finished) == {kind.value for kind in contract.JobKind}, sorted(finished)
+
+    results = {kind: job.result for kind, (_name, job) in finished.items()}
+    assert isinstance(results["estimate"], contract.EstimateResult)
+    assert isinstance(results["preview"], contract.Preview)
+    assert isinstance(results["term_report"], contract.TermReport)
+    for kind in ("export", "download", "review_set"):
+        assert isinstance(results[kind], contract.Export), kind
+    assert results["export"].status.value == "ready"
+    assert results["download"].download.status.value == "done" and results["download"].download.stored_path
+    assert results["review_set"].review_set.status.value == "done" and results["review_set"].review_set.name
+    for _name, job in finished.values():  # each is the job its 202 example started, a little later
+        assert job.progress == 1 and job.error is None and job.updated_at > job.created_at
