@@ -31,6 +31,7 @@
   --st-radius-sm: 4px;
   --st-radius-md: 6px;
   --st-radius-lg: 10px;
+  --st-radius-card: 8px; /* cards and table panels in the design files */
   --st-radius-pill: 999px;
   --st-space-1: 4px;
   --st-space-2: 8px;
@@ -39,4 +40,7 @@
   --st-space-5: 24px;
   --st-space-6: 32px;
   --st-focus: 2px solid var(--st-ink);
+  --st-target: 44px; /* minimum size of a button, field or switch */
+  --st-target-sm: 36px; /* dense rows: chips, segmented buttons, icon buttons */
+  --st-shadow-knob: 0 1px 2px rgb(0 0 0 / 0.25);
 }

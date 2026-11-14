@@ -1,0 +1,101 @@
+// The search criteria: the draft being edited, the live KQL preview, and estimates of a query version.
+import { HttpResponse } from 'msw';
+import type { Schemas } from '@/api/client';
+import { makeCounts, makeVersion } from '../db';
+import { deniedByPurview } from '../denied';
+import { appendLog } from '../log';
+import { buildMockKql, CriteriaInvalid } from '../kql';
+import { alreadyRunning, activeJob, createJob } from '../jobs';
+import { readJson, route, withMatter } from '../route';
+import { clone, error, hashNumber, iso, validationFailed } from '../util';
+import { currentVersion, draftChanged, draftView } from '../views';
+
+type S = Schemas;
+const KINDS = ['email', 'chats', 'docs'];
+
+/** Why criteria can't be saved at all (their shape is wrong). Whether they can be searched is a separate check. */
+function shapeProblem(criteria: unknown): string | null {
+  if (!criteria || typeof criteria !== 'object') return 'criteria must be an object.';
+  const c = criteria as Record<string, unknown>;
+  const lists = ['keywords', 'exclude_keywords', 'file_extensions', 'participant_domains', 'exclude_participant_domains', 'label_ids', 'exclude_label_ids', 'kinds'];
+  for (const key of lists) if (!Array.isArray(c[key]) || (c[key] as unknown[]).some((v) => typeof v !== 'string')) return `${key} must be a list of text.`;
+  if (c.keyword_mode !== 'any' && c.keyword_mode !== 'all') return 'keyword_mode must be any or all.';
+  if ((c.kinds as string[]).length === 0 || (c.kinds as string[]).some((k) => !KINDS.includes(k))) return 'kinds must include at least one of email, chats and docs.';
+  if (c.doc_date_property !== 'lastmodifiedtime' && c.doc_date_property !== 'created') return 'doc_date_property must be lastmodifiedtime or created.';
+  for (const key of ['date_from', 'date_to'] as const) if (c[key] !== null && !(typeof c[key] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c[key] as string))) return `${key} must be a date (YYYY-MM-DD) or null.`;
+  return null;
+}
+
+/** Plausible counts for a query: the same every time for the same text. */
+export function estimateCounts(kql: string, custodians: number): S['Counts'] {
+  const items = 40 + (hashNumber(kql) % 900);
+  return makeCounts(items, Math.floor(items / 25), Math.max(1, custodians));
+}
+
+export const criteriaHandlers = [
+  route('get', '/matters/:matterId/draft', (context) => withMatter(context, (m) => HttpResponse.json(draftView(m)))),
+
+  route('put', '/matters/:matterId/draft', (context) =>
+    withMatter(context, async (m) => {
+      const body = await readJson(context.request);
+      const problem = shapeProblem(body?.criteria);
+      if (problem) return validationFailed('criteria', problem);
+      m.draft = { criteria: clone(body!.criteria as S['Criteria']), updated_at: iso(), based_on_version: m.matter.current_version, changed_since_version: false };
+      return HttpResponse.json(draftView(m));
+    }),
+  ),
+
+  // Instant, no Purview call: the Scope screen asks for this as the user types.
+  route('post', '/kql/preview', async ({ request }) => {
+    const body = await readJson(request);
+    const problem = shapeProblem(body?.criteria);
+    if (problem) return validationFailed('criteria', problem);
+    try {
+      return HttpResponse.json(buildMockKql(body!.criteria as S['Criteria']));
+    } catch (e) {
+      if (e instanceof CriteriaInvalid) return error(422, 'criteria_invalid', e.message);
+      throw e;
+    }
+  }),
+
+  route('post', '/matters/:matterId/estimates', (context) =>
+    withMatter(context, (m) => {
+      const denied = deniedByPurview('startEstimate');
+      if (denied) return denied;
+      let built: S['KqlPreview'];
+      try {
+        built = buildMockKql(m.draft.criteria);
+      } catch (e) {
+        if (e instanceof CriteriaInvalid) return error(422, 'criteria_invalid', e.message);
+        throw e;
+      }
+      const running = activeJob(m.matter.id, 'estimate');
+      if (running) return alreadyRunning(running, 'estimate');
+
+      // A changed draft (or changed sources) becomes a new query version; an unchanged one is estimated again.
+      let version = currentVersion(m);
+      if (!version || draftChanged(m)) {
+        const number = Math.max(0, ...m.versions.map((v) => v.version)) + 1;
+        // The same sources as the version before, unless a custodian or site changed since.
+        version = makeVersion(m.matter, number, m.draft.criteria, null, `Query v${number}`, version && !m.sourcesChanged ? version.sources_fingerprint : undefined);
+        m.versions.push(version);
+        m.matter.current_version = number;
+        m.matter.stage = 'scoping';
+        m.draft = { ...m.draft, based_on_version: number };
+        m.sourcesChanged = false;
+      }
+      const target = version;
+      return HttpResponse.json(
+        createJob('estimate', m.matter.id, {
+          finish: () => {
+            // Estimating the same query again finds the same items, so a version keeps its counts.
+            target.counts ??= estimateCounts(built.kql, m.matter.custodians.length);
+            appendLog(m, 'estimate', `Query v${target.version} · ${target.counts.items.toLocaleString('en-US')} items + ${target.counts.partial_items.toLocaleString('en-US')} partially indexed`, target.version, { kql: target.kql, counts: target.counts });
+            return { version: target.version, estimated_at: iso(), counts: clone(target.counts) };
+          },
+        }),
+        { status: 202 },
+      );
+    }),
+  ),
+];

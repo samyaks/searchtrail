@@ -1,0 +1,85 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-space-2);
+  min-height: var(--st-target);
+  padding: 0 18px;
+  border: 1px solid var(--st-ink);
+  border-radius: var(--st-radius-md);
+  background: var(--st-sheet);
+  color: var(--st-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+.button:disabled,
+.button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* the main action on a screen */
+.primary {
+  background: var(--st-ink);
+  color: var(--st-sheet);
+}
+/* a quieter action: the design's outlined button */
+.secondary {
+  background: var(--st-sheet);
+  border-color: var(--st-ink);
+}
+/* the least emphasis: a grey outline */
+.neutral {
+  border-color: var(--st-rule-strong);
+}
+/* the one thing to do next, in highlighter */
+.highlight {
+  background: var(--st-highlighter);
+  border-color: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+  font-weight: 700;
+}
+/* an action that can't be undone */
+.danger {
+  border-color: var(--st-margin-red);
+  color: var(--st-margin-red);
+}
+
+.sm {
+  min-height: var(--st-target-sm);
+  padding: 0 12px;
+  font-size: var(--st-text-sm);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+}
+
+/* icon-only button: a 36px square, transparent until hovered */
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--st-target-sm);
+  height: var(--st-target-sm);
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--st-radius-md);
+  background: transparent;
+  color: var(--st-muted);
+  cursor: pointer;
+}
+.iconButton:hover:not(:disabled) {
+  background: var(--st-rule-soft);
+  color: var(--st-ink);
+}
+.iconButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

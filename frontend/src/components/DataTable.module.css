@@ -1,0 +1,49 @@
+/* the panel the design puts tables in; a wide table scrolls inside it instead of breaking the page */
+.scroll {
+  overflow-x: auto;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--st-text-md);
+  text-align: start;
+}
+.table th,
+.table td {
+  padding: 14px 20px;
+  text-align: start;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--st-rule-soft);
+}
+.table thead th {
+  padding-block: 12px;
+  border-bottom-color: var(--st-rule);
+  color: var(--st-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.table tbody th {
+  font-weight: 600;
+}
+.table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.table [data-numeric='true'] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* the row the user is looking at, such as the open matter */
+.table tr[data-selected='true'] > * {
+  background: var(--st-highlighter-soft);
+}
+.empty {
+  padding: 32px 20px;
+  color: var(--st-muted);
+  text-align: center;
+}

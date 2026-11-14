@@ -1,0 +1,32 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.card[data-padding='md'] {
+  padding: 18px 20px;
+}
+.card[data-padding='lg'] {
+  padding: 22px;
+}
+.card[data-padding='none'] {
+  gap: 0;
+}
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+.card[data-padding='none'] .header {
+  padding: 18px 20px 0;
+}
+.title {
+  font-family: var(--st-font-heading);
+  font-size: var(--st-text-lg);
+  font-weight: 400;
+}
