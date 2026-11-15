@@ -949,6 +949,8 @@ paths:
                   $ref: "#/components/examples/ExportReady"
                 preparing:
                   $ref: "#/components/examples/ExportPreparing"
+                readyV3:
+                  $ref: "#/components/examples/ExportFalconV3Ready"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1236,6 +1238,16 @@ paths:
                     updated_at: "2026-11-05T11:03:10Z"
                     result: null
                     error: { code: purview_operation_failed, message: "Purview stopped the export: the search could not be found. Check the case in the Purview portal, then try again.", details: { purview_status: failed } }
+                previewDone:
+                  $ref: "#/components/examples/JobPreviewDone"
+                termReportDone:
+                  $ref: "#/components/examples/JobTermReportDone"
+                exportDone:
+                  $ref: "#/components/examples/JobExportDone"
+                downloadDone:
+                  $ref: "#/components/examples/JobDownloadDone"
+                reviewSetDone:
+                  $ref: "#/components/examples/JobReviewSetDone"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -1519,7 +1531,7 @@ components:
         warnings: []
 
     PreviewFalcon:
-      value:
+      value: &preview_falcon
         id: prv_falcon_v3
         matter_id: mat_falcon
         version: 3
@@ -1577,7 +1589,7 @@ components:
         page_size: 10
 
     TermReportFalcon:
-      value:
+      value: &term_report_falcon
         id: trm_falcon_v3
         matter_id: mat_falcon
         version: 3
@@ -1649,6 +1661,131 @@ components:
       value:
         items: [*export_preparing, *export_ready]
 
+    # The finished states of every kind of job, for mocks that run a job to its end. Each is the same
+    # job as its 202 example (same id) a little later, with its `result` taken from the examples above.
+    ExportFalconV3Ready:
+      summary: The export started in ExportPreparing, once Purview has finished it
+      value: &export_v3_ready
+        id: exp_falcon_v3
+        matter_id: mat_falcon
+        name: M-2026-0142 EVERLAW 20261105T1058Z
+        version: 3
+        status: ready
+        progress: 1
+        counts: { items: 630, size_bytes: 30408704, partial_items: 25, partial_size_bytes: 22754099, mailboxes: 2, sites: 4 }
+        options: { include_partially_indexed: true, partially_indexed_scope: responsiveLocations, format: pst, include_cloud_attachments: false, teams_transcripts: true }
+        changes_accepted: false
+        started_at: "2026-11-05T10:59:00Z"
+        started_by: { id: usr_dana, display_name: Dana Whitfield }
+        finished_at: "2026-11-05T11:21:00Z"
+        expires_at: "2026-12-05T11:21:00Z"
+        files:
+          - { name: Exchange.zip, size_bytes: 33011712 }
+          - { name: SharePoint.zip, size_bytes: 17640448 }
+        download: { status: none, progress: null, stored_path: null, finished_at: null }
+        review_set: { status: none, name: null, finished_at: null }
+
+    JobPreviewDone:
+      summary: The preview job of the 202 example, finished
+      value:
+        id: job_01HF3PRV
+        kind: preview
+        status: succeeded
+        progress: 1
+        matter_id: mat_falcon
+        created_at: "2026-11-05T10:41:30Z"
+        updated_at: "2026-11-05T10:42:00Z"
+        result: *preview_falcon
+        error: null
+
+    JobTermReportDone:
+      summary: The term report job of the 202 example, finished
+      value:
+        id: job_01HF3TRM
+        kind: term_report
+        status: succeeded
+        progress: 1
+        matter_id: mat_falcon
+        created_at: "2026-11-05T10:49:00Z"
+        updated_at: "2026-11-05T10:51:00Z"
+        result: *term_report_falcon
+        error: null
+
+    JobExportDone:
+      summary: The export job of the 202 example, finished (the `failed` example is its other possible end)
+      value:
+        id: job_01HF3EXP
+        kind: export
+        status: succeeded
+        progress: 1
+        matter_id: mat_falcon
+        created_at: "2026-11-05T10:58:40Z"
+        updated_at: "2026-11-05T11:21:00Z"
+        result: *export_v3_ready
+        error: null
+
+    JobDownloadDone:
+      summary: The download job of the 202 example, finished, with the Export download set
+      value:
+        id: job_01HF3DL1
+        kind: download
+        status: succeeded
+        progress: 1
+        matter_id: mat_falcon
+        created_at: "2026-11-05T12:10:00Z"
+        updated_at: "2026-11-05T12:19:00Z"
+        result:
+          id: exp_falcon_v2
+          matter_id: mat_falcon
+          name: M-2026-0142 EVERLAW 20261104T1630Z
+          version: 2
+          status: ready
+          progress: 1
+          counts: { items: 1148, size_bytes: 55364812, partial_items: 41, partial_size_bytes: 37320704, mailboxes: 2, sites: 4 }
+          options: { include_partially_indexed: true, partially_indexed_scope: responsiveLocations, format: pst, include_cloud_attachments: false, teams_transcripts: true }
+          changes_accepted: false
+          started_at: "2026-11-04T16:30:00Z"
+          started_by: { id: usr_dana, display_name: Dana Whitfield }
+          finished_at: "2026-11-04T16:52:00Z"
+          expires_at: "2026-12-04T16:52:00Z"
+          files:
+            - { name: Exchange.zip, size_bytes: 61203456 }
+            - { name: SharePoint.zip, size_bytes: 31482060 }
+          download: { status: done, progress: 1, stored_path: matters/mat_falcon/exports/exp_falcon_v2, finished_at: "2026-11-05T12:19:00Z" }
+          review_set: { status: none, name: null, finished_at: null }
+        error: null
+
+    JobReviewSetDone:
+      summary: The review set job of the 202 example, finished, with the Export review_set set
+      value:
+        id: job_01HF3RS1
+        kind: review_set
+        status: succeeded
+        progress: 1
+        matter_id: mat_falcon
+        created_at: "2026-11-05T12:12:00Z"
+        updated_at: "2026-11-05T12:15:00Z"
+        result:
+          id: exp_falcon_v2
+          matter_id: mat_falcon
+          name: M-2026-0142 EVERLAW 20261104T1630Z
+          version: 2
+          status: ready
+          progress: 1
+          counts: { items: 1148, size_bytes: 55364812, partial_items: 41, partial_size_bytes: 37320704, mailboxes: 2, sites: 4 }
+          options: { include_partially_indexed: true, partially_indexed_scope: responsiveLocations, format: pst, include_cloud_attachments: false, teams_transcripts: true }
+          changes_accepted: false
+          started_at: "2026-11-04T16:30:00Z"
+          started_by: { id: usr_dana, display_name: Dana Whitfield }
+          finished_at: "2026-11-04T16:52:00Z"
+          expires_at: "2026-12-04T16:52:00Z"
+          files:
+            - { name: Exchange.zip, size_bytes: 61203456 }
+            - { name: SharePoint.zip, size_bytes: 31482060 }
+          download: { status: none, progress: null, stored_path: null, finished_at: null }
+          review_set: { status: done, name: M-2026-0142 review, finished_at: "2026-11-05T12:15:00Z" }
+        error: null
+
     VersionsFalcon:
       value:
         items:
@@ -1707,10 +1844,10 @@ components:
           - { seq: 8, ts: "2026-11-05T10:51:00Z", action: term_report, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v3 · 4 terms counted, version: 3, prev_hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", hash: "cd7c2de3013d2eeac2f7d8bb6abd56515813a04e172e75a17e9b79002a003329", details: {} }
           - { seq: 7, ts: "2026-11-05T10:42:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v3 · 630 items + 25 partially indexed, version: 3, prev_hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", hash: "905094499cefc30a706cfb664581b54db2545cf5f38ead3e36cc6d29040c9f4b", details: {} }
           - { seq: 6, ts: "2026-11-04T16:52:00Z", action: export_finished, actor: SearchTrail, actor_email: null, summary: M-2026-0142 EVERLAW 20261104T1630Z · ready in Purview, version: 2, prev_hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", hash: "920678fd0a84bb824d7e059ad80806085285c54106f704956c796160fcf7c291", details: {} }
-          - { seq: 5, ts: "2026-11-04T16:30:00Z", action: export_started, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", details: {} }
+          - { seq: 5, ts: "2026-11-04T16:30:00Z", action: export_started, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: "Query v2 · 1,148 items + 41 partially indexed", version: 2, prev_hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", hash: "0880829fc302316fef5e7f30bb68c700c39dd64406fa74e85299b0e7538541c1", details: {} }
           - { seq: 4, ts: "2026-11-04T15:58:00Z", action: term_report, actor: Sam Ortiz, actor_email: sam.ortiz@contoso.com, summary: Query v2 · 3 terms counted, version: 2, prev_hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", hash: "604071fbd5f2b8735f229dcc5afa669c7a6d898cc2c70679ac40b828985d9ef6", details: {} }
-          - { seq: 3, ts: "2026-11-04T15:41:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v2 · 1,148 items + 41 partially indexed, version: 2, prev_hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", details: {} }
-          - { seq: 2, ts: "2026-11-03T09:30:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Query v1 · 3,912 items + 160 partially indexed, version: 1, prev_hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", details: {} }
+          - { seq: 3, ts: "2026-11-04T15:41:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: "Query v2 · 1,148 items + 41 partially indexed", version: 2, prev_hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", hash: "4c32ec0870ed8bd8e1a658cb7e382b86f9623af271a120e7278931a86a9c26d6", details: {} }
+          - { seq: 2, ts: "2026-11-03T09:30:00Z", action: preview, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: "Query v1 · 3,912 items + 160 partially indexed", version: 1, prev_hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", hash: "2ce50769afc876131e7e106ad88892671bf6bdf00d1faa478a5459cc5bfb4d76", details: {} }
           - { seq: 1, ts: "2026-11-03T09:12:00Z", action: matter_created, actor: Dana Whitfield, actor_email: dana.whitfield@contoso.com, summary: Purview case M-2026-0142 with 2 custodians, version: null, prev_hash: "0000000000000000000000000000000000000000000000000000000000000000", hash: "cb694578fa0cce227c2e0c96d53ecaeebc31540ffb61ae0ec2f58f02e6d8bdff", details: {} }
         total: 8
         page: 1
