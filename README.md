@@ -21,7 +21,7 @@ command-line tool it grew from:
 
 ```bash
 # The whole app in Docker, dry run on (no tenant needed): Postgres, migrations, API (:8000), worker,
-# and the web app on http://localhost:5173 (the built frontend, with /api passed to the API)
+# and the web app on http://localhost:8080 (the built frontend, with /api passed to the API)
 docker compose -f deploy/docker-compose.yml up --build
 curl localhost:8000/api/v1/health
 
