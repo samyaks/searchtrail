@@ -6,11 +6,14 @@ a PR note; see docs/PHASE1_PLAN.md.
 """
 from fastapi import APIRouter
 
-from . import health, matters
+from . import directory, health, labels, matters, me
 
 ROUTERS = (
     health,
     matters,
+    me,
+    labels,
+    directory,
 )
 
 api_router = APIRouter(prefix="/api/v1")
