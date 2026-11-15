@@ -18,7 +18,7 @@ export function FilterChip({ pressed, count, children, className, type = 'button
   );
 }
 
-export type PillTone = 'neutral' | 'highlight' | 'ink' | 'ok' | 'danger';
+export type PillTone = 'neutral' | 'outline' | 'highlight' | 'ink' | 'ok' | 'danger' | 'draft';
 
 /** A state shown as a pill (Scoping, Previewed, Exporting 64%, Exported). The text carries the meaning; the tone is extra. */
 export function Pill({ tone = 'neutral', children }: { tone?: PillTone; children: ReactNode }) {

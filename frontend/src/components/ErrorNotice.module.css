@@ -1,0 +1,29 @@
+/* an error in plain English: what happened and what to do (the banners and empty states of PR 10 build on it) */
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--st-space-2);
+  padding: var(--st-space-4) var(--st-space-5);
+  border: 1px solid var(--st-rule);
+  border-left: 4px solid var(--st-margin-red);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+/* it will probably work again shortly: the highlighter, not the red of a refusal */
+.notice[data-tone='transient'] {
+  border-left-color: var(--st-highlighter);
+}
+.title {
+  font-family: var(--st-font-body);
+  font-size: var(--st-text-lg);
+  font-weight: 700;
+}
+.message {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--st-muted);
+}
+.link {
+  font-weight: 600;
+}

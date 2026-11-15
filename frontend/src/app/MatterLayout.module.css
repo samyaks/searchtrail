@@ -1,0 +1,71 @@
+/* the matter header and tabs, from docs/design/Define.dc.html */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-5);
+}
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.breadcrumb a {
+  color: var(--st-muted);
+}
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+}
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.title h1 {
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.subline {
+  margin: 0;
+  font-size: 14px;
+  color: var(--st-muted);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-1);
+  border-bottom: 1px solid var(--st-rule);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  min-height: var(--st-target);
+  padding: 0 14px;
+  text-decoration: none;
+  font-weight: 500;
+  color: var(--st-muted);
+}
+/* where you are: bold, with the highlighter under it */
+.tab[aria-current='page'] {
+  font-weight: 700;
+  color: var(--st-ink);
+  box-shadow: inset 0 -4px 0 var(--st-highlighter);
+}

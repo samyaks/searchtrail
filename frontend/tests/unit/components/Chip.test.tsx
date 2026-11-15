@@ -29,9 +29,11 @@ test('a pill carries its meaning in text, whatever its tone', () => {
       <Pill tone="ink">Exporting 64%</Pill>
       <Pill tone="ok">Exported</Pill>
       <Pill tone="danger">Blocked</Pill>
+      <Pill tone="outline">Query v3</Pill>
+      <Pill tone="draft">Not previewed yet</Pill>
     </>,
   );
-  for (const text of ['Scoping', 'Previewed', 'Exporting 64%', 'Exported', 'Blocked']) {
+  for (const text of ['Scoping', 'Previewed', 'Exporting 64%', 'Exported', 'Blocked', 'Query v3', 'Not previewed yet']) {
     expect(screen.getByText(text)).toBeVisible();
   }
 });
