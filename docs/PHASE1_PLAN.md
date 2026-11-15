@@ -8,6 +8,12 @@ and [CONTRIBUTING.md](../CONTRIBUTING.md) still applies.
 - **One agent, one workstream at a time, one stream of PRs.** The order below follows every
   dependency between workstreams, so each PR builds on merged work and the integrator reviews one
   PR at a time.
+- **Screens first, then the backend (decided 2026-11-15).** The seven screens are built against the
+  MSW mocks before the backend PRs (6, 7 and 8), so a clickable demo of the whole flow exists after
+  PR 17 instead of after the backend. Early users and design partners can then be shown the product
+  while the backend catches up. PR numbers don't change, only the order. Every operation is mocked
+  and each mock response is checked against the contract, so the screens and the backend meet at the
+  contract.
 - **Target: M1, dry-run complete.** Every screen works end to end against the dry-run backend, and
   the end-to-end suite passes in CI.
 - **No tenant until after M1.** WS-C's live sign-in and Graph calls, WS-G's install guide and WS-H's
@@ -43,16 +49,20 @@ anywhere it's needed (for example, mock examples for WS-D). It merges before the
 | 4 | `[D] Component kit and mocks for every operation` | Buttons, chips, segmented controls, switches, cards and data tables from `src/components/index.ts`; MSW handlers for all 39 operations, with state for draft edits and job progress | A test fails if any `operationId` has no handler; each component has Vitest and axe tests |
 | 5 | `[G] Web image and end-to-end harness` | A `web` image (the built frontend behind a reverse proxy that also proxies `/api`) in compose; Playwright in `frontend/tests/e2e/` against the compose stack, `--trace off` | One smoke test (the Matters list) passes in CI against the dry-run stack |
 
-### Wave 2: build
+### Wave 2a: the screens, against the mocks (built first, in this order)
 | # | PR | Builds | Done when |
 |---|---|---|---|
-| 6 | `[B1] Custodians, sites, holds, drafts, versions` | Custodian and site endpoints; holds through the gateway; `GET/PUT .../draft`; `POST /kql/preview` (only through `searchtrail.query`); version creation; `GET .../versions` and `.../versions/compare` | Contract tests pass, including `422 criteria_invalid` |
-| 7 | `[B2] The other five job handlers` | `preview` (items parsed with `report.py`, written with `add_preview_items`, files in storage), `term_report` (a search of its own per version), `export` (gated by `check_export`, accepted drift logged, the log's head in the export's description and package, ADR 0014), `download` (streamed), `review_set`; Graph failures mapped to error codes; the handler rules below | All six kinds pass in dry run, including blocked exports and count drift, and a retried export starts one Purview export |
-| 8 | `[B1] Job endpoints, results, exports, log` | The six `202` endpoints with `409 conflict`; `GET /jobs/{id}`, `GET .../jobs` (a `waiting` job is shown as `running`: `queue.contract_status`); latest preview, item paging and filters, `items.csv`; latest term report; export list, detail and check, `confirmation_mismatch`; log, verify (reporting the chain's head, ADR 0014), and a log entry for every state change; every route through `Access` (ADR 0013) | Contract tests pass, including error codes; one test runs the whole flow through the API in dry run with `run_one`; `alembic check` is clean |
 | 9 | `[D] Shell, job hook, error handling` | Side navigation, matter header and tabs; `useJob` and resuming active jobs; the `ErrorCode` to UI mapping; the `session_expired` redirect | Shell screenshot next to `Main.dc.html` |
 | 10 | `[D] Data components and gallery` | Count tiles, bar breakdowns, month chart, methodology card, banners, empty and error states; `/_gallery` | The gallery shows every component; axe checks pass |
-| 11–13 | `[E] Matters`, `[E] Define`, `[E] Scope` | Each screen to its design file | Each screen: works against the mocks and against `npm run dev:api`; Vitest tests for logic; a Playwright test per main action; a screenshot next to the design file |
-| 14–17 | `[F] Preview`, `[F] Terms`, `[F] Export`, `[F] Log` | Each screen to its design file; Export adds download and review-set hand-offs | As for 11–13, including every blocked export state |
+| 11–13 | `[E] Matters`, `[E] Define`, `[E] Scope` | Each screen to its design file | Each screen: works against the mocks (`npm run dev`), including slow jobs (`stMocks.set({ jobSeconds: 120 })`); Vitest and Testing Library tests with MSW for logic and each main action; a screenshot next to the design file. The real-API check and a Playwright test per main action come with the backend PRs below and PR 18 |
+| 14–17 | `[F] Preview`, `[F] Terms`, `[F] Export`, `[F] Log` | Each screen to its design file; Export adds download and review-set hand-offs | As for 11–13, including every blocked export state (the mocks have switches for them) |
+
+### Wave 2b: the backend the screens run on
+| # | PR | Builds | Done when |
+|---|---|---|---|
+| 6 | `[B1] Custodians, sites, holds, drafts, versions` | Custodian and site endpoints; holds through the gateway; `GET/PUT .../draft`; `POST /kql/preview` (only through `searchtrail.query`); version creation; `GET .../versions` and `.../versions/compare` | Contract tests pass, including `422 criteria_invalid`; the Matters, Define and Scope screens work against the real API (`npm run dev:api`) |
+| 7 | `[B2] The other five job handlers` | `preview` (items parsed with `report.py`, written with `add_preview_items`, files in storage), `term_report` (a search of its own per version), `export` (gated by `check_export`, accepted drift logged, the log's head in the export's description and package, ADR 0014), `download` (streamed), `review_set`; Graph failures mapped to error codes; the handler rules below | All six kinds pass in dry run, including blocked exports and count drift, and a retried export starts one Purview export |
+| 8 | `[B1] Job endpoints, results, exports, log` | The six `202` endpoints with `409 conflict`; `GET /jobs/{id}`, `GET .../jobs` (a `waiting` job is shown as `running`: `queue.contract_status`); latest preview, item paging and filters, `items.csv`; latest term report; export list, detail and check, `confirmation_mismatch`; log, verify (reporting the chain's head, ADR 0014), and a log entry for every state change; every route through `Access` (ADR 0013) | Contract tests pass, including error codes; one test runs the whole flow through the API in dry run with `run_one`; `alembic check` is clean; the Preview, Terms, Export and Log screens work against the real API |
 
 ### Wave 3: M1
 | # | PR | Builds | Done when |
@@ -163,4 +173,7 @@ because dry run has no sign-in. WS-C's `current_user` keeps that check at the to
 |---|---|
 | `POST /exports/check` is synchronous but re-runs a Purview estimate, which can take minutes on a real tenant (section 2 of the V1 plan). The contract says "a few seconds". | Fine in dry run. WS-H measures it live; if it's slow, it becomes a job through a `[contract]` PR. |
 | Review throughput: about 18 PRs to M1, all for one reviewer | Small PRs in dependency order; each says what it unblocks |
+| Screens built on mocks may drift from the real API, and real jobs take minutes to hours, not seconds | The mocks' responses are checked against the contract for every operation. The screens are built and tested with slow mock jobs and with resuming a running job (PR 9). PRs 6 and 8 check each screen against `npm run dev:api`, and PR 18 runs the whole flow. |
+| Early users may be on Standard (E3) licences, which have no custodians; the custodian model (PR 6, Define) assumes Premium | Ask early contacts their licence tier before PR 6 starts. Keep a custodian a "person source" the sync can treat either way. WS-H confirms whether Standard can be supported. |
+| The report parser's column names, the KQL for Teams and dates, and the download calls are guesses until a live run | Start WS-H's CLI validation against a seeded trial tenant as soon as one is available, in parallel with the screens and ideally before PR 7. It needs no web code. |
 | Mock examples missing from the contract slow WS-D's PR 4 | If any are missing, one `[contract]` PR adds them all, before PR 4 |
