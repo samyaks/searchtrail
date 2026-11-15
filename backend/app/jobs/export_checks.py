@@ -6,14 +6,12 @@ Three checks, in order:
   counts_unchanged  a fresh estimate matches the preview's counts (new mail arrives, items get deleted)
 
 The first two come from the database and make no Purview calls, so an export they block changes
-nothing in Purview. The third runs one estimate, and only when the first two passed. Versions with the
-same sources share one Purview search, and a search holds one query, so before estimating it sets the
-search's query to this version's KQL (the one write a ready check makes): otherwise it could count a
-different version's query.
+nothing in Purview. The third runs one estimate on the version's own search, and only when the first two
+passed. It writes nothing: each version's search holds that version's query and sources, and is never
+changed (app/jobs/purview.py), so there is nothing to set first and nothing for a running job to clash with.
 """
 from __future__ import annotations
 
-import copy
 from datetime import datetime
 
 from sqlalchemy import select
@@ -42,20 +40,6 @@ def _latest_preview(session: Session, matter_id: str, version_id: str | None = N
         query = query.where(RunRow.query_version_id == version_id)
     row = session.execute(query.order_by(RunRow.finished_at.desc(), RunRow.created_at.desc()).limit(1)).first()
     return (row[0], row[1]) if row else None
-
-
-def _set_query(session: Session, gateway: PurviewGateway, matter: MatterRow, version: QueryVersionRow) -> None:
-    """Make the version's Purview search hold the version's KQL, and remember that in the matter's state
-    (flushed; the caller commits, and if it doesn't, the next check just sets it again)."""
-    state = copy.deepcopy(matter.purview_state or {})
-    search = state.get("search") or {}
-    if search.get("id") == version.purview_search_id and search.get("kql") == version.kql:
-        return
-    gateway.update_query(matter.purview_case_id, version.purview_search_id, version.kql)
-    if search.get("id") == version.purview_search_id:
-        search["kql"] = version.kql
-        matter.purview_state = state
-        session.flush()
 
 
 def check_export(session: Session, gateway: PurviewGateway, matter_id: str) -> contract.ExportCheck:
@@ -102,7 +86,6 @@ def check_export(session: Session, gateway: PurviewGateway, matter_id: str) -> c
         check("counts_unchanged", "skipped", f"Not checked because {reason}.")
     else:
         preview_run, _ = current
-        _set_query(session, gateway, matter, version)
         op = gateway.wait_for_operation(gateway.start_estimate(matter.purview_case_id, version.purview_search_id),
                                         label="export check")
         checked_at = utcnow()

@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.api.deps import DRY_RUN_USER
 from app.db import repositories
-from app.db.base import new_id
+from app.db.base import new_id, utcnow
 from app.db.models import CustodianRow, JobRow, MatterRow, QueryVersionRow, SiteRow
 from app.jobs import queue
 from app.jobs.worker import run_one
@@ -58,9 +58,19 @@ def enqueue_estimate(s, version: QueryVersionRow) -> str:
 
 
 def run_all(sessions, gateway, worker: str = "w1") -> None:
-    with sessions() as s:
-        while run_one(s, worker, lambda _job: gateway):
-            pass
+    """Run every job that is due until none is left. Jobs waiting on Purview (between polls) are made due
+    at once, so they run to the end; jobs retried later (JobRetry) are left for the test to look at."""
+    for _ in range(100):  # a job that never stops waiting is a bug: fail instead of hanging
+        with sessions() as s:
+            while run_one(s, worker, lambda _job: gateway):
+                pass
+            waiting = s.scalars(select(JobRow).where(JobRow.status == "waiting")).all()
+            if not waiting:
+                return
+            for row in waiting:
+                row.run_after = utcnow()
+            s.commit()
+    raise AssertionError("jobs were still waiting on Purview after 100 checks")
 
 
 def job(sessions, job_id: str) -> JobRow:

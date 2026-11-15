@@ -108,6 +108,32 @@ class CullCriteria:
             raise CriteriaError("Domain filters only apply to emails and chats; add one of those to kinds")
         if self.raw_kql is not None and not self.raw_kql.strip():
             raise CriteriaError("raw_kql is empty; remove it or give a query")
+        if self.raw_kql:
+            problem = _unbalanced(self.raw_kql)
+            if problem:
+                raise CriteriaError(f"raw_kql {problem}. It is ANDed onto the query in parentheses, so its own "
+                                    "parentheses and quotes must pair up.")
+
+
+def _unbalanced(kql: str) -> str | None:
+    """Why `kql` can't be wrapped in parentheses safely, or None. A ')' with no '(' before it would close
+    the wrapping early, so 'invoice) OR (kind:email' would put an OR outside every other filter.
+    Parentheses inside quotes are text, not grouping."""
+    depth, quoted = 0, False
+    for ch in kql:
+        if ch == '"':
+            quoted = not quoted
+        elif not quoted and ch == "(":
+            depth += 1
+        elif not quoted and ch == ")":
+            depth -= 1
+            if depth < 0:
+                return "closes a parenthesis it never opened"
+    if quoted:
+        return "has a quote that is never closed"
+    if depth:
+        return "opens a parenthesis it never closes"
+    return None
 
 
 def _parse_date(value: str | None, name: str) -> date | None:

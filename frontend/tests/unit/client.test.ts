@@ -24,3 +24,32 @@ test('an Error body becomes an ApiRequestError with the contract code', async ()
     expect((e as ApiRequestError).status).toBe(404);
   }
 });
+
+test.each([
+  ['an HTML page from a proxy', () => new HttpResponse('<html><body>502 Bad Gateway</body></html>', { status: 502, headers: { 'Content-Type': 'text/html' } }), 502],
+  ['plain text', () => new HttpResponse('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain' } }), 500],
+  ['an empty body', () => new HttpResponse(null, { status: 503 }), 503],
+  ['JSON that is not an Error', () => HttpResponse.json({ detail: 'nope' }, { status: 500 }), 500],
+])('an error with %s still has a code and a message to show', async (_name, respond, status) => {
+  server.use(http.get('/api/v1/matters', respond));
+  const result = await api.GET('/matters');
+  expect(() => unwrap(result)).toThrow(ApiRequestError);
+  try {
+    unwrap(result);
+  } catch (e) {
+    const error = e as ApiRequestError;
+    expect(error.status).toBe(status);
+    expect(error.body).toEqual({ code: 'internal_error', message: expect.stringContaining(`(${status})`), details: {} });
+    expect(error.message).toContain("SearchTrail's server didn't answer properly");
+  }
+});
+
+test('an error without a body gets the code the API uses for its status', async () => {
+  server.use(http.get('/api/v1/matters', () => new HttpResponse(null, { status: 401 })));
+  try {
+    unwrap(await api.GET('/matters'));
+    expect.unreachable();
+  } catch (e) {
+    expect((e as ApiRequestError).body.code).toBe('session_expired');
+  }
+});

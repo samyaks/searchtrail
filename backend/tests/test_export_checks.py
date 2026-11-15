@@ -2,19 +2,13 @@
 from __future__ import annotations
 
 import pytest
-from jobs_helpers import KQL_V1, KQL_V2, add_version, calls, custodian, enqueue_estimate, run_all, seed_matter, tenant, writes
+from jobs_helpers import KQL_V2, add_version, calls, custodian, enqueue_estimate, run_all, seed_matter, tenant, writes
 from sqlalchemy import select
 
 from app.db import repositories
 from app.db.models import MatterRow, QueryVersionRow, RunRow
-from app.jobs import steps
 from app.jobs.export_checks import check_export
 from app.schemas.contract import ExportCheck
-
-
-@pytest.fixture(autouse=True)
-def no_waiting(monkeypatch):
-    monkeypatch.setattr(steps, "sleep", lambda _s: None)
 
 
 def estimated(sessions, gw, matter_id: str | None = None, kql: str | None = None) -> str:
@@ -43,7 +37,7 @@ def check(sessions, gw, matter_id: str) -> ExportCheck:
     gw.transport.calls.clear()
     with sessions() as s:
         result = check_export(s, gw, matter_id)
-        s.commit()  # as the endpoint does: a check may record the search's query in the matter's state
+        s.commit()  # as the endpoint will (nothing to commit today: a check writes nothing)
     return ExportCheck.model_validate(result.model_dump())
 
 
@@ -131,33 +125,25 @@ def test_counts_that_drifted_since_the_preview_block_the_export(sessions):
     assert f"{before:,} → {before + 17:,} items" in result.checks[2].message
 
 
-def test_the_check_counts_this_versions_query_even_if_the_shared_search_holds_another(sessions):
-    """Versions with the same sources share one Purview search, and a search holds one query. An older
-    version estimated later leaves the search holding the older KQL; the check must not count that."""
+def test_the_check_counts_the_versions_own_search_and_writes_nothing(sessions):
+    """Each version has a search of its own that holds its query, so the check has nothing to set first,
+    even after an older version was estimated again, and nothing a running job could clash with."""
     gw = tenant()
     matter_id = estimated(sessions, gw)                    # v1
     estimated(sessions, gw, matter_id, KQL_V2)             # v2: the current version
     previewed(sessions, matter_id)
-    with sessions() as s:                                  # a v1 estimate runs again, resetting the search to v1's KQL
-        v1 = s.scalars(select(QueryVersionRow).where(QueryVersionRow.version == 1)).one()
-        enqueue_estimate(s, v1)
+    with sessions() as s:                                  # a v1 estimate runs again, after v2's
+        enqueue_estimate(s, s.scalars(select(QueryVersionRow).where(QueryVersionRow.version == 1)).one())
     run_all(sessions, gw)
-    with sessions() as s:
-        search_id = s.get(MatterRow, matter_id).purview_state["search"]["id"]
-        assert s.get(MatterRow, matter_id).purview_state["search"]["kql"] == KQL_V1
-    assert gw.transport._queries[search_id] == KQL_V1
 
     result = check(sessions, gw, matter_id)
     assert result.ready, [c.message for c in result.checks]  # counted v2's query, so nothing drifted
-    patches = calls(gw, "PATCH", search_id)
-    assert [p[2]["contentQuery"] for p in patches] == [KQL_V2]
-    assert gw.transport.calls.index(patches[0]) < gw.transport.calls.index(
-        calls(gw, "POST", "/estimateStatistics")[0])           # set before the estimate started
     with sessions() as s:
-        assert s.get(MatterRow, matter_id).purview_state["search"]["kql"] == KQL_V2
-
-    assert check(sessions, gw, matter_id).ready
-    assert calls(gw, "PATCH", search_id) == []  # the search already holds the query: no second write
+        v2 = s.scalars(select(QueryVersionRow).where(QueryVersionRow.version == 2)).one()
+    [estimate] = calls(gw, "POST", "/estimateStatistics")
+    assert f"/searches/{v2.purview_search_id}/" in estimate[1]
+    assert writes(gw) == [estimate]  # the one estimate, nothing else
+    assert gw.transport._queries[v2.purview_search_id] == KQL_V2
 
 
 def test_unknown_matters_raise(sessions):

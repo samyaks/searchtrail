@@ -22,17 +22,12 @@ from sqlalchemy import select
 
 from app.db.base import utcnow
 from app.db.models import AuditEntryRow, JobRow, MatterRow, QueryVersionRow, RunRow
-from app.jobs import queue, steps
+from app.jobs import queue
 from app.jobs.worker import run_one
 from app.schemas.contract import EstimateResult
 from searchtrail.graph import GraphError
 
-
-@pytest.fixture(autouse=True)
-def no_waiting(monkeypatch):
-    waits: list[float] = []
-    monkeypatch.setattr(steps, "sleep", waits.append)
-    return waits
+SEARCH_V1, SEARCH_V2 = "M-2026-0142 query v1", "M-2026-0142 query v2"
 
 
 def test_an_estimate_syncs_purview_counts_and_logs(sessions):
@@ -56,7 +51,7 @@ def test_an_estimate_syncs_purview_counts_and_logs(sessions):
         matter, version = s.get(MatterRow, matter_id), s.get(QueryVersionRow, version_id)
         state = matter.purview_state
         assert matter.purview_case_id == state["case_id"]
-        assert version.purview_search_id == state["search"]["id"] and state["search"]["kql"] == KQL_V1
+        assert version.purview_search_id == state["searches"][SEARCH_V1]["id"]
         alex, megan = custodian(s, "alex.wilber@contoso.com"), custodian(s, "megan.bowen@contoso.com")
         assert alex.purview_custodian_id and alex.purview_user_source_id
         assert state["custodians"]["alex.wilber@contoso.com"]["included_sources"] == "mailbox"  # OneDrive off
@@ -73,21 +68,35 @@ def test_an_estimate_syncs_purview_counts_and_logs(sessions):
     assert [c[2]["includedSources"] for c in calls(gw, "POST", "/userSources")] == ["mailbox", "mailbox, site"]
     assert len(calls(gw, "POST", "/siteSources")) == 1 and len(calls(gw, "POST", "/additionalSources")) == 1
     assert len(calls(gw, "POST", "/searches")) == 1 and len(calls(gw, "POST", "/estimateStatistics")) == 1
+    assert calls(gw, "POST", "/searches")[0][2]["displayName"] == SEARCH_V1
+    assert gw.transport._queries[version.purview_search_id] == KQL_V1
 
 
-def test_a_new_version_reuses_the_search_and_new_sources_get_a_new_one(sessions):
+def test_each_version_gets_a_search_of_its_own_and_searches_are_never_changed(sessions):
+    """The case and sources are made once; every version gets its own search with its own query, so work
+    on one version (an export running for an hour) is never disturbed by another being estimated."""
     gw = tenant()
     with sessions() as s:
         matter = seed_matter(s)
         matter_id = matter.id
         enqueue_estimate(s, add_version(s, matter, KQL_V1))
     run_all(sessions, gw)
-
     with sessions() as s:  # v2: same people and sites, one more term
         enqueue_estimate(s, add_version(s, s.get(MatterRow, matter_id), KQL_V2))
     run_all(sessions, gw)
-    assert len(calls(gw, "POST", "/searches")) == 1 and len(calls(gw, "POST", "/ediscoveryCases")) == 1
-    assert [c[2]["contentQuery"] for c in calls(gw, "PATCH", "")] == [KQL_V2]
+    with sessions() as s:  # v1 estimated again, after v2: its search still holds v1's query
+        v1 = s.scalars(select(QueryVersionRow).where(QueryVersionRow.version == 1)).one()
+        enqueue_estimate(s, v1)
+    run_all(sessions, gw)
+
+    assert len(calls(gw, "POST", "/ediscoveryCases")) == 1 and len(calls(gw, "POST", "/custodians")) == 2
+    assert len(calls(gw, "POST", "/siteSources")) == 1
+    assert [c[2]["displayName"] for c in calls(gw, "POST", "/searches")] == [SEARCH_V1, SEARCH_V2]
+    assert calls(gw, "PATCH", "") == []  # no search's query is ever rewritten
+    with sessions() as s:
+        versions = s.scalars(select(QueryVersionRow).order_by(QueryVersionRow.version)).all()
+        assert [gw.transport._queries[v.purview_search_id] for v in versions] == [KQL_V1, KQL_V2]
+        assert len(s.scalars(select(RunRow).where(RunRow.status == "succeeded")).all()) == 3
 
     with sessions() as s:  # v3: Alex's OneDrive is now searched too
         custodian(s, "alex.wilber@contoso.com").onedrive = True
@@ -95,12 +104,7 @@ def test_a_new_version_reuses_the_search_and_new_sources_get_a_new_one(sessions)
         enqueue_estimate(s, add_version(s, s.get(MatterRow, matter_id), KQL_V2))
     run_all(sessions, gw)
     assert calls(gw, "POST", "/userSources")[-1][2]["includedSources"] == "mailbox, site"
-    searches = calls(gw, "POST", "/searches")
-    assert [c[2]["displayName"] for c in searches] == ["M-2026-0142 cull v1", "M-2026-0142 cull v2"]
-    with sessions() as s:
-        versions = s.scalars(select(QueryVersionRow).order_by(QueryVersionRow.version)).all()
-        assert versions[0].purview_search_id == versions[1].purview_search_id != versions[2].purview_search_id
-        assert len(s.scalars(select(RunRow).where(RunRow.status == "succeeded")).all()) == 3
+    assert calls(gw, "POST", "/searches")[-1][2]["displayName"] == "M-2026-0142 query v3"
 
 
 class Killed(BaseException):
@@ -142,24 +146,90 @@ def test_a_job_whose_worker_died_is_finished_by_another_with_one_purview_start(s
         assert len(s.scalars(select(AuditEntryRow).where(AuditEntryRow.action == "estimate")).all()) == 1
 
 
-def test_progress_follows_purview_while_polling(sessions, monkeypatch, no_waiting):
+def test_while_purview_works_the_job_is_handed_back_between_checks(sessions, monkeypatch):
+    """Each check of a running operation saves its progress and lets go of the job until the next check,
+    backing off, so one worker can follow many jobs. The API shows the job as running throughout."""
     gw = tenant()
     with sessions() as s:
         matter = seed_matter(s)
         job_id = enqueue_estimate(s, add_version(s, matter))
-    real_get_operation, seen = gw.get_operation, []
+    real_get_operation, checks = gw.get_operation, []
 
     def slow(url):
-        seen.append(round(job(sessions, job_id).progress, 2))  # what the UI would show right now
-        if len(seen) < 3:
-            return {"id": "op", "status": "running", "percentProgress": 40 * len(seen)}
+        checks.append(1)
+        if len(checks) < 3:
+            return {"id": "op", "status": "running", "percentProgress": 40 * len(checks)}
         return real_get_operation(url)
 
     monkeypatch.setattr(gw, "get_operation", slow)
+    seen = []
+    for _ in range(2):
+        with sessions() as s:
+            assert run_one(s, "w1", lambda _job: gw)
+        waiting = job(sessions, job_id)
+        assert waiting.status == "waiting" and waiting.locked_by is None and waiting.attempts == 0
+        assert queue.contract_status(waiting.status) == "running"
+        seen.append((round(waiting.progress, 2), round((waiting.run_after - utcnow()).total_seconds(), 1)))
+        with sessions() as s:
+            assert run_one(s, "w1", lambda _job: gw) is False  # not due yet: the worker is free for others
+            s.get(JobRow, job_id).run_after = utcnow()
+            s.commit()
+    assert seen == [(0.44, 5.0), (0.78, 7.5)]  # 0.1 + 0.85 x 40% and 80%; checking less often
+
     run_all(sessions, gw)
-    assert seen == [0.1, 0.44, 0.78]  # 0.1 + 0.85 x 40% and 80%
-    assert no_waiting == [5.0, 7.5]  # backing off between polls
-    assert job(sessions, job_id).progress == 1.0
+    done = job(sessions, job_id)
+    assert done.status == "succeeded" and done.progress == 1.0 and done.attempts == 1
+    assert len(calls(gw, "POST", "/estimateStatistics")) == 1
+
+
+def test_a_long_operation_does_not_hold_up_other_jobs(sessions, monkeypatch):
+    """One worker, an estimate that Purview takes ages over, and an estimate on another matter: the
+    second finishes while the first is still waiting."""
+    gw = tenant()
+    with sessions() as s:
+        slow_job = enqueue_estimate(s, add_version(s, seed_matter(s)))
+    real_get_operation = gw.get_operation
+    slow_url: list[str] = []
+
+    def get_operation(url):
+        if not slow_url:
+            slow_url.append(url)  # the first operation started is the slow job's
+        return {"id": "op", "status": "running", "percentProgress": 5} if url == slow_url[0] else real_get_operation(url)
+
+    monkeypatch.setattr(gw, "get_operation", get_operation)
+    with sessions() as s:
+        assert run_one(s, "w1", lambda _job: gw)
+        other = queue.enqueue(s, "estimate", payload={})  # stands in for any other job
+        other_matter = s.scalars(select(MatterRow)).one()
+        version = add_version(s, other_matter, KQL_V2)
+        other.matter_id, other.payload = other_matter.id, {"query_version_id": version.id}
+        s.commit()
+        other_id = other.id
+    with sessions() as s:
+        assert run_one(s, "w1", lambda _job: gw)  # the slow job isn't due yet, so the other one runs
+    assert job(sessions, other_id).status == "succeeded"
+    assert job(sessions, slow_job).status == "waiting"
+
+
+def test_the_polling_deadline_survives_retries(sessions, monkeypatch):
+    """The 4-hour limit counts from the first check, not from the latest retry or restart."""
+    from datetime import timedelta as td
+
+    gw = tenant()
+    job_id = start_estimate_job(sessions)
+    monkeypatch.setattr(gw, "get_operation", lambda _u: {"id": "op", "status": "running", "percentProgress": 50})
+    with sessions() as s:
+        run_one(s, "w1", lambda _job: gw)  # syncs, starts, first check: waiting
+    with sessions() as s:
+        row = s.get(JobRow, job_id)
+        row.checkpoint = {**row.checkpoint, "poll": {**row.checkpoint["poll"],
+                                                     "since": (utcnow() - td(hours=4, minutes=1)).isoformat()}}
+        row.run_after = utcnow()
+        s.commit()
+    run_all(sessions, gw)
+    failed = job(sessions, job_id)
+    assert failed.status == "failed" and failed.error["code"] == "purview_operation_failed"
+    assert "after 4 hours" in failed.error["message"]
 
 
 def test_a_failed_purview_operation_fails_the_job_and_the_run(sessions, monkeypatch):
@@ -212,7 +282,7 @@ def test_estimates_work_on_postgres(pg_sessions):
     done = job(pg_sessions, job_id)
     assert done.status == "succeeded", done.error
     with pg_sessions() as s:
-        assert s.get(MatterRow, done.matter_id).purview_state["search"]["kql"] == KQL_V1
+        assert SEARCH_V1 in s.get(MatterRow, done.matter_id).purview_state["searches"]
 
 
 # -- a source that exists with other settings -------------------------------------------------------
@@ -346,31 +416,6 @@ def test_errors_while_syncing_are_mapped_too_and_leave_no_run(sessions, monkeypa
 
 
 # -- stopping -------------------------------------------------------------------------------------------
-def test_a_stop_request_hands_the_job_back_without_waiting_out_the_poll(sessions, monkeypatch):
-    gw = tenant()
-    job_id = start_estimate_job(sessions)
-    real_get_operation, stop = gw.get_operation, threading.Event()
-
-    def running_then_stop(_url):
-        stop.set()  # SIGTERM arrives while Purview is still working
-        return {"id": "op", "status": "running", "percentProgress": 10}
-
-    monkeypatch.setattr(gw, "get_operation", running_then_stop)
-    with sessions() as s:
-        assert run_one(s, "w1", lambda _job: gw, stop=stop) is True
-
-    handed_back = job(sessions, job_id)
-    assert handed_back.status == "queued" and handed_back.error is None
-    assert handed_back.attempts == 0  # a stop isn't the job's fault
-    assert (handed_back.run_after - utcnow()).total_seconds() < 5 and handed_back.locked_by is None
-    assert "/operations/" in handed_back.checkpoint["operation_url"]
-
-    monkeypatch.setattr(gw, "get_operation", real_get_operation)
-    run_all(sessions, gw, worker="w2")
-    assert job(sessions, job_id).status == "succeeded"
-    assert len(calls(gw, "POST", "/estimateStatistics")) == 1
-
-
 def test_the_worker_stop_flag_is_an_event(sessions):
     from app.jobs.worker import Worker
     from app.settings import AppSettings

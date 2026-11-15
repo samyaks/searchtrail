@@ -3,7 +3,10 @@
 `current_user` is a stub until WS-C's sign-in lands (docs/agents/C-microsoft-signin-and-graph.md):
 in dry run every request acts as the fixed sample user below; otherwise it refuses with
 401 session_expired, because there is no way to sign in yet. WS-C replaces the body, keeping the
-name and the return type (a UserRow), so routes don't change.
+name, the return type (a UserRow) and the mode check at the top, so routes don't change.
+
+The mode check (repositories.check_mode) refuses a database recorded for the other mode. It matters most
+here: dry run lets every request in as the sample user, so it must never run against a live database.
 """
 from __future__ import annotations
 
@@ -28,6 +31,10 @@ DRY_RUN_USER = {
 
 
 def current_user(session: Session = Depends(get_session), settings: AppSettings = Depends(get_settings)) -> UserRow:
+    try:
+        repositories.check_mode(session, dry_run=settings.dry_run)
+    except repositories.ModeMismatch as exc:
+        raise ApiError(500, "internal_error", str(exc)) from None
     if not settings.dry_run:
         raise ApiError(401, "session_expired", "Sign-in with Microsoft isn't available in this build yet. "
                        "Run SearchTrail in dry-run mode (SEARCHTRAIL_DRY_RUN=1).")

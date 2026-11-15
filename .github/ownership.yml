@@ -41,6 +41,7 @@ shared:
   paths:
     - backend/searchtrail/          # core library; workstream-owned files inside it override this
     - backend/pyproject.toml        # dependencies
+    - backend/constraints.txt       # the versions they are pinned to
     - README.md
     - .env.example
     - .gitignore

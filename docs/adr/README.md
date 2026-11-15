@@ -14,6 +14,9 @@
 | [0010](0010-packaging-docker-compose.md) | Packaging: Docker images and Docker Compose | Accepted |
 | [0011](0011-purview-gateway-location.md) | PurviewGateway lives in the core package | Accepted |
 | [0012](0012-offline-dry-run-mode.md) | Offline mode: SEARCHTRAIL_DRY_RUN=1 | Accepted |
+| [0013](0013-matter-access.md) | Who may open a matter: Purview decides | Accepted (the Purview question is built by WS-C) |
+| [0014](0014-log-integrity.md) | The log can't be changed, and its head is recorded outside the database | Accepted |
+| [0015](0015-one-search-per-query-version.md) | One Purview search per query version | Accepted |
 
 ## Where Phase 0 departed from docs/V1_PLAN.md
 

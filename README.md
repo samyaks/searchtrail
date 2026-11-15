@@ -25,7 +25,7 @@ docker compose -f deploy/docker-compose.yml up --build
 curl localhost:8000/api/v1/health
 
 # Backend tests and lint
-cd backend && python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+cd backend && python3.12 -m venv .venv && . .venv/bin/activate && pip install -c constraints.txt -e ".[dev]"
 pytest && ruff check .
 
 # Frontend on :5173 with MSW mocks (the Matters screen shows sample data); no backend needed
@@ -75,7 +75,7 @@ Start with [`docs/V1_PLAN.md`](docs/V1_PLAN.md), the [ADRs](docs/adr/README.md) 
 
 ```bash
 cd backend && python3.12 -m venv .venv && . .venv/bin/activate
-pip install -e ".[test]"
+pip install -c constraints.txt -e ".[test]"
 pytest
 cd ..   # the examples live at the repo root
 searchtrail --dry-run kql examples/matter.json

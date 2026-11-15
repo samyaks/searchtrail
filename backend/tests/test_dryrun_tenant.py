@@ -12,18 +12,13 @@ from sqlalchemy import select
 
 from app.db.base import utcnow
 from app.db.models import JobRow, MatterRow, RunRow
-from app.jobs import queue, steps
+from app.jobs import queue
 from app.jobs.worker import run_one
 from app.microsoft import dry_run_tenant_file, get_gateway
 from app.settings import AppSettings
 from searchtrail.dryrun import DryRunTransport
 from searchtrail.gateway_dryrun import DryRunPurviewGateway
 from searchtrail.graph import GraphError
-
-
-@pytest.fixture(autouse=True)
-def no_waiting(monkeypatch):
-    monkeypatch.setattr(steps, "sleep", lambda _s: None)
 
 
 @pytest.fixture
@@ -120,7 +115,7 @@ def test_processes_sharing_the_tenant_never_hand_out_the_same_id(tmp_path):
 
 
 # -- the jobs, as the running stack runs them (a new gateway per job) -----------------------------------
-def test_a_later_job_finds_the_search_an_earlier_job_made(sessions, settings):
+def test_a_later_job_finds_the_case_and_sources_an_earlier_job_made(sessions, settings):
     def gateway_for(_job):
         return get_gateway(settings)
 
@@ -142,9 +137,11 @@ def test_a_later_job_finds_the_search_an_earlier_job_made(sessions, settings):
     assert [j.status for j in done] == ["succeeded", "succeeded"], [j.error for j in done]
     assert done[1].result["counts"]["items"] >= done[0].result["counts"]["items"] > 0  # more terms never find fewer
     state = json.loads(dry_run_tenant_file(settings).read_text())
-    assert len(state["queries"]) == 1 and next(iter(state["queries"].values())) == KQL_V2  # one search, patched
+    assert len(state["cases"]) == 1 and len(state["custodians"][next(iter(state["cases"]))]) == 2  # made once
+    assert sorted(state["queries"].values()) == sorted([KQL_V1, KQL_V2])  # a search per version, never patched
     with sessions() as s:
-        assert s.get(MatterRow, matter_id).purview_state["search"]["id"] in state["queries"]
+        searches = s.get(MatterRow, matter_id).purview_state["searches"]
+        assert {state["queries"][entry["id"]] for entry in searches.values()} == {KQL_V1, KQL_V2}
 
 
 def test_a_worker_takes_over_another_workers_operation_through_its_own_gateway(sessions, settings, monkeypatch):
@@ -244,8 +241,8 @@ def test_a_matter_whose_tenant_was_lost_gets_a_new_case_on_its_next_estimate(ses
         new_state = s.get(MatterRow, matter_id).purview_state
     tenant_state = json.loads(dry_run_tenant_file(settings).read_text())
     assert new_state["case_id"] != old_state["case_id"] and list(tenant_state["cases"]) == [new_state["case_id"]]
-    old_ids = {old_state["search"]["id"], *(c["custodian_id"] for c in old_state["custodians"].values())}
-    new_ids = {new_state["search"]["id"], *(c["custodian_id"] for c in new_state["custodians"].values())}
+    old_ids = {*(e["id"] for e in old_state["searches"].values()), *(c["custodian_id"] for c in old_state["custodians"].values())}
+    new_ids = {*(e["id"] for e in new_state["searches"].values()), *(c["custodian_id"] for c in new_state["custodians"].values())}
     assert not old_ids & new_ids
 
 

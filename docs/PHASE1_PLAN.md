@@ -47,8 +47,8 @@ anywhere it's needed (for example, mock examples for WS-D). It merges before the
 | # | PR | Builds | Done when |
 |---|---|---|---|
 | 6 | `[B1] Custodians, sites, holds, drafts, versions` | Custodian and site endpoints; holds through the gateway; `GET/PUT .../draft`; `POST /kql/preview` (only through `searchtrail.query`); version creation; `GET .../versions` and `.../versions/compare` | Contract tests pass, including `422 criteria_invalid` |
-| 7 | `[B2] The other five job handlers` | `preview` (items parsed with `report.py`, written with `add_preview_items`, files in storage), `term_report`, `export` (gated by `check_export`, accepted drift logged), `download` (streamed), `review_set`; Graph failures mapped to error codes | All six kinds pass in dry run, including blocked exports and count drift |
-| 8 | `[B1] Job endpoints, results, exports, log` | The six `202` endpoints with `409 conflict`; `GET /jobs/{id}`, `GET .../jobs`; latest preview, item paging and filters, `items.csv`; latest term report; export list, detail and check, `confirmation_mismatch`; log, verify, and a log entry for every state change | Contract tests pass, including error codes; one test runs the whole flow through the API in dry run with `run_one`; `alembic check` is clean |
+| 7 | `[B2] The other five job handlers` | `preview` (items parsed with `report.py`, written with `add_preview_items`, files in storage), `term_report` (a search of its own per version), `export` (gated by `check_export`, accepted drift logged, the log's head in the export's description and package, ADR 0014), `download` (streamed), `review_set`; Graph failures mapped to error codes; the handler rules below | All six kinds pass in dry run, including blocked exports and count drift, and a retried export starts one Purview export |
+| 8 | `[B1] Job endpoints, results, exports, log` | The six `202` endpoints with `409 conflict`; `GET /jobs/{id}`, `GET .../jobs` (a `waiting` job is shown as `running`: `queue.contract_status`); latest preview, item paging and filters, `items.csv`; latest term report; export list, detail and check, `confirmation_mismatch`; log, verify (reporting the chain's head, ADR 0014), and a log entry for every state change; every route through `Access` (ADR 0013) | Contract tests pass, including error codes; one test runs the whole flow through the API in dry run with `run_one`; `alembic check` is clean |
 | 9 | `[D] Shell, job hook, error handling` | Side navigation, matter header and tabs; `useJob` and resuming active jobs; the `ErrorCode` to UI mapping; the `session_expired` redirect | Shell screenshot next to `Main.dc.html` |
 | 10 | `[D] Data components and gallery` | Count tiles, bar breakdowns, month chart, methodology card, banners, empty and error states; `/_gallery` | The gallery shows every component; axe checks pass |
 | 11–13 | `[E] Matters`, `[E] Define`, `[E] Scope` | Each screen to its design file | Each screen: works against the mocks and against `npm run dev:api`; Vitest tests for logic; a Playwright test per main action; a screenshot next to the design file |
@@ -62,9 +62,9 @@ anywhere it's needed (for example, mock examples for WS-D). It merges before the
 ### After M1, toward M2 and M3
 | # | PR | Builds |
 |---|---|---|
-| 19 | `[C] Sign-in and sessions` | Entra settings (PR note to B1 and G), PKCE sign-in, sessions and cookie, encrypted token cache with refresh, `current_user` replacing B1's stub, the per-user live gateway; tests that tokens never reach the browser |
+| 19 | `[C] Sign-in and sessions` | Entra settings (PR note to B1 and G), PKCE sign-in, sessions and cookie, encrypted token cache with refresh, `current_user` replacing B1's stub (keeping its mode check), the per-user live gateway, the Purview question behind `Access` (ADR 0013); tests that tokens never reach the browser |
 | 20 | `[C] Live Graph calls` | `search_users`, holds, `add_to_review_set`, download hosts, the `ensure_user_source` fix, `/setup/check`, configurable cloud endpoints, admin notes for WS-G; unit-tested against recorded responses, no `GatewayNotImplemented` left |
-| 21 | `[G] Security headers and install guide` | CSP, HSTS, cookie-flag tests; the install guide; CI caching and image builds |
+| 21 | `[G] Security headers and install guide` | CSP, HSTS, cookie-flag tests; the install guide, with the app logging in as a database role that doesn't own the tables (ADR 0014); CI caching and image builds |
 | 22 | `[H] Live tenant validation` | Starts when a tenant and a person to sign in are available; leads to M2 |
 
 ## The B1 and B2 seams
@@ -94,8 +94,11 @@ def check_export(session, gateway: PurviewGateway, matter_id: str) -> ExportChec
     # app.schemas.contract.ExportCheck. "previewed" and "same_sources" come from the database with no
     # Purview calls; "counts_unchanged" runs one estimate, only when both passed. No other Purview calls.
     # Raises LookupError for an unknown matter (B1 maps it to 404).
-    # May write: it sets the version's Purview search to the version's KQL before estimating (versions with
-    # the same sources share a search), noted in matters.purview_state. Flushes; the caller commits.
+    # Writes nothing: each version's search already holds its query (ADR 0015).
+
+# WS-B1, app/api/access.py. Every route that touches a matter (or a job, preview or export of one) takes
+# `access: Access` and loads the matter with access.matter(session, matter_id); lists keep what
+# access.can_open allows. A matter the person may not open is 404 (ADR 0013).
 
 # Job payloads: WS-B1's 202 endpoints enqueue these (app.jobs.queue.enqueue), WS-B2's handlers read them.
 # Every job sets matter_id and created_by (the user, who becomes the log's actor).
@@ -122,9 +125,29 @@ in a running stack (the blocked-export end-to-end tests, PR 18), set `count_offs
 example with `DryRunTransport(state_file=...).count_offset = 17`.
 
 The Purview IDs a matter's jobs create (case, custodians, sources, searches) live in
-`matters.purview_state`, in the same shape as the CLI's `state.json`, and both go through
-`searchtrail.workflow.sync_purview`. `app.jobs.purview.prepare` copies them onto the rows that show
-them: `matters.purview_case_id`, the custodians' Purview IDs and `query_versions.purview_search_id`.
+`matters.purview_state`. The case and sources go through `searchtrail.workflow.sync_sources`, the same
+code as the CLI; each query version then gets a search of its own (`ensure_version_search`, named
+`<matter number> query v<n>`, never changed, found again by name if a create's answer was lost: ADR
+0015). `app.jobs.purview.prepare` copies the IDs onto the rows that show them:
+`matters.purview_case_id`, the custodians' Purview IDs and `query_versions.purview_search_id`. If the
+sync stops partway, it commits the IDs it got before the error goes on, so a retry doesn't make them again.
+
+**Rules for job handlers** (app/jobs; the estimate handler follows them, PR 7's handlers must too):
+- Commit after each step that creates something in Purview (`ctx.heartbeat(checkpoint=...)`), and skip
+  steps the checkpoint says are done: a job runs from the top again after every retry and restart.
+- Poll with `steps.poll_operation`: it checks once and raises `JobWait`, so the worker runs other jobs
+  in between. A job between checks has status `waiting`, shown to people as `running`.
+- Only the worker holding a job may write about it. `ctx.heartbeat`, and the worker's finish, fail and
+  retry, raise `queue.LostJob` once another worker has it; the handler's writes then roll back. So write
+  the run's outcome and the log entry in the same transaction as the job's result, as the estimate does.
+- Anything that must not happen twice in Purview (an export, adding to a review set) is looked up
+  before it is started again: the window between a start call and its checkpoint commit is small, but
+  a dead worker or a lost answer (Graph doesn't repeat a POST that got 500, 502 or 504) reopens it.
+- Database errors are passing trouble: the worker retries the job. Don't catch them in a handler.
+
+**The installation mode.** The database records whether it belongs to a dry-run or a live installation
+(`installation` table); `current_user` and the worker refuse the other mode, and `/health` reports it,
+because dry run has no sign-in. WS-C's `current_user` keeps that check at the top.
 
 ## Working rules for this phase
 - One branch per PR (`ws-b1/matters`, `ws-e/scope`), cut from the latest `main`. If the PR before it

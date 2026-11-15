@@ -22,8 +22,8 @@ from .matter import Matter
 from .query import CullCriteria, build_kql, describe, term_queries, validate
 from .report import load_report, summarize, write_preview_csv
 
-__all__ = ["COUNT_FIELDS", "CullWorkflow", "CustodianSources", "ExportBlocked", "Prepared", "PurviewTarget",
-           "SourcesMismatch", "Synced", "sources_signature", "sync_purview"]
+__all__ = ["COUNT_FIELDS", "CullWorkflow", "CustodianSources", "ExportBlocked", "Prepared", "PurviewTarget", "Sources",
+           "SourcesMismatch", "Synced", "ensure_version_search", "sources_signature", "sync_purview", "sync_sources"]
 DRIFT_FIELDS = ("indexedItemCount", "unindexedItemCount")
 
 
@@ -97,19 +97,22 @@ class Synced:
     source_urls: list[str]
 
 
-def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Synced:
-    """Make sure the case, custodians, data sources and search exist and match `target`, creating only
+@dataclass
+class Sources:
+    case_id: str
+    source_urls: list[str]  # the custodians' data sources, to bind to a search
+
+
+def sync_sources(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Sources:
+    """Make sure the case, the custodians and their data sources exist and match `target`, creating only
     what's missing. `state` remembers the Purview IDs between runs (the CLI keeps it in state.json, the
-    web app in matters.purview_state) and is updated in place; save it as soon as this returns.
+    web app in matters.purview_state). It is updated in place, each ID as soon as Purview returns it, so
+    save it when this returns *and when it raises*: a rerun after a failure partway (throttled, refused)
+    then creates nothing twice.
 
-    Same sources as last time: the existing search is reused and its query patched if it changed.
-    Different sources: a new search, numbered, and the earlier ones stay in the case as a record.
-
-    Not idempotent for site sources and searches: if the process dies between creating one and saving
-    `state`, a rerun creates another. That leaves an extra, unused source or search in the Purview case,
-    where eDiscovery managers can see it, so it needs explaining if asked. It's rare (the window is the
-    time between the create call and the save), and closing it means looking searches up by name before
-    creating, as ensure_case does.
+    Not idempotent for site sources: if the process dies between Purview creating one and `state` being
+    saved, a rerun adds the site again. That leaves an unused source in the Purview case, where eDiscovery
+    managers can see it. The window is the time between the create call and the save.
     """
     case = gw.ensure_case(target.case_name, target.description, target.matter_number, known_id=state.get("case_id"))
     case_id = case["id"]
@@ -137,7 +140,21 @@ def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Sync
             if site not in entry["sites"]:
                 entry["sites"][site] = gw.add_site_source(case_id, entry["custodian_id"], site)["id"]
             source_urls.append(gw.source_url(case_id, entry["custodian_id"], "siteSources", entry["sites"][site]))
+    return Sources(case_id, source_urls)
 
+
+def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Synced:
+    """The CLI's sync: the case and sources (sync_sources), then one search for the matter.
+
+    Same sources as last time: the existing search is reused and its query patched if it changed.
+    Different sources: a new search, numbered, and the earlier ones stay in the case as a record.
+    Save `state` when this returns or raises, as for sync_sources. Not idempotent for searches either: a
+    process that dies between Purview creating one and the save leaves an extra search in the case. (The
+    web app gives each query version a search of its own instead, found again by name: see
+    ensure_version_search.)
+    """
+    sources = sync_sources(gw, state, target)
+    case_id, source_urls = sources.case_id, sources.source_urls
     fingerprint = sha256_text(canonical({"sources": sorted(source_urls), "sites": sorted(target.additional_sites)}))
     search = state.get("search")
     if search and search.get("fingerprint") == fingerprint:
@@ -155,6 +172,30 @@ def sync_purview(gw: PurviewGateway, state: dict, target: PurviewTarget) -> Sync
         history.append({"id": created["id"], "name": name, "created": _stamp()})
         state.pop("term_search", None)
     return Synced(case_id, search["id"], search["name"], source_urls)
+
+
+def ensure_version_search(gw: PurviewGateway, state: dict, case_id: str, *, name: str, kql: str,
+                          source_urls: list[str], additional_sites: list[str]) -> Synced:
+    """The search for one query version (the web app's jobs). It is made once, with the version's query
+    and sources, and never changed: a version's query and sources never change, so nothing running on
+    the search (an estimate, a report, an export) can be disturbed by work on another version.
+
+    Found in `state["searches"][name]`, else by name in Purview (a create whose answer was lost to a
+    timeout, or a worker that died before saving the ID), before one is created. Save `state` when this
+    returns or raises. If the process dies after adding some of the sites without a custodian and before
+    the save, a rerun adds those sites to the search again.
+    """
+    searches = state.setdefault("searches", {})
+    entry = searches.get(name)
+    if entry is None:
+        found = gw.find_search(case_id, name) or gw.create_search(
+            case_id, name, kql, source_urls, description="Created by SearchTrail for one query version; see the matter's log")
+        entry = searches[name] = {"id": found["id"], "sites": []}
+    for site in additional_sites:
+        if site not in entry["sites"]:
+            gw.add_additional_site(case_id, entry["id"], site)
+            entry["sites"].append(site)
+    return Synced(case_id, entry["id"], name, source_urls)
 
 
 _counts = counts_from_operation
@@ -219,8 +260,10 @@ class CullWorkflow:
             custodians=[CustodianSources(c.email, list(c.sites), check_source_settings=False) for c in matter.custodians],
             additional_sites=list(matter.additional_sites), kql=kql,
         )
-        synced = sync_purview(self.gw, state, target)
-        self._save_state(matter, state)
+        try:
+            synced = sync_purview(self.gw, state, target)
+        finally:
+            self._save_state(matter, state)  # what Purview now holds, even if the sync stopped partway
         return Prepared(synced.case_id, matter.case_name, synced.search_id, synced.search_name, kql, criteria,
                         warnings, synced.source_urls)
 

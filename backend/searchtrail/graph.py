@@ -17,6 +17,11 @@ if TYPE_CHECKING:
     from .dryrun import DryRunTransport
 
 RETRY_STATUSES = {429, 500, 502, 503, 504}
+# A POST is repeated only when Graph says it wasn't carried out: throttled (429) or unavailable (503).
+# A POST that gets 500, 502 or 504 may have been carried out anyway (a gateway gave up waiting for it),
+# and a second one would make a second search or start a second export, so it's raised to the caller,
+# who knows whether repeating is safe (the web app's jobs look the search up by name first).
+POST_RETRY_STATUSES = {429, 503}
 TERMINAL_STATES = {"succeeded", "partiallySucceeded", "failed", "submissionFailed"}
 FAILED_STATES = {"failed", "submissionFailed"}
 
@@ -80,6 +85,7 @@ class GraphClient:
             return self.dry.handle(method, url, body)
         if self.token_fn is None:
             raise RuntimeError("GraphClient needs a token function outside dry-run mode")
+        retry_statuses = POST_RETRY_STATUSES if method.upper() == "POST" else RETRY_STATUSES
         for attempt in range(self.max_retries + 1):
             r = self.session.request(
                 method,
@@ -88,7 +94,7 @@ class GraphClient:
                 timeout=self.timeout,
                 headers={"Authorization": f"Bearer {self.token_fn()}", "Accept": "application/json"},
             )
-            if r.status_code in RETRY_STATUSES and attempt < self.max_retries:
+            if r.status_code in retry_statuses and attempt < self.max_retries:
                 delay = retry_delay(r.headers.get("Retry-After"), attempt)
                 self.log(f"  Graph returned {r.status_code}; retrying in {delay:.0f}s")
                 self.sleep(delay)

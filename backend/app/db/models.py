@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    DDL,
     BigInteger,
     Boolean,
     Float,
@@ -19,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -268,3 +270,34 @@ class AuditEntryRow(Base):
     record: Mapped[dict[str, Any]] = mapped_column(JsonType)
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
+
+
+# Log entries are never changed or deleted, by SearchTrail or by anyone with the app's database login: on
+# Postgres a trigger refuses UPDATE, DELETE and TRUNCATE (migration 0004; here for tables made from the
+# models, as the tests do). Only the table's owner can drop the trigger, so in production the app should
+# log in as a role that doesn't own the tables (docs/install, WS-G).
+APPEND_ONLY_SQL = """
+CREATE OR REPLACE FUNCTION audit_entries_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'audit_entries is append-only: log entries are never changed or deleted'
+    USING ERRCODE = 'insufficient_privilege';
+END $$;
+CREATE TRIGGER audit_entries_append_only BEFORE UPDATE OR DELETE ON audit_entries
+  FOR EACH ROW EXECUTE FUNCTION audit_entries_append_only();
+CREATE TRIGGER audit_entries_no_truncate BEFORE TRUNCATE ON audit_entries
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_entries_append_only();
+"""
+event.listen(AuditEntryRow.__table__, "after_create", DDL(APPEND_ONLY_SQL).execute_if(dialect="postgresql"))
+
+
+# -- the installation ------------------------------------------------------------------------------
+class InstallationRow(Base):
+    """One row (id 1): whether this database belongs to a dry-run or a live installation, recorded the
+    first time SearchTrail uses it. Dry run has no sign-in, so a live database must never be served in
+    dry run; and dry-run matters point at a simulated tenant, so their database isn't for live use
+    either (app/db/repositories/installation.py)."""
+
+    __tablename__ = "installation"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    mode: Mapped[str] = mapped_column(String(16))  # dry_run | live
+    created_at: Mapped[datetime] = _created()

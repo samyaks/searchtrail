@@ -21,11 +21,12 @@ SECURITY_HEADERS = {
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    docs = settings.api_docs_enabled
     app = FastAPI(
         title="SearchTrail API",
         version=__version__,
-        docs_url="/api/docs",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/docs" if docs else None,
+        openapi_url="/api/openapi.json" if docs else None,
         redoc_url=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
@@ -35,7 +36,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
             # Swagger UI loads its own scripts and styles; the API's CSP would blank it.
-            if name == "Content-Security-Policy" and request.url.path == app.docs_url:
+            if name == "Content-Security-Policy" and app.docs_url and request.url.path == app.docs_url:
                 continue
             response.headers.setdefault(name, value)
         return response
@@ -43,7 +44,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     if settings.cors_origins:
         app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
                            allow_methods=["*"], allow_headers=["*"])
-    install_error_handlers(app)
+    install_error_handlers(app, SECURITY_HEADERS)
     app.include_router(api_router)
     return app
 

@@ -88,6 +88,22 @@ def test_invalid_criteria_fail_before_any_api_call(bad):
         CullCriteria.from_dict(bad)
 
 
+@pytest.mark.parametrize("raw,problem", [
+    ("invoice) OR (kind:email", "closes a parenthesis it never opened"),  # would escape the AND
+    ("(invoice OR kickback", "opens a parenthesis it never closes"),
+    ('"side letter', "has a quote that is never closed"),
+])
+def test_raw_kql_that_could_escape_its_parentheses_is_refused(raw, problem):
+    with pytest.raises(CriteriaError, match=problem):
+        CullCriteria.from_dict({"raw_kql": raw})
+
+
+@pytest.mark.parametrize("raw", ['(a OR b) AND (c OR d)', '"pay (net 30)" OR invoice', 'subject:"re: )"', "x"])
+def test_balanced_raw_kql_stays_inside_its_parentheses(raw):
+    c = CullCriteria.from_dict({"raw_kql": raw, "kinds": ["email"]})
+    assert build_kql(c) == f"kind:email AND ({raw})"
+
+
 def test_term_queries_keep_other_filters():
     c = CullCriteria.from_dict({"keywords": ["alpha", "beta gamma"], "kinds": ["email"], "date_from": "2024-01-01"})
     queries = term_queries(c)
