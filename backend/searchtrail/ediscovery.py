@@ -6,6 +6,7 @@ Call sequence for a matter:
   3. ensure_user_source     POST .../custodians/{id}/userSources        (mailbox + OneDrive)
      add_site_source        POST .../custodians/{id}/siteSources        (SharePoint sites)
   4. create_search          POST .../searches   (KQL + custodianSources@odata.bind)
+     find_search            GET  .../searches   (by display name, before creating one again)
      add_additional_site    POST .../searches/{id}/additionalSources   (sites with no custodian)
   5. estimate               POST .../searches/{id}/estimateStatistics  -> poll the operation
   6. export_report          POST .../searches/{id}/exportReport        -> item list, no content
@@ -79,6 +80,12 @@ class EDiscovery:
             body["custodianSources@odata.bind"] = source_urls
         self.log(f"Creating search '{name}'")
         return self.graph.post(f"{CASES}/{case_id}/searches", body).json
+
+    def find_search(self, case_id: str, display_name: str) -> dict | None:
+        for search in self.graph.get_all(f"{CASES}/{case_id}/searches"):
+            if search.get("displayName") == display_name:
+                return search
+        return None
 
     def add_additional_site(self, case_id: str, search_id: str, web_url: str) -> dict:
         return self.graph.post(

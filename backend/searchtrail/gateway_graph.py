@@ -51,6 +51,9 @@ class GraphPurviewGateway:
                       description: str = "") -> dict:
         return self.ed.create_search(case_id, name, kql, source_urls, description=description)
 
+    def find_search(self, case_id: str, display_name: str) -> dict | None:
+        return self.ed.find_search(case_id, display_name)
+
     def update_query(self, case_id: str, search_id: str, kql: str) -> None:
         self.ed.update_query(case_id, search_id, kql)
 

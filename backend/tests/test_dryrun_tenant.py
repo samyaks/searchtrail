@@ -222,24 +222,51 @@ def test_a_lost_tenant_makes_stale_checkpoints_fail_loudly_not_count_zero(sessio
         assert s.scalars(select(RunRow)).one().status == "failed"
 
 
-def test_a_matter_whose_tenant_was_lost_fails_loudly_on_its_next_estimate(sessions, settings):
-    """The state file is deleted but the matter still points at the old case and search. (The simulated IDs
-    restart, unlike Microsoft's GUIDs, so the dry run can't recover by itself: reset the database too, as
-    `docker compose down -v` does.) What matters is that it says so instead of inventing counts."""
+def test_a_matter_whose_tenant_was_lost_gets_a_new_case_on_its_next_estimate(sessions, settings):
+    """The state file is deleted but the matter still points at the old case. As with Microsoft (a case
+    deleted in the portal), ensure_case finds no such case and makes a new one, and everything is synced
+    again from scratch. The new tenant's IDs never repeat the lost one's, so nothing old is mistaken for new."""
     with sessions() as s:
         matter = seed_matter(s)
         matter_id = matter.id
         first = enqueue_estimate(s, add_version(s, matter, KQL_V1))
     run_all(sessions, get_gateway(settings))
     assert job(sessions, first).status == "succeeded"
+    with sessions() as s:
+        old_state = s.get(MatterRow, matter_id).purview_state
 
     dry_run_tenant_file(settings).unlink()
     with sessions() as s:
         second = enqueue_estimate(s, add_version(s, s.get(MatterRow, matter_id), KQL_V2))
     run_all(sessions, get_gateway(settings))
-    failed = job(sessions, second)
-    assert failed.status == "failed" and failed.error["code"] == "purview_operation_failed"
-    assert failed.error["details"]["status"] == 404 and failed.result is None
+    assert job(sessions, second).status == "succeeded", job(sessions, second).error
+    with sessions() as s:
+        new_state = s.get(MatterRow, matter_id).purview_state
+    tenant_state = json.loads(dry_run_tenant_file(settings).read_text())
+    assert new_state["case_id"] != old_state["case_id"] and list(tenant_state["cases"]) == [new_state["case_id"]]
+    old_ids = {old_state["search"]["id"], *(c["custodian_id"] for c in old_state["custodians"].values())}
+    new_ids = {new_state["search"]["id"], *(c["custodian_id"] for c in new_state["custodians"].values())}
+    assert not old_ids & new_ids
+
+
+def test_cases_custodians_and_searches_are_found_again_by_name(settings):
+    gw = get_gateway(settings)
+    case = gw.ensure_case("M-1 Falcon", "d")
+    custodian = gw.ensure_custodian(case["id"], "alex.wilber@contoso.com")
+    search = gw.create_search(case["id"], "M-1 query v1", KQL_V1, [])
+    other = get_gateway(settings)  # another process, another day
+    assert other.ensure_case("M-1 Falcon", "d") == case
+    assert other.ensure_custodian(case["id"], "Alex.Wilber@contoso.com")["id"] == custodian["id"]
+    assert other.find_search(case["id"], "M-1 query v1") == {"id": search["id"], "displayName": "M-1 query v1"}
+    assert other.find_search(case["id"], "M-1 query v2") is None
+    assert calls(other, "POST", "") == []  # nothing made twice
+
+
+def test_a_new_tenant_never_repeats_a_lost_tenants_ids(settings):
+    first = get_gateway(settings).ensure_case("M-1 Falcon", "d")["id"]
+    dry_run_tenant_file(settings).unlink()
+    second = get_gateway(settings).ensure_case("M-1 Falcon", "d")["id"]
+    assert first != second
 
 
 # -- without fcntl (Windows) ------------------------------------------------------------------------------------

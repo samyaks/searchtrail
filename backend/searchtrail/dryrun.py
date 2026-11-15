@@ -14,7 +14,14 @@ Where there's no `fcntl` (Windows) the file still keeps the CLI's tenant between
 shared by processes running at once.
 
 Like Microsoft, it answers 404 for a case, operation or search it never issued, so a stale ID (say after
-the state file was deleted) fails loudly instead of getting an invented answer.
+the state file was deleted) fails loudly instead of getting an invented answer. And like Microsoft's GUIDs,
+a new tenant's IDs never repeat a lost one's (each state file gets its own `epoch` in its IDs), so code that
+recovers from a lost case (ensure_case looks it up, then makes a new one) recovers here too.
+
+It lists the cases, custodians and searches it holds, so lookups by name or email find them. It never
+lists a custodian's existing user sources: live Purview returns the existing source unchanged, so
+turning a custodian's OneDrive on needs the source replaced (a known gap, see PurviewGateway), and the
+dry run lets that work offline in the meantime.
 """
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ import json
 import os
 import random
 import re
+import secrets
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -117,6 +125,9 @@ class DryRunTransport:
         # Shared between processes (and remembered between runs) when state_file is set, like a real tenant.
         self.state_file = Path(state_file) if state_file else None
         self._cases: dict[str, str] = {}  # the cases created so far, by ID: asking for any other is a 404
+        self._custodians: dict[str, list[dict]] = {}  # by case ID
+        self._searches: dict[str, dict] = {}  # by search ID: the case it's in and its display name
+        self._epoch = ""  # part of every ID when there's a state file, so a new tenant's IDs never repeat a lost one's
         self._on_disk = ""
         self._depth = 0
         if self.state_file:
@@ -127,7 +138,7 @@ class DryRunTransport:
     def _state(self) -> dict[str, Any]:
         return {"next_id": self._next_id, "queries": self._queries, "emails": self._emails, "ops": self._ops,
                 "downloads": self._downloads, "review_sets": self._review_sets, "count_offset": self._count_offset,
-                "cases": self._cases}
+                "cases": self._cases, "custodians": self._custodians, "searches": self._searches, "epoch": self._epoch}
 
     def _load(self) -> None:
         text = self.state_file.read_text() if self.state_file.exists() else ""
@@ -141,6 +152,10 @@ class DryRunTransport:
         self._review_sets = saved.get("review_sets", {})
         self._count_offset = saved.get("count_offset", 0)
         self._cases = saved.get("cases", {})
+        self._custodians = saved.get("custodians", {})
+        self._searches = saved.get("searches", {})
+        # A new tenant (no file yet, or it was deleted) gets a new epoch. Files from before epochs keep plain IDs.
+        self._epoch = saved.get("epoch", "") if saved else secrets.token_hex(3)
 
     def _save(self) -> None:
         text = json.dumps(self._state(), indent=2, sort_keys=True)
@@ -192,7 +207,8 @@ class DryRunTransport:
 
     def _new_id(self, prefix: str) -> str:
         self._next_id += 1
-        return f"{prefix}-{self._next_id - 1}"
+        n = self._next_id - 1
+        return f"{prefix}-{self._epoch}-{n}" if self._epoch else f"{prefix}-{n}"
 
     def handle(self, method: str, url: str, body: dict | None) -> Response:
         self.calls.append((method, url, body))
@@ -226,8 +242,17 @@ class DryRunTransport:
             case_url = re.match(r"(.*/ediscoveryCases/[^/]+)", url.split("?", 1)[0]).group(1)
             location = f"{case_url}/operations/{op_id}"
             return ok(status=202, headers={"Location": location})
-        if method == "GET" and re.search(r"/(ediscoveryCases|custodians|userSources)$", path):
-            return ok({"value": []})
+        if method == "GET" and path.endswith("/ediscoveryCases"):
+            return ok({"value": [{"id": cid, "displayName": name} for cid, name in self._cases.items()]})
+        if method == "GET" and (m := re.search(r"/ediscoveryCases/([^/]+)/(custodians|searches)$", path)):
+            case_id, collection = m.groups()
+            self._known(self._cases, case_id, method, url)
+            if collection == "custodians":
+                return ok({"value": self._custodians.get(case_id, [])})
+            return ok({"value": [{"id": sid, "displayName": s["displayName"]}
+                                 for sid, s in self._searches.items() if s["case"] == case_id]})
+        if method == "GET" and path.endswith("/userSources"):
+            return ok({"value": []})  # see the module docstring
         if method == "GET" and re.search(r"/ediscoveryCases/[^/]+$", path):
             case_id = path.rsplit("/", 1)[-1]
             return ok({"id": case_id, "displayName": self._known(self._cases, case_id, method, url)})
@@ -239,16 +264,19 @@ class DryRunTransport:
             case_id = self._new_id("case")
             self._cases[case_id] = body["displayName"]
             return ok({"id": case_id, "displayName": body["displayName"]}, 201)
-        if method == "POST" and path.endswith("/custodians"):
+        if method == "POST" and (m := re.search(r"/ediscoveryCases/([^/]+)/custodians$", path)):
             self._emails.append(body["email"])
-            return ok({"id": self._new_id("custodian"), "email": body["email"]}, 201)
+            custodian = {"id": self._new_id("custodian"), "email": body["email"]}
+            self._custodians.setdefault(m.group(1), []).append(custodian)
+            return ok(custodian, 201)
         if method == "POST" and path.endswith("/userSources"):
             return ok({"id": self._new_id("usersource"), "email": body["email"]}, 201)
         if method == "POST" and path.endswith(("/siteSources", "/additionalSources")):
             return ok({"id": self._new_id("sitesource")}, 201)
-        if method == "POST" and path.endswith("/searches"):
+        if method == "POST" and (m := re.search(r"/ediscoveryCases/([^/]+)/searches$", path)):
             sid = self._new_id("search")
             self._queries[sid] = body.get("contentQuery", "")
+            self._searches[sid] = {"case": m.group(1), "displayName": body["displayName"]}
             return ok({"id": sid, "displayName": body["displayName"]}, 201)
         if method == "PATCH" and "/searches/" in path:
             search_id = path.rsplit("/", 1)[-1]

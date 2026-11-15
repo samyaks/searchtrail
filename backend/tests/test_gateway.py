@@ -30,7 +30,7 @@ def live():
 def test_protocol_matches_the_plan():
     assert PROTOCOL_METHODS == sorted([
         "add_additional_site", "add_site_source", "add_to_review_set", "apply_hold", "create_search",
-        "download_file", "ensure_case", "ensure_custodian", "ensure_user_source", "get_operation",
+        "download_file", "ensure_case", "ensure_custodian", "ensure_user_source", "find_search", "get_operation",
         "list_labels", "remove_hold", "search_users", "source_url", "start_estimate", "start_export",
         "start_report", "update_query", "wait_for_operation",
     ])
@@ -82,6 +82,15 @@ def test_estimate_counts_and_report_download(dry):
     buf = io.BytesIO()
     written = dry.download_file(report["exportFileMetadata"][0]["downloadUrl"], buf)
     assert written == len(buf.getvalue()) > 0 and buf.getvalue()[:2] == b"PK"  # a zip
+
+
+def test_searches_are_found_by_name_within_their_case(dry):
+    case, other_case = dry.ensure_case("M-1 a", "d"), dry.ensure_case("M-2 b", "d")
+    search = dry.create_search(case["id"], "M-1 query v1", "kickback", [])
+    dry.create_search(other_case["id"], "M-1 query v2", "kickback", [])
+    assert dry.find_search(case["id"], "M-1 query v1")["id"] == search["id"]
+    assert dry.find_search(case["id"], "M-1 query v2") is None  # that one is in the other case
+    assert dry.find_search(other_case["id"], "M-1 query v1") is None
 
 
 def test_review_set_is_reused_by_name(dry):
