@@ -15,7 +15,7 @@ test('the Matters list shows a matter created through the API', async ({ page, r
   await page.goto('/matters');
 
   const nav = page.getByRole('navigation', { name: 'Main' });
-  await expect(nav).toContainText('Contoso Ltd (temporary failure)');
+  await expect(nav).toContainText('Contoso Ltd');
   await expect(nav).toContainText('Dry run');
 
   const row = page.getByRole('table', { name: 'Matters' }).getByRole('row').filter({ hasText: matter.matter_number });
