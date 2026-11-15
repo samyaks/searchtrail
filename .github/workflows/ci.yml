@@ -131,10 +131,17 @@ jobs:
         run: |
           curl -fsS http://localhost:8000/api/v1/health | tee health.json
           grep -q '"dry_run":true' health.json
-      - name: Web serves the app and passes /api through
+      # The browser-level checks of the web service are in the e2e job (frontend/tests/e2e/). This one
+      # needs the stack to break, so it stays here: with the API down, Caddy answers /api itself.
+      - name: With the API stopped, /api gives the app's Error body (502)
         run: |
-          curl -fsS http://localhost:5173/ | grep -q '<div id="root">'
-          curl -fsS http://localhost:5173/api/v1/health | grep -q '"dry_run":true'
+          docker compose -f deploy/docker-compose.yml stop api
+          status=$(curl -s -o body.json -w '%{http_code}' http://localhost:8080/api/v1/health)
+          cat body.json; echo
+          test "$status" = 502 || { echo "::error::Expected 502 from /api with the API stopped, got $status"; exit 1; }
+          grep -q '"code":"internal_error"' body.json
+          docker compose -f deploy/docker-compose.yml start api
+          curl -fsS --retry 20 --retry-delay 2 --retry-all-errors http://localhost:8080/api/v1/health | grep -q '"dry_run":true'
       - name: Show logs on failure
         if: failure()
         run: docker compose -f deploy/docker-compose.yml logs
