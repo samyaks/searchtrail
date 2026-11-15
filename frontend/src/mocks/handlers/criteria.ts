@@ -8,7 +8,8 @@ import { buildMockKql, CriteriaInvalid } from '../kql';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
 import { readJson, route, withMatter } from '../route';
 import { clone, error, hashNumber, iso, validationFailed } from '../util';
-import { currentVersion, draftChanged, draftView } from '../views';
+import { sourcesFingerprint } from '../sources';
+import { currentVersion, draftChanged, draftView, sourcesChanged } from '../views';
 
 type S = Schemas;
 const KINDS = ['email', 'chats', 'docs'];
@@ -76,13 +77,14 @@ export const criteriaHandlers = [
       let version = currentVersion(m);
       if (!version || draftChanged(m)) {
         const number = Math.max(0, ...m.versions.map((v) => v.version)) + 1;
-        // The same sources as the version before, unless a custodian or site changed since.
-        version = makeVersion(m.matter, number, m.draft.criteria, null, `Query v${number}`, version && !m.sourcesChanged ? version.sources_fingerprint : undefined);
+        // The same display fingerprint as the version before, unless the sources changed since it was made.
+        version = makeVersion(m.matter, number, m.draft.criteria, null, `Query v${number}`, version && !sourcesChanged(m, version.version) ? version.sources_fingerprint : undefined);
+        m.sourcesAt[number] = sourcesFingerprint(m.matter);
         m.versions.push(version);
         m.matter.current_version = number;
-        m.matter.stage = 'scoping';
+        // A new query hasn't been previewed. (Not while an export is running: it carries on with its own version.)
+        if (m.matter.stage === 'previewed' || m.matter.stage === 'exported') m.matter.stage = 'scoping';
         m.draft = { ...m.draft, based_on_version: number };
-        m.sourcesChanged = false;
       }
       const target = version;
       return HttpResponse.json(

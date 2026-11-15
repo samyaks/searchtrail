@@ -1,5 +1,11 @@
 // A tiny client for the mock backend tests: real fetch calls, answered by MSW, like a screen's would be.
 import { API_BASE } from '@/api/client';
+import { scenario } from '@/mocks/scenarios';
+import { now, setNow } from '@/mocks/util';
+
+// Jobs follow the mock clock (src/mocks/jobs.ts), so these tests freeze it and move it with tick(). Without this,
+// the real milliseconds between two requests would move a job on.
+beforeEach(() => setNow(new Date('2026-11-05T12:00:00Z')));
 
 export type Reply = { status: number; json: any; text: string; headers: Headers }; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -30,10 +36,16 @@ export const put = (path: string, body?: unknown) => call('PUT', path, { body })
 export const patch = (path: string, body?: unknown) => call('PATCH', path, { body });
 export const del = (path: string) => call('DELETE', path);
 
-/** Poll a job (as a screen's useJob will) until it is done; returns every state it passed through. */
+/** Move the mock clock on. Jobs follow the clock, not the number of requests (src/mocks/jobs.ts). */
+export function tick(seconds: number) {
+  setNow(new Date(now().getTime() + seconds * 1000));
+}
+
+/** Poll a job as a screen's useJob will, a third of a job's length apart, until it is done; returns every state it passed through. */
 export async function runJob(jobId: string, maxPolls = 20) {
   const states: Reply['json'][] = [];
   for (let i = 0; i < maxPolls; i += 1) {
+    tick(scenario.jobSeconds / 3);
     const { json } = await get(`/jobs/${jobId}`);
     states.push(json);
     if (json.status === 'succeeded' || json.status === 'failed') break;

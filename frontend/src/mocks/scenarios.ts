@@ -4,8 +4,8 @@
 import type { Schemas } from '@/api/client';
 
 export type Scenario = {
-  /** How many times a job is polled (GET /jobs/{id}) before it finishes. */
-  jobPolls: number;
+  /** How long a job takes, in seconds of the mock clock. */
+  jobSeconds: number;
   /** Jobs of these kinds end as failed, with the contract's purview_operation_failed example. */
   failJobs: Schemas['JobKind'][];
   /** `countsChanged`: the export check finds new items since the preview and a real export is refused (unless accepted). */
@@ -25,7 +25,7 @@ export type Scenario = {
 };
 
 const DEFAULTS: Scenario = {
-  jobPolls: 3,
+  jobSeconds: 9,
   failJobs: [],
   exportCheck: 'auto',
   holdFails: false,

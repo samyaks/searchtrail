@@ -1,4 +1,5 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { DataTable, type Column } from '@/components';
 import { expectNoA11yViolations } from '../a11y';
 
@@ -54,9 +55,74 @@ test('with no rows it says so', () => {
   expect(screen.getByRole('cell', { name: 'No matters match.' })).toHaveAttribute('colspan', '4');
 });
 
-test('the scrolling region can be reached with the keyboard', () => {
-  renderTable();
-  expect(screen.getByRole('region', { name: 'Matters' })).toHaveAttribute('tabindex', '0');
+// jsdom has no layout, so these tests stand in for the browser's measurements and its ResizeObserver.
+function measure(widths: { scroll: number; client: number }) {
+  const sizes = { ...widths };
+  const scroll = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(() => sizes.scroll);
+  const client = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => sizes.client);
+  let notify: () => void = () => {};
+  class FakeResizeObserver {
+    constructor(callback: () => void) {
+      notify = callback;
+    }
+    observe() {}
+    disconnect() {}
+  }
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+  return {
+    sizes,
+    resize: () => act(() => notify()),
+    restore: () => {
+      scroll.mockRestore();
+      client.mockRestore();
+      vi.unstubAllGlobals();
+    },
+  };
+}
+
+test('a table that fits has no extra Tab stop and no landmark of its own', async () => {
+  const stub = measure({ scroll: 300, client: 300 });
+  try {
+    renderTable();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    await userEvent.tab();
+    expect(screen.getAllByRole('button', { name: 'Open' })[0]).toHaveFocus(); // straight to the first thing inside
+    expect(document.querySelector('[tabindex="0"]')).toBeNull();
+    expect(screen.getByRole('table', { name: 'Matters' })).toBeInTheDocument();
+  } finally {
+    stub.restore();
+  }
+});
+
+test('a table that scrolls sideways becomes a named region that the keyboard can reach', async () => {
+  const stub = measure({ scroll: 900, client: 400 });
+  try {
+    renderTable();
+    const region = screen.getByRole('region', { name: 'Matters, scrolls sideways' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    await userEvent.tab();
+    expect(region).toHaveFocus(); // first, so the arrow keys scroll it
+    expect(screen.getByRole('table', { name: 'Matters' })).toBeInTheDocument();
+    await expectNoA11yViolations(region);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('it follows the width: a table that stops fitting becomes a region, and back', async () => {
+  const stub = measure({ scroll: 300, client: 300 });
+  try {
+    renderTable();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+    stub.sizes.scroll = 900; // the window got narrower
+    stub.resize();
+    expect(screen.getByRole('region', { name: 'Matters, scrolls sideways' })).toBeInTheDocument();
+    stub.sizes.scroll = 300; // and wider again
+    stub.resize();
+    expect(screen.queryByRole('region')).not.toBeInTheDocument();
+  } finally {
+    stub.restore();
+  }
 });
 
 test('has no accessibility violations, filled or empty', async () => {

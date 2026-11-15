@@ -60,7 +60,7 @@ export const matterHandlers = [
       current_version: null, previewed_version: null, last_previewed_at: null, draft_changed: false,
     };
     const entry: MockMatter = {
-      matter, activityAt: created, sourcesChanged: false, preview: null, previewItems: [], termReport: null, exports: [], log: [], versions: [], settling: {},
+      matter, activityAt: created, sourcesAt: {}, preview: null, previewItems: [], termReport: null, exports: [], log: [], versions: [], settling: {},
       draft: {
         criteria: { keywords: [], keyword_mode: 'any', exclude_keywords: [], date_from: null, date_to: null, kinds: ['email', 'chats', 'docs'], file_extensions: [], participant_domains: [], exclude_participant_domains: [], label_ids: [], exclude_label_ids: [], doc_date_property: 'lastmodifiedtime', raw_kql: null },
         updated_at: created, based_on_version: null, changed_since_version: false,
@@ -107,7 +107,6 @@ export const matterHandlers = [
       const custodian = existing ?? { ...custodianFor(0), user_id: person!.id, display_name: person!.display_name, email: person!.email, department: person!.department, initials: initialsOf(person!.display_name) };
       Object.assign(custodian, { mailbox: body.mailbox, onedrive: body.onedrive, sites: clone(sites) });
       if (!existing) m.matter.custodians.push(custodian);
-      m.sourcesChanged = true;
       appendLog(m, existing ? 'custodian_updated' : 'custodian_added', `${custodian.display_name} · ${[custodian.mailbox && 'mailbox', custodian.onedrive && 'OneDrive'].filter(Boolean).join(' and ') || 'no sources'}`);
       return HttpResponse.json(clone(custodian));
     }),
@@ -121,7 +120,6 @@ export const matterHandlers = [
         return error(409, 'conflict', `${custodian.display_name} is on hold. Release the hold before removing them.`, { user_id: custodian.user_id });
       }
       m.matter.custodians = m.matter.custodians.filter((c) => c !== custodian);
-      m.sourcesChanged = true;
       appendLog(m, 'custodian_removed', custodian.display_name);
       return new HttpResponse(null, { status: 204 });
     }),
@@ -163,7 +161,6 @@ export const matterHandlers = [
       if ([...m.matter.sites.map((s) => s.url), ...linked].some((u) => sameUrl(u, url))) return error(409, 'conflict', 'That site is already part of this matter.', { url });
       const site: S['Site'] = { id: nextId('site'), url };
       m.matter.sites.push(site);
-      m.sourcesChanged = true;
       appendLog(m, 'site_added', url);
       return HttpResponse.json(site, { status: 201 });
     }),
@@ -174,7 +171,6 @@ export const matterHandlers = [
       const site = m.matter.sites.find((s) => s.id === idParam(context, 'siteId'));
       if (!site) return notFound('site');
       m.matter.sites = m.matter.sites.filter((s) => s !== site);
-      m.sourcesChanged = true;
       appendLog(m, 'site_removed', site.url);
       return new HttpResponse(null, { status: 204 });
     }),

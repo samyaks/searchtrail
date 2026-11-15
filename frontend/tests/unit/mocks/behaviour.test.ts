@@ -6,7 +6,7 @@ import { buildMockKql, CriteriaInvalid } from '@/mocks/kql';
 import { PEOPLE } from '@/mocks/people';
 import { setScenario } from '@/mocks/scenarios';
 import { setNow } from '@/mocks/util';
-import { ALEX, del, FALCON, get, HANNAH, patch, post, put, runJob } from './api';
+import { ALEX, del, FALCON, get, HANNAH, patch, post, put, runJob, tick } from './api';
 
 const M = `/matters/${FALCON}`;
 const OPTIONS = { include_partially_indexed: true, partially_indexed_scope: 'responsiveLocations', format: 'pst' };
@@ -78,7 +78,7 @@ describe('editing the draft and estimating it', () => {
     const falcon = (await draft()).criteria;
     expect((await post('/kql/preview', { criteria: falcon })).json.kql).toContain('"project falcon" OR invoic* OR kickback OR "side letter"');
     const custom = (await post('/kql/preview', { criteria: { ...falcon, keywords: ['alpha', 'beta gamma'], keyword_mode: 'all', exclude_keywords: ['spam'], date_from: null, date_to: null, file_extensions: [], exclude_participant_domains: [] } })).json;
-    expect(custom.kql).toBe('("alpha" AND "beta gamma") AND NOT spam'.replace('"alpha"', 'alpha'));
+    expect(custom.kql).toBe('(alpha AND "beta gamma") AND NOT spam');
     expect(custom.methodology).toContain('Containing ALL of these terms: alpha, "beta gamma".');
     expect(custom.length).toBe(custom.kql.length);
     expect(() => buildMockKql({ ...falcon, keywords: [], raw_kql: null })).toThrow(CriteriaInvalid);
@@ -96,15 +96,41 @@ describe('jobs', () => {
   });
 
   test('how long a job takes is a switch', async () => {
-    setScenario({ jobPolls: 1 });
+    setScenario({ jobSeconds: 30 });
     const job = (await post(`${M}/previews`)).json;
-    expect((await runJob(job.id)).map((s) => s.status)).toEqual(['succeeded']);
+    tick(15);
+    expect(await get(`/jobs/${job.id}`).then((r) => [r.json.status, r.json.progress])).toEqual(['running', 0.5]);
+    tick(14);
+    expect((await get(`/jobs/${job.id}`)).json.status).toBe('running');
+    tick(1);
+    expect((await get(`/jobs/${job.id}`)).json.status).toBe('succeeded');
+  });
+
+  test('asking about a job never moves it: only the clock does', async () => {
+    const job = (await post(`${M}/previews`)).json;
+    for (let i = 0; i < 5; i += 1) expect(await get(`/jobs/${job.id}`).then((r) => [r.json.status, r.json.progress])).toEqual(['queued', 0]);
+    tick(3);
+    // Five components polling the same job, or a double render, see the same thing.
+    for (let i = 0; i < 5; i += 1) expect(await get(`/jobs/${job.id}`).then((r) => [r.json.status, r.json.progress])).toEqual(['running', 0.33]);
+  });
+
+  test('a job that is due has finished, whatever endpoint is read next', async () => {
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: ['alpha'] } });
+    const job = (await post(`${M}/estimates`)).json;
+    const logged = async () => ((await get(`${M}/log`)).json.items as { action: string }[]).some((e) => e.action === 'estimate');
+    const before = ((await get(`${M}/log`)).json.items as unknown[]).length;
+    tick(10); // past the end of the job; the job itself is never asked about
+    expect(((await get(`${M}/log`)).json.items as unknown[]).length).toBe(before + 1);
+    expect(await logged()).toBe(true);
+    expect((await get(`${M}/jobs`, { active: true })).json.items).toEqual([]);
+    expect((await get('/matters')).json.items[0].latest_counts).not.toBeNull();
+    expect((await get(`/jobs/${job.id}`)).json.status).toBe('succeeded');
   });
 
   test('a running job is found again after a reload, and is no longer "active" once done', async () => {
     const job = (await post(`${M}/term-reports`)).json;
-    await get(`/jobs/${job.id}`);
-    expect(((await get(`${M}/jobs`, { active: true })).json.items as { id: string }[]).map((j) => j.id)).toEqual([job.id]);
+    tick(3);
+    expect(((await get(`${M}/jobs`, { active: true })).json.items as { id: string; status: string }[]).map((j) => [j.id, j.status])).toEqual([[job.id, 'running']]);
     await runJob(job.id);
     expect((await get(`${M}/jobs`, { active: true })).json.items).toEqual([]);
     expect((await get(`${M}/jobs`, { kind: 'term_report' })).json.items).toHaveLength(1);
@@ -119,7 +145,7 @@ describe('jobs', () => {
   });
 
   test('a job a scenario fails ends as failed, with the contract\'s error, and changes nothing', async () => {
-    setScenario({ failJobs: ['preview'], jobPolls: 2 });
+    setScenario({ failJobs: ['preview'] });
     const before = (await get(`${M}/previews/latest`)).json;
     const job = (await post(`${M}/previews`)).json;
     const failed = (await runJob(job.id)).at(-1);
@@ -227,8 +253,8 @@ describe('exports', () => {
     const started = (await post(`${M}/exports`, { options: OPTIONS, confirm_matter_number: 'M-2026-0142' })).json;
     expect((await get(M)).json.stage).toBe('exporting');
     const exportId = ((await get(`${M}/exports`)).json.items as Schemas['Export'][])[0]!.id;
-    await get(`/jobs/${started.id}`);
-    expect((await get(`/exports/${exportId}`)).json).toMatchObject({ status: 'preparing', progress: 0.33 });
+    tick(3);
+    expect((await get(`/exports/${exportId}`)).json).toMatchObject({ status: 'preparing', progress: 0.33 }); // nobody polled the job: the export still moved
     expect((await get('/matters')).json.items.find((m: { id: string }) => m.id === FALCON).export_progress).toBe(0.33);
     const done = (await runJob(started.id)).at(-1);
     expect(done.result).toMatchObject({ id: exportId, status: 'ready', progress: 1 });
@@ -238,7 +264,7 @@ describe('exports', () => {
   });
 
   test('a failed export job leaves the export failed and the matter previewed', async () => {
-    setScenario({ failJobs: ['export'], jobPolls: 1 });
+    setScenario({ failJobs: ['export'] });
     const started = (await post(`${M}/exports`, { options: OPTIONS, confirm_matter_number: 'M-2026-0142' })).json;
     expect((await runJob(started.id)).at(-1).status).toBe('failed');
     expect(((await get(`${M}/exports`)).json.items as Schemas['Export'][])[0]).toMatchObject({ status: 'failed' });
@@ -247,7 +273,7 @@ describe('exports', () => {
 
   test('hand-offs show their state on the export while they run and when they are done', async () => {
     const download = (await post('/exports/exp_falcon_v2/download')).json;
-    await get(`/jobs/${download.id}`);
+    tick(3);
     expect((await get('/exports/exp_falcon_v2')).json.download).toMatchObject({ status: 'running', progress: 0.33 });
     await runJob(download.id);
     expect((await get('/exports/exp_falcon_v2')).json.download).toMatchObject({ status: 'done', progress: 1, stored_path: `matters/${FALCON}/exports/exp_falcon_v2` });
@@ -343,5 +369,100 @@ describe('versions and sources', () => {
     expect(diff.sources_changed).toBe(true);
     await runJob((await post(`${M}/estimates`)).json.id); // estimating v4 again makes no new version
     expect(((await get(`${M}/versions`)).json.items as unknown[]).length).toBe(4);
+  });
+});
+
+describe('what counts as a change', () => {
+  test('the same criteria in another key order are not a change', async () => {
+    const current = await draft();
+    const reordered = Object.fromEntries(Object.entries(current.criteria).reverse());
+    await put(`${M}/draft`, { criteria: reordered });
+    expect((await get(M)).json.draft_changed).toBe(false);
+    expect((await get(`${M}/previews/latest`)).json.stale).toBe(false);
+    // ...and the live KQL is the contract's own for those criteria, whichever way round they are written.
+    expect((await post('/kql/preview', { criteria: reordered })).json.kql).toBe((await post('/kql/preview', { criteria: current.criteria })).json.kql);
+    const job = await post(`${M}/estimates`);
+    expect((await runJob(job.json.id)).at(-1).result.version).toBe(3); // no new version for a re-ordered draft
+  });
+
+  test('a different order of the terms is a change: it can change the query', async () => {
+    const current = await draft();
+    await put(`${M}/draft`, { criteria: { ...current.criteria, keywords: [...current.criteria.keywords].reverse() } });
+    expect((await get(M)).json.draft_changed).toBe(true);
+  });
+
+  test('undoing a change to the sources undoes it', async () => {
+    await del(`${M}/custodians/${ALEX}`);
+    expect((await get(M)).json.draft_changed).toBe(true);
+    expect((await post(`${M}/exports/check`)).json.ready).toBe(false);
+    await put(`${M}/custodians/${ALEX}`, { mailbox: true, onedrive: true }); // back as they were
+    expect((await get(M)).json.draft_changed).toBe(false);
+    expect((await post(`${M}/exports/check`)).json.ready).toBe(true);
+  });
+
+  test('a new version made after undoing a change is not reported as a change of sources', async () => {
+    await del(`${M}/custodians/${ALEX}`);
+    await put(`${M}/custodians/${ALEX}`, { mailbox: true, onedrive: true });
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: ['alpha'] } });
+    await runJob((await post(`${M}/estimates`)).json.id);
+    expect(((await get(`${M}/versions/compare`, { from: 3, to: 4 })).json as Schemas['VersionComparison']).sources_changed).toBe(false);
+  });
+});
+
+describe('seeded data adds up', () => {
+  test('every matter that has a preview has one whose breakdowns total its items, and match its counts', async () => {
+    let checked = 0;
+    for (const entry of (await get('/matters')).json.items as Schemas['MatterSummary'][]) {
+      const reply = await get(`/matters/${entry.id}/previews/latest`);
+      if (reply.status === 404) continue;
+      const preview = reply.json as Schemas['Preview'];
+      expect(preview.report_items, entry.name).toBe(preview.counts.items + preview.counts.partial_items);
+      for (const [name, rows] of Object.entries(preview.breakdowns)) {
+        expect((rows as { count: number }[]).reduce((n, r) => n + r.count, 0), `${entry.name} ${name}`).toBe(preview.report_items);
+      }
+      expect(preview.counts.items, entry.name).toBe(entry.latest_counts!.items);
+      expect((await get(`/previews/${preview.id}/items`, { page_size: 1 })).json.total, entry.name).toBe(preview.report_items);
+      checked += 1;
+    }
+    expect(checked).toBe(4); // Falcon, Brightwell, Q3 trading and travel expenses
+  });
+});
+
+describe('the stage of a matter', () => {
+  test('an estimate while an export runs leaves the stage alone, and the export then settles it for its own version', async () => {
+    setScenario({ jobSeconds: 60 }); // the export takes a minute, the estimate nine seconds
+    await post(`${M}/exports`, { options: OPTIONS, confirm_matter_number: 'M-2026-0142' });
+    setScenario({ jobSeconds: 9 });
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: ['alpha'] } });
+    await runJob((await post(`${M}/estimates`)).json.id);
+    expect((await get(M)).json).toMatchObject({ stage: 'exporting', current_version: 4 });
+    tick(60);
+    // The export finished, but for v3: the matter's query is v4, which hasn't been previewed.
+    expect((await get(M)).json.stage).toBe('scoping');
+  });
+
+  test('a failed export puts the stage back as it was', async () => {
+    setScenario({ failJobs: ['export'] });
+    const exportJob = (await post(`${M}/exports`, { options: OPTIONS, confirm_matter_number: 'M-2026-0142' })).json;
+    expect((await get(M)).json.stage).toBe('exporting');
+    await runJob(exportJob.id);
+    expect((await get(M)).json.stage).toBe('previewed');
+  });
+
+  test('a changed query takes a previewed matter back to scoping', async () => {
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: ['alpha'] } });
+    await runJob((await post(`${M}/estimates`)).json.id);
+    expect((await get(M)).json.stage).toBe('scoping');
+  });
+});
+
+describe('the live KQL', () => {
+  test('a date range with one end has one clause, not a wildcard', async () => {
+    const criteria = { ...(await draft()).criteria, keywords: ['alpha'], exclude_keywords: [], file_extensions: [], exclude_participant_domains: [] };
+    const from = (await post('/kql/preview', { criteria: { ...criteria, date_from: '2024-01-01', date_to: null } })).json.kql as string;
+    const to = (await post('/kql/preview', { criteria: { ...criteria, date_from: null, date_to: '2025-06-30' } })).json.kql as string;
+    expect(from).toBe('(alpha) AND (sent>=2024-01-01)');
+    expect(to).toBe('(alpha) AND (sent<=2025-06-30)');
+    expect(`${from}${to}`).not.toContain('*');
   });
 });

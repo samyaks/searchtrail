@@ -1,17 +1,21 @@
 // What the API shows of a mock matter: details and list entries derived from its state.
 import type { Schemas } from '@/api/client';
-import { clone } from './util';
+import { sourcesFingerprint } from './sources';
+import { canonical, clone } from './util';
 import type { MockMatter } from './db';
 
 type S = Schemas;
 
 export const currentVersion = (m: MockMatter) => m.versions.find((v) => v.version === m.matter.current_version);
 
+/** The matter's custodians and sites differ from what they were when this query version was made. */
+export const sourcesChanged = (m: MockMatter, version: number) => sourcesFingerprint(m.matter) !== m.sourcesAt[version];
+
 /** The draft's criteria or the sources differ from the current query version. */
 export function draftChanged(m: MockMatter): boolean {
   const version = currentVersion(m);
   if (!version) return false; // nothing to compare with before the first estimate
-  return m.sourcesChanged || JSON.stringify(m.draft.criteria) !== JSON.stringify(version.criteria);
+  return canonical(m.draft.criteria) !== canonical(version.criteria) || sourcesChanged(m, version.version);
 }
 
 export function matterView(m: MockMatter): S['Matter'] {

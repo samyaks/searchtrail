@@ -6,16 +6,20 @@ import type { Schemas } from '@/api/client';
 import { buildMockKql } from './kql';
 import { example } from './examples';
 import { initialsOf, PEOPLE } from './people';
+import { buildPreview } from './previews';
+import { sourcesFingerprint } from './sources';
 import { clone, fakeHash, iso, resetIds } from './util';
 
 type S = Schemas;
 
 export type MockJob = {
   job: S['Job'];
-  polls: number;
+  /** When the job started and how long it takes, in milliseconds of the mock clock (util.now). */
+  startedAt: number;
+  durationMs: number;
   /** Runs once, when the job finishes: changes the database and returns the job's result. */
   finish: () => S['Job']['result'];
-  /** Runs on every poll, with progress 0..1 (the export's own progress follows its job). */
+  /** Runs each time the job moves along, with progress 0..1 (the export's own progress follows its job). */
   onProgress?: (progress: number) => void;
   /** Runs if the job fails (a scenario made it): puts what it was changing back to a failed state. */
   onFail?: () => void;
@@ -26,8 +30,8 @@ export type MockMatter = {
   activityAt: string;
   draft: S['Draft'];
   versions: S['QueryVersion'][]; // oldest first
-  /** Custodians or sites changed since the current version was made. */
-  sourcesChanged: boolean;
+  /** The fingerprint of the matter's sources (sources.ts) when each query version was made, by version number. */
+  sourcesAt: Record<number, string>;
   preview: S['Preview'] | null;
   previewItems: S['PreviewItem'][];
   termReport: S['TermReport'] | null;
@@ -86,7 +90,7 @@ export function makeCounts(items: number, partial: number, custodians: number): 
   return { items, size_bytes: items * 48_213, partial_items: partial, partial_size_bytes: partial * 911_000, mailboxes: custodians, sites: custodians + 2 };
 }
 
-export function makeVersion(matter: S['Matter'], version: number, criteria: S['Criteria'], counts: S['Counts'] | null, summary: string, sourcesFingerprint?: string): S['QueryVersion'] {
+export function makeVersion(matter: S['Matter'], version: number, criteria: S['Criteria'], counts: S['Counts'] | null, summary: string, fingerprint?: string): S['QueryVersion'] {
   const built = buildMockKql(criteria);
   return {
     version,
@@ -96,7 +100,7 @@ export function makeVersion(matter: S['Matter'], version: number, criteria: S['C
     criteria: clone(criteria),
     kql: built.kql,
     methodology: built.methodology,
-    sources_fingerprint: sourcesFingerprint ?? fakeHash(`${matter.id}:${matter.custodians.map((c) => c.email).join()}:${matter.sites.map((s) => s.url).join()}`),
+    sources_fingerprint: fingerprint ?? sourcesFingerprint(matter),
     purview_search_id: matter.purview_case_id ? `search-${version}` : null,
     counts,
     exported: false,
@@ -106,12 +110,15 @@ export function makeVersion(matter: S['Matter'], version: number, criteria: S['C
 function seedFalcon(summary: S['MatterSummary']): MockMatter {
   const matter = example<S['Matter']>('getMatter', '200');
   const log = example<S['LogEntryPage']>('listLogEntries', '200').items.slice().reverse(); // the example is newest first
+  const versions = example<S['QueryVersionList']>('listVersions', '200').items.slice().sort((a, b) => a.version - b.version);
   return {
     matter,
     activityAt: summary.last_activity_at,
     draft: example<S['Draft']>('getDraft', '200'),
-    versions: example<S['QueryVersionList']>('listVersions', '200').items.slice().sort((a, b) => a.version - b.version),
-    sourcesChanged: false,
+    versions,
+    // The contract's versions carry their own example fingerprints; what counts for "did the sources change" is
+    // the sources as seeded, for every version the matter already has.
+    sourcesAt: Object.fromEntries(versions.map((v) => [v.version, sourcesFingerprint(matter)])),
     preview: example<S['Preview']>('getLatestPreview', '200'),
     previewItems: [],
     termReport: example<S['TermReport']>('getLatestTermReport', '200'),
@@ -151,9 +158,7 @@ function seedOther(summary: S['MatterSummary']): MockMatter {
     seq: 1, ts: matter.created_at, action: 'matter_created', actor: owner, actor_email: null, summary: `${matter.matter_number} · ${matter.name}`,
     version: null, prev_hash: '0'.repeat(64), hash: fakeHash(`${matter.id}:1`), details: {},
   };
-  const preview = started && counts
-    ? { ...example<S['Preview']>('getLatestPreview', '200'), id: `prv_${summary.id}`, matter_id: summary.id, version: summary.current_version ?? 1, counts, created_at: summary.last_activity_at }
-    : null;
+  const preview = started && counts ? buildPreview(summary.id, summary.current_version ?? 1, counts, summary.owner, { id: `prv_${summary.id}`, createdAt: summary.last_activity_at }) : null;
   const exportRow = (summary.stage === 'exported' || summary.stage === 'exporting') && counts
     ? [{
         ...example<S['Export']>('getExport', '200', 'ready'), id: `exp_${summary.id}`, matter_id: summary.id, version: summary.current_version ?? 1, counts,
@@ -166,7 +171,7 @@ function seedOther(summary: S['MatterSummary']): MockMatter {
   return {
     matter, activityAt: summary.last_activity_at,
     draft: { criteria, updated_at: matter.created_at, based_on_version: summary.current_version, changed_since_version: false },
-    versions, sourcesChanged: false, preview, previewItems: [], termReport: null, exports: exportRow, log: [created_entry], settling: {},
+    versions, sourcesAt: Object.fromEntries(versions.map((v) => [v.version, sourcesFingerprint(matter)])), preview, previewItems: [], termReport: null, exports: exportRow, log: [created_entry], settling: {},
   };
 }
 

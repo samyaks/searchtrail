@@ -32,13 +32,14 @@ export function generatePreviewItems(preview: S['Preview']): S['PreviewItem'][] 
   };
   const strides = [stride(7), stride(11), stride(13), stride(17), stride(19)] as const;
   const at = (dimension: 0 | 1 | 2 | 3 | 4, i: number) => (i * strides[dimension]) % n;
+  const sizes = [by_location, by_type, by_label, by_month].map((buckets) => buckets.map((bucket) => bucket.count));
   const items: S['PreviewItem'][] = [];
   for (let i = 0; i < total; i += 1) {
     const template = templates[i % templates.length]!;
-    const location = by_location[bucketOf(by_location.map((x) => x.count), at(0, i))]!.name;
-    const typeName = by_type[bucketOf(by_type.map((x) => x.count), at(1, i))]!.name;
-    const label = by_label[bucketOf(by_label.map((x) => x.count), at(2, i))]!.name;
-    const month = by_month[bucketOf(by_month.map((x) => x.count), at(3, i))]!.month;
+    const location = by_location[bucketOf(sizes[0]!, at(0, i))]!.name;
+    const typeName = by_type[bucketOf(sizes[1]!, at(1, i))]!.name;
+    const label = by_label[bucketOf(sizes[2]!, at(2, i))]!.name;
+    const month = by_month[bucketOf(sizes[3]!, at(3, i))]!.month;
     const type = TYPE_BY_NAME[typeName] ?? 'other';
     const noun = type === 'email' ? 'RE: ' : type === 'teams_chat' ? 'Chat: ' : '';
     items.push({

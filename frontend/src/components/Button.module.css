@@ -22,15 +22,12 @@
   cursor: not-allowed;
 }
 
+/* The base style above is the design's outlined button, which Button calls `secondary`. */
+
 /* the main action on a screen */
 .primary {
   background: var(--st-ink);
   color: var(--st-sheet);
-}
-/* a quieter action: the design's outlined button */
-.secondary {
-  background: var(--st-sheet);
-  border-color: var(--st-ink);
 }
 /* the least emphasis: a grey outline */
 .neutral {

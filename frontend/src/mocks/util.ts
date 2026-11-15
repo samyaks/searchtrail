@@ -43,6 +43,14 @@ export const validationFailed = (field: string, message: string) => error(400, '
 
 export const clone = <T>(value: T): T => structuredClone(value);
 
+/** JSON with object keys sorted, so two values that mean the same thing give the same text whatever order
+ * their keys were written in (the backend compares criteria this way). Array order is kept: it matters. */
+export function canonical(value: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(sort) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sort(x)])) : v;
+  return JSON.stringify(sort(value));
+}
+
 /** Items `page` of `size` (1-based), as the contract's paged lists return them. */
 export function paginate<T>(all: T[], page: number, pageSize: number) {
   const start = (page - 1) * pageSize;

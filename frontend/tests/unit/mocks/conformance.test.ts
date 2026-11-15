@@ -230,7 +230,7 @@ describe('an expired session', () => {
     const open = ['getHealth', 'login', 'authCallback'];
     for (const [operationId, { method, path, operation }] of Object.entries(operations)) {
       if (open.includes(operationId)) continue;
-      const reply = await call(method, `/api${path}`.replace('/api', '').replace(/\{(\w+)\}/g, 'x'), { body: ['POST', 'PUT', 'PATCH'].includes(method) ? {} : undefined });
+      const reply = await call(method, path.replace(/\{(\w+)\}/g, 'x'), { body: ['POST', 'PUT', 'PATCH'].includes(method) ? {} : undefined });
       expect(reply.status, operationId).toBe(401);
       expect(Object.keys(operation.responses), operationId).toContain('401');
       expect(responseProblems(operationId, 401, reply.json), operationId).toEqual([]);

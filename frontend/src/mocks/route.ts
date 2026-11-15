@@ -2,6 +2,7 @@
 // affect all endpoints (an expired session) before the handler runs.
 import { http, type HttpHandler } from 'msw';
 import { findMatter, type MockMatter } from './db';
+import { settleJobs } from './jobs';
 import { scenario } from './scenarios';
 import { notFound, sessionExpired } from './util';
 
@@ -17,6 +18,7 @@ export type Context = { params: Params; request: Request; url: URL };
 export function route(method: Method, path: string, resolver: (context: Context) => Response | Promise<Response>): HttpHandler {
   return http[method](`${API}${path}`, async ({ params, request }) => {
     if (scenario.sessionExpired && !PUBLIC.includes(path)) return sessionExpired();
+    settleJobs(); // jobs that are due have finished by now, whatever is asked for
     return resolver({ params, request, url: new URL(request.url) });
   });
 }

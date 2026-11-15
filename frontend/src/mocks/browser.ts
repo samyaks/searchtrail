@@ -7,7 +7,7 @@ export const worker = setupWorker(...handlers);
 
 // For trying the hard cases by hand: open the browser console and use window.stMocks, for example
 //   stMocks.set({ exportCheck: 'countsChanged' })     the export check finds new items
-//   stMocks.set({ failJobs: ['preview'], jobPolls: 5 })   previews fail, and jobs take 5 polls
+//   stMocks.set({ failJobs: ['preview'], jobSeconds: 30 })   previews fail, and jobs take 30 seconds
 //   stMocks.set({ sessionExpired: true })               every request gets 401
 //   stMocks.set({ purviewDenied: 'license_missing' })   Purview refuses (403); or 'purview_permission_missing'
 //   stMocks.reset()                                     back to the start (also reseeds the data)

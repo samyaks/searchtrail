@@ -1,11 +1,11 @@
 // Previews (counts, breakdowns, the item table) and term reports.
 import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
-import { example } from '../examples';
 import { filterItems, generatePreviewItems, itemsToCsv } from '../items';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
 import { appendLog, signedIn } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
+import { buildPreview } from '../previews';
 import { route, withMatter } from '../route';
 import { db, type MockMatter } from '../db';
 import { clone, error, hashNumber, iso, nextId, notFound, pageParams, paginate } from '../util';
@@ -13,37 +13,6 @@ import { currentVersion, previewView, termReportView } from '../views';
 
 type S = Schemas;
 const user = () => ({ id: signedIn().id, display_name: signedIn().display_name });
-
-/** Spread `total` over the same shape as `buckets`, whole numbers that add up exactly (largest remainder). */
-function scaleBuckets<T extends { count: number }>(buckets: T[], total: number): T[] {
-  const sum = buckets.reduce((n, b) => n + b.count, 0) || 1;
-  const exact = buckets.map((b) => (b.count / sum) * total);
-  const counts = exact.map(Math.floor);
-  let left = total - counts.reduce((n, c) => n + c, 0);
-  [...exact.keys()].sort((a, b) => (exact[b]! % 1) - (exact[a]! % 1)).forEach((i) => {
-    if (left > 0) {
-      counts[i]! += 1;
-      left -= 1;
-    }
-  });
-  return buckets.map((b, i) => ({ ...b, count: counts[i]! }));
-}
-
-function buildPreview(m: MockMatter, version: S['QueryVersion']): S['Preview'] {
-  const base = example<S['Preview']>('getLatestPreview', '200');
-  const counts = version.counts!;
-  const total = counts.items + counts.partial_items;
-  const breakdowns = {
-    by_location: scaleBuckets(base.breakdowns.by_location, total),
-    by_type: scaleBuckets(base.breakdowns.by_type, total),
-    by_label: scaleBuckets(base.breakdowns.by_label, total),
-    by_month: scaleBuckets(base.breakdowns.by_month, total),
-  };
-  return {
-    id: nextId('prv'), matter_id: m.matter.id, version: version.version, created_at: iso(), created_by: user(), stale: false, counts: clone(counts),
-    report_items: total, encrypted_items: Math.round(total * (base.encrypted_items / base.report_items)), breakdowns, unmapped_columns: [],
-  };
-}
 
 const previewItems = (m: MockMatter) => {
   if (m.preview && m.previewItems.length === 0) m.previewItems = generatePreviewItems(m.preview);
@@ -61,7 +30,7 @@ export const runHandlers = [
       return HttpResponse.json(
         createJob('preview', m.matter.id, {
           finish: () => {
-            m.preview = buildPreview(m, version);
+            m.preview = buildPreview(m.matter.id, version.version, version.counts!, user());
             m.previewItems = [];
             m.matter.stage = 'previewed';
             m.matter.previewed_version = version.version;

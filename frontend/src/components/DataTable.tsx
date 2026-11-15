@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import styles from './DataTable.module.css';
 
 export type Column<Row> = {
@@ -32,9 +32,30 @@ export type DataTableProps<Row> = {
 
 /** A table in the design's style. A real <table>, so screen readers can move by row and column. */
 export function DataTable<Row>({ caption, columns, rows, rowKey, selectedKey, emptyMessage = 'Nothing to show.' }: DataTableProps<Row>) {
+  // A wide table scrolls sideways inside its panel. Only then does the panel become a keyboard-reachable region
+  // (so the hidden part can be scrolled to without a mouse); a table that fits gets no extra Tab stop or landmark.
+  const panel = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useLayoutEffect(() => {
+    const element = panel.current;
+    if (!element) return undefined;
+    const measure = () => setScrolls(element.scrollWidth > element.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element); // the panel got narrower or wider
+    if (element.firstElementChild) observer.observe(element.firstElementChild); // the table's content did
+    return () => observer.disconnect();
+  }, [rows.length, columns.length]);
+
   return (
-    // A wide table scrolls inside this region, which must be reachable by keyboard.
-    <div className={styles.scroll} role="region" aria-label={caption} tabIndex={0}>
+    <div
+      ref={panel}
+      className={styles.scroll}
+      role={scrolls ? 'region' : undefined}
+      aria-label={scrolls ? `${caption}, scrolls sideways` : undefined}
+      tabIndex={scrolls ? 0 : undefined}
+    >
       <table className={styles.table}>
         <caption className="st-visually-hidden">{caption}</caption>
         <thead>

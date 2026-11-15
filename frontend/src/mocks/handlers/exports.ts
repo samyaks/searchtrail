@@ -8,7 +8,7 @@ import { alreadyRunning, activeJob, createJob } from '../jobs';
 import { idParam, readJson, route, withMatter } from '../route';
 import { scenario } from '../scenarios';
 import { clone, error, iso, nextId, notFound, validationFailed } from '../util';
-import { currentVersion } from '../views';
+import { currentVersion, sourcesChanged } from '../views';
 
 type S = Schemas;
 const user = () => ({ id: signedIn().id, display_name: signedIn().display_name });
@@ -21,7 +21,7 @@ export function exportCheck(m: MockMatter): S['ExportCheck'] {
   const version = currentVersion(m);
   const preview = m.preview;
   const previewed = !!version && !!preview && preview.version === version.version;
-  const sameSources = !m.sourcesChanged;
+  const sameSources = !preview || !sourcesChanged(m, preview.version);
   const base = {
     version: version?.version ?? null, previewed_version: preview?.version ?? null, previewed_at: preview?.created_at ?? null, checked_at: iso(),
   };
@@ -129,6 +129,7 @@ export const exportHandlers = [
         counts, options: body.options as S['ExportOptions'], changes_accepted: check.blocked_code === 'export_counts_changed', started_at: stamp, started_by: user(),
         finished_at: null, expires_at: null, files: [], download: { status: 'none', progress: null, stored_path: null, finished_at: null }, review_set: { status: 'none', name: null, finished_at: null },
       };
+      const stageBefore = m.matter.stage;
       m.exports.unshift(exp);
       m.matter.stage = 'exporting';
       appendLog(m, 'export_started', `${exp.name} · ${n(counts.items)} items + ${n(counts.partial_items)} partially indexed`, exp.version, { options: exp.options, counts, changes_accepted: exp.changes_accepted });
@@ -139,7 +140,7 @@ export const exportHandlers = [
           },
           onFail: () => {
             exp.status = 'failed';
-            m.matter.stage = 'previewed';
+            m.matter.stage = stageBefore; // as it was before the export started
           },
           finish: () => {
             const done = iso();
@@ -147,7 +148,8 @@ export const exportHandlers = [
               status: 'ready', progress: 1, finished_at: done, expires_at: iso(new Date(Date.now() + 30 * 86_400_000)),
               files: [{ name: 'Exchange.zip', size_bytes: Math.round(counts.size_bytes * 0.6) }, { name: 'SharePoint.zip', size_bytes: Math.round(counts.size_bytes * 0.4) }],
             });
-            m.matter.stage = 'exported';
+            // Exported, unless the query moved on to a new version while the export ran.
+            m.matter.stage = m.matter.current_version === exp.version ? 'exported' : 'scoping';
             m.versions.find((v) => v.version === exp.version)!.exported = true;
             appendLog(m, 'export_finished', `${exp.name} · ready in Purview`, exp.version, { files: exp.files }, true);
             return clone(exp);
