@@ -44,6 +44,7 @@
 /backend/pyproject.toml                           @samyaks             # shared
 /backend/app/__init__.py                          @samyaks             # WS-B1 Backend API and data
 /backend/app/settings.py                          @samyaks             # WS-B1 Backend API and data
+/backend/constraints.txt                          @samyaks             # shared
 /frontend/tests/setup.ts                                               # tests (no owner)
 /frontend/src/components/                         @samyaks             # WS-D Frontend foundation and components
 /frontend/src/screens/log/                        @samyaks             # WS-F Screens: Preview, Terms, Export, Log
