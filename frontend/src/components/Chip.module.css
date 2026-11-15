@@ -1,0 +1,130 @@
+/* a filter you can switch on: the stage chips on the Matters list */
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--st-rule-strong);
+  border-radius: var(--st-radius-pill);
+  background: var(--st-sheet);
+  color: var(--st-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.filter[aria-pressed='true'] {
+  border-color: var(--st-ink);
+  background: var(--st-ink);
+  color: var(--st-sheet);
+}
+.filter:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.count {
+  color: var(--st-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.filter[aria-pressed='true'] .count {
+  color: var(--st-sheet);
+}
+
+/* a state shown as a pill: Scoping, Previewed, Exporting 64%, Exported */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--st-rule-strong);
+  border-radius: var(--st-radius-pill);
+  color: var(--st-muted);
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill[data-tone='highlight'] {
+  border-color: var(--st-highlighter);
+  background: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+}
+.pill[data-tone='ink'] {
+  border-color: var(--st-ink);
+  background: var(--st-ink);
+  color: var(--st-sheet);
+}
+.pill[data-tone='ok'] {
+  border-color: var(--st-ok-green);
+  color: var(--st-ok-green);
+}
+.pill[data-tone='danger'] {
+  border-color: var(--st-margin-red);
+  color: var(--st-margin-red);
+}
+
+/* a list of removable chips: search terms, exclusions, file types, domains */
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 2px 0 9px;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-sm);
+  background: var(--st-paper);
+  font-size: 14px;
+}
+.removable[data-tone='term'],
+.removable[data-tone='exclude'] {
+  min-height: var(--st-target-sm);
+  padding-left: 10px;
+  font-family: var(--st-font-mono);
+  font-size: 15px;
+}
+/* a term the search will find */
+.removable[data-tone='term'] {
+  border-color: var(--st-highlighter);
+  background: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+}
+/* a term the search will leave out: struck through in the margin red */
+.removable[data-tone='exclude'] {
+  text-decoration: line-through;
+  text-decoration-color: var(--st-margin-red);
+}
+.remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--st-radius-sm);
+  background: transparent;
+  color: var(--st-muted);
+  cursor: pointer;
+}
+.removable[data-tone='term'] .remove {
+  color: var(--st-highlighter-ink);
+}
+.removable[data-tone='term'] .remove,
+.removable[data-tone='exclude'] .remove {
+  width: 32px;
+  height: 32px;
+}
+.remove:hover {
+  background: var(--st-rule-soft);
+}
+.removable[data-tone='term'] .remove:hover {
+  background: var(--st-highlighter-soft);
+}

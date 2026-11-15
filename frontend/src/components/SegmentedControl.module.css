@@ -1,0 +1,41 @@
+.group {
+  display: inline-flex;
+  border: 1px solid var(--st-rule-strong);
+  border-radius: var(--st-radius-md);
+  overflow: hidden;
+}
+.segment {
+  min-height: var(--st-target-sm);
+  padding: 0 12px;
+  border: 0;
+  background: var(--st-sheet);
+  color: var(--st-muted);
+  font: inherit;
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.segment + .segment {
+  border-left: 1px solid var(--st-rule-strong);
+}
+.segment:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* the chosen segment: ink, or highlighter for "only", or margin red for "exclude" */
+.segment[aria-pressed='true'] {
+  background: var(--st-ink);
+  color: var(--st-sheet);
+}
+.segment[aria-pressed='true'][data-tone='only'] {
+  background: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+}
+.segment[aria-pressed='true'][data-tone='exclude'] {
+  background: var(--st-margin-red);
+  color: var(--st-sheet);
+}
+/* the focus ring would be clipped by the group's overflow: draw it inside */
+.segment:focus-visible {
+  outline-offset: -3px;
+}

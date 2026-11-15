@@ -1,25 +1,12 @@
-// MSW request handlers built from the contract's examples. WS-D adds one per endpoint.
-import { http, HttpResponse } from 'msw';
-import type { Schemas } from '@/api/client';
-import { example } from './examples';
+// MSW request handlers: a stateful mock of the whole API (docs/adr/0008-msw-mocks-from-contract.md).
+// One handler per operation in contracts/openapi.yaml; a test fails if one is missing, and another checks
+// every response against the contract's schemas. The data is the contract's examples (src/mocks/examples.json),
+// and it changes as the screens act: edit a draft, start an estimate, poll its job, run an export.
+import { criteriaHandlers } from './handlers/criteria';
+import { exportHandlers } from './handlers/exports';
+import { historyHandlers, jobHandlers } from './handlers/history';
+import { matterHandlers } from './handlers/matters';
+import { runHandlers } from './handlers/runs';
+import { systemHandlers } from './handlers/system';
 
-const API = '/api/v1';
-
-export const handlers = [
-  http.get(`${API}/health`, () => HttpResponse.json(example<Schemas['Health']>('getHealth', '200'))),
-  http.get(`${API}/me`, () => HttpResponse.json(example<Schemas['Me']>('getMe', '200'))),
-  http.get(`${API}/matters`, ({ request }) => {
-    const list = example<Schemas['MatterList']>('listMatters', '200');
-    const stage = new URL(request.url).searchParams.get('stage');
-    const items = stage ? list.items.filter((m) => m.stage === stage) : list.items;
-    return HttpResponse.json({ items, total: items.length });
-  }),
-  http.get(`${API}/matters/:matterId`, ({ params }) => {
-    const matter = example<Schemas['Matter']>('getMatter', '200');
-    if (params.matterId !== matter.id) {
-      return HttpResponse.json(example<Schemas['Error']>('getMatter', '404'), { status: 404 });
-    }
-    return HttpResponse.json(matter);
-  }),
-  http.delete(`${API}/matters/:matterId/sites/:siteId`, () => new HttpResponse(null, { status: 204 })),
-];
+export const handlers = [...systemHandlers, ...matterHandlers, ...criteriaHandlers, ...runHandlers, ...exportHandlers, ...historyHandlers, ...jobHandlers];
