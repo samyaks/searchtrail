@@ -105,6 +105,22 @@ def check_export(session, gateway: PurviewGateway, matter_id: str) -> ExportChec
 # A handler refuses with `conflict` if the sources changed after the version was created.
 ```
 
+```python
+# WS-C, app/microsoft/deps.py (PR 3). Every request that talks to Microsoft takes its gateway from here,
+# so tests override it and sign-in can later build the live gateway from the user's tokens.
+def purview_gateway(settings) -> PurviewGateway: ...        # Depends(purview_gateway)
+# WS-C, app/microsoft/errors.py: `with graph_errors():` around gateway calls made in a request turns
+# Graph failures into the contract's errors (429 graph_throttled, 403 purview_permission_missing, 502).
+```
+
+**One dry-run tenant.** `get_gateway(settings)` builds every gateway (one per job, one per request) over
+one simulated tenant kept in `$SEARCHTRAIL_STORAGE_DIR/dry-run/tenant.json`, which the API and the worker
+share as a volume. Each Graph call runs under a file lock that re-reads the file, so what one process
+creates (cases, searches, operations, downloads, review sets) is there for the next, and an operation one
+worker started can be polled by another. To simulate new mail arriving between a preview and an export
+in a running stack (the blocked-export end-to-end tests, PR 18), set `count_offset` in that file, for
+example with `DryRunTransport(state_file=...).count_offset = 17`.
+
 The Purview IDs a matter's jobs create (case, custodians, sources, searches) live in
 `matters.purview_state`, in the same shape as the CLI's `state.json`, and both go through
 `searchtrail.workflow.sync_purview`. `app.jobs.purview.prepare` copies them onto the rows that show
