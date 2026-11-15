@@ -16,7 +16,8 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8080',
     trace: 'off',
-    screenshot: 'off',
+    // A failed test leaves a screenshot in tests/e2e/.results (CI uploads it). Trace and video stay off.
+    screenshot: 'only-on-failure',
     video: 'off',
   },
   projects: [

@@ -1,5 +1,5 @@
 // What the web image's reverse proxy promises (deploy/Caddyfile).
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const BASELINE = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
 
