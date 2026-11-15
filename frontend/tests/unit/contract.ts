@@ -24,6 +24,9 @@ function resolveRef<T extends Json>(node: T): Json {
   return current;
 }
 
+/** Every error code the contract defines (components.schemas.ErrorCode). */
+export const errorCodes: string[] = spec.components.schemas.ErrorCode.enum;
+
 /** Every operation in the contract: operationId -> method, path (as in the contract) and the operation object. */
 export const operations: Record<string, { method: string; path: string; operation: Json }> = {};
 for (const [path, item] of Object.entries<Json>(spec.paths)) {

@@ -45,6 +45,11 @@
   font-weight: 600;
   white-space: nowrap;
 }
+/* a plain label with a strong outline: the query version in the matter header */
+.pill[data-tone='outline'] {
+  border-color: var(--st-ink);
+  color: var(--st-ink);
+}
 .pill[data-tone='highlight'] {
   border-color: var(--st-highlighter);
   background: var(--st-highlighter);
@@ -60,6 +65,13 @@
   color: var(--st-ok-green);
 }
 .pill[data-tone='danger'] {
+  border-color: var(--st-margin-red);
+  color: var(--st-margin-red);
+}
+
+/* something not done yet, in the margin red with a dashed outline: "Not previewed yet" */
+.pill[data-tone='draft'] {
+  border-style: dashed;
   border-color: var(--st-margin-red);
   color: var(--st-margin-red);
 }

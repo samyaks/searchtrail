@@ -1,13 +1,32 @@
+/* the app shell, from docs/design/Main.dc.html: side navigation and the page. It wraps on a narrow screen,
+   with the navigation above the page, so nothing needs sideways scrolling. */
 .shell {
   min-height: 100vh;
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
 }
+/* the first Tab stop: jumps over the navigation. Hidden until it has focus. */
+.skip {
+  position: absolute;
+  left: var(--st-space-2);
+  top: var(--st-space-2);
+  padding: var(--st-space-2) var(--st-space-4);
+  border-radius: var(--st-radius-md);
+  background: var(--st-ink);
+  color: var(--st-sheet);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+.skip:focus {
+  transform: none;
+  z-index: 1;
+}
 .nav {
-  flex: 0 0 232px;
+  flex: 1 1 232px;
   background: var(--st-sheet);
   border-right: 1px solid var(--st-rule);
-  padding: 20px 16px;
+  padding: 20px var(--st-space-4);
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -16,7 +35,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 8px;
+  padding: var(--st-space-1) var(--st-space-2);
   text-decoration: none;
   font-family: var(--st-font-mono);
   font-weight: 700;
@@ -38,13 +57,37 @@
   height: 5px;
   background: var(--st-highlighter);
 }
+/* the tenant and whether SearchTrail is connected to it */
 .tenant {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 0 8px;
+  padding: var(--st-space-3);
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-md);
+}
+.tenantName {
   font-size: var(--st-text-sm);
+  font-weight: 600;
+}
+.tenantLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   color: var(--st-muted);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--st-ok-green);
+}
+/* a simulated tenant is not "connected": the highlighter, with an outline so it shows on white */
+.dot[data-state='dry-run'] {
+  background: var(--st-highlighter);
+  box-shadow: 0 0 0 1px var(--st-ink);
 }
 .links {
   display: flex;
@@ -52,35 +95,60 @@
   gap: 2px;
 }
 .link {
-  padding: 8px;
+  display: flex;
+  align-items: center;
+  min-height: var(--st-target);
+  padding: 0 var(--st-space-3);
   border-radius: var(--st-radius-md);
   text-decoration: none;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--st-muted);
 }
 .link[aria-current='page'] {
   background: var(--st-paper);
-  box-shadow: inset 3px 0 0 var(--st-ink);
+  font-weight: 600;
+  color: var(--st-ink);
 }
 .user {
   margin-top: auto;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 8px;
-  font-size: var(--st-text-sm);
+  padding: var(--st-space-2);
 }
 .avatar {
   width: 32px;
   height: 32px;
+  flex: none;
   border-radius: 50%;
   background: var(--st-ink);
   color: var(--st-sheet);
   display: grid;
   place-items: center;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
+}
+.person {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  font-size: 12px;
+  color: var(--st-muted);
+}
+.person strong {
+  font-size: var(--st-text-sm);
+  color: var(--st-ink);
 }
 .main {
-  flex: 1 1 auto;
+  flex: 999 1 560px;
   min-width: 0;
-  padding: 32px 40px;
+  padding: var(--st-space-6);
+}
+.main:focus {
+  outline: none;
+}
+.content {
+  max-width: 1180px;
+  margin: 0 auto;
 }

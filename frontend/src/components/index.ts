@@ -9,6 +9,8 @@ export type { CardProps } from './Card';
 export { ChipList, FilterChip, Pill, RemovableChip } from './Chip';
 export type { FilterChipProps, PillTone, RemovableChipProps } from './Chip';
 export { DataTable } from './DataTable';
+export { ErrorNotice } from './ErrorNotice';
+export type { ErrorNoticeProps } from './ErrorNotice';
 export type { Column, DataTableProps } from './DataTable';
 export { SegmentedControl } from './SegmentedControl';
 export type { Segment, SegmentedControlProps, SegmentTone } from './SegmentedControl';
