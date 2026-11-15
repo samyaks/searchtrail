@@ -1,10 +1,15 @@
-# Build context for Dockerfile.web (the repository root): only the frontend sources and the Caddyfile.
+# Build context for Dockerfile.web (the repository root): the frontend and the Caddyfile, and nothing else.
 *
-!frontend/package.json
-!frontend/package-lock.json
-!frontend/index.html
-!frontend/tsconfig.json
-!frontend/vite.config.ts
-!frontend/public/
-!frontend/src/
+!frontend
 !deploy/Caddyfile
+
+# Inside frontend/: what isn't a build input. Anything not listed is copied, so a new build input
+# needs no change here.
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/tests
+frontend/playwright.config.ts
+frontend/eslint.config.js
+frontend/scripts
+frontend/*.tsbuildinfo

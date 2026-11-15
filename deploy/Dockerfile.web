@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The web image: the built frontend served by Caddy, which also passes /api to the api service, so
 # the browser and the API share one origin (the API allows no other origin by default).
-# Build from the repository root (Dockerfile.web.dockerignore keeps the context to what's copied):
+# Build from the repository root (Dockerfile.web.dockerignore keeps the context to frontend/ and the Caddyfile):
 #   docker build -f deploy/Dockerfile.web .
 #
 # Behind a TLS-inspecting proxy, pass its CA bundle as a build secret, as for the backend image; it is
@@ -14,16 +14,15 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -s /run/secrets/extra_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/extra_ca; fi \
     && npm ci --no-audit --no-fund
-# Only what the build reads, so tests and local files never reach the image. A new build input
-# (a PostCSS config, say) goes here and in Dockerfile.web.dockerignore.
-COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
-COPY frontend/public ./public
-COPY frontend/src ./src
-# The production build never starts MSW (src/main.tsx checks import.meta.env.DEV), but Vite copies
-# public/mockServiceWorker.js into dist. Drop it, and fail the build if any mock code is left.
+# The rest of the frontend. Dockerfile.web.dockerignore lists what stays out, so a new build input
+# is picked up without changing this file.
+COPY frontend ./
+# The production build ships no mock code (the MSW worker is served by the dev server only, see
+# vite.config.ts, and src/main.tsx starts it only when import.meta.env.DEV). A safety net: fail the
+# image build if a worker file, or code that refers to one, turns up in dist.
 RUN npm run build \
-    && rm -f dist/mockServiceWorker.js \
-    && if grep -rl mockServiceWorker dist; then echo "MSW code found in the production build" >&2; exit 1; fi
+    && if [ -n "$(find dist -iname 'mockServiceWorker*')" ] || grep -rqi mockServiceWorker dist; then \
+         echo "MSW worker or code found in the production build" >&2; exit 1; fi
 
 FROM caddy:2.11-alpine
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
