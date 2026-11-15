@@ -12,7 +12,6 @@ from sqlalchemy import select
 from app.api.errors import ApiError
 from app.api.graph import graph_errors
 from app.db.models import RunRow
-from app.jobs import steps
 from app.microsoft.errors import Failure, classify
 from searchtrail.graph import GraphError, OperationFailed
 
@@ -50,11 +49,6 @@ def test_the_api_adds_a_retry_hint_only_to_failures_that_can_pass():
 
 
 # -- the same mapping in the jobs -------------------------------------------------------------------------
-@pytest.fixture(autouse=True)
-def no_waiting(monkeypatch):
-    monkeypatch.setattr(steps, "sleep", lambda _s: None)
-
-
 def test_an_expired_microsoft_token_ends_a_job_as_session_expired_not_permissions(sessions, monkeypatch):
     gw = tenant()
     with sessions() as s:
