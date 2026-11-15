@@ -70,6 +70,12 @@ class PurviewGateway(Protocol):
                       description: str = "") -> dict:
         ...
 
+    def find_search(self, case_id: str, display_name: str) -> dict | None:
+        """The case's search with this display name, or None. For callers that give every search a name
+        of its own: if a create's answer was lost (a timeout, a worker that died before saving the ID),
+        they look the search up instead of creating a second one."""
+        ...
+
     def update_query(self, case_id: str, search_id: str, kql: str) -> None:
         ...
 
