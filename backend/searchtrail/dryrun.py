@@ -3,6 +3,18 @@
 Lets you run the whole flow, and the tests, with no tenant: every call is printed, and
 plausible responses come back. Counts are derived from the query text, so changing the query
 changes the numbers, which is enough to exercise the preview, term report and export checks.
+
+One tenant, however many processes. Without `state_file` the simulated tenant lives in this object
+(unit tests). With `state_file` everything it remembers (IDs, cases, queries, custodians, operations,
+downloads, review sets, the count offset) is kept in that JSON file, and every Graph call runs under a
+file lock that re-reads the file first. So the CLI across separate commands, and the web app's API and
+worker processes (and their separate per-job gateways), all talk to the same tenant: a search created
+by one job is there for the next, and an operation started by one worker can be polled by another.
+Where there's no `fcntl` (Windows) the file still keeps the CLI's tenant between commands, but can't be
+shared by processes running at once.
+
+Like Microsoft, it answers 404 for a case, operation or search it never issued, so a stale ID (say after
+the state file was deleted) fails loudly instead of getting an invented answer.
 """
 from __future__ import annotations
 
@@ -10,24 +22,34 @@ import csv
 import hashlib
 import io
 import json
+import os
 import random
 import re
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from requests.structures import CaseInsensitiveDict
 
-from .graph import Log, Response
+from .graph import GraphError, Log, Response
+
+try:
+    import fcntl
+except ImportError:  # Windows: no file locking, so a state file is for one process at a time (the CLI)
+    fcntl = None
 
 SAMPLE_LABELS = [
-    {"id": "11111111-1111-4111-8111-111111111111", "displayName": "Public"},
-    {"id": "22222222-2222-4222-8222-222222222222", "displayName": "General"},
-    {"id": "33333333-3333-4333-8333-333333333333", "displayName": "Confidential", "sublabels": [
+    {"id": "11111111-1111-4111-8111-111111111111", "displayName": "Public", "description": "Approved for anyone"},
+    {"id": "22222222-2222-4222-8222-222222222222", "displayName": "General", "description": "Internal business data"},
+    {"id": "33333333-3333-4333-8333-333333333333", "displayName": "Confidential",
+     "description": "Includes the Finance and Legal sublabels", "sublabels": [
         {"id": "44444444-4444-4444-8444-444444444444", "displayName": "Finance"},
         {"id": "55555555-5555-4555-8555-555555555555", "displayName": "Legal"},
     ]},
-    {"id": "66666666-6666-4666-8666-666666666666", "displayName": "Highly Confidential"},
+    {"id": "66666666-6666-4666-8666-666666666666", "displayName": "Highly Confidential",
+     "description": "Often encrypted; reviewers may not open these"},
 ]
 APPLIED_LABEL_IDS = [  # parent labels with sublabels can't be applied to files, so they never appear
     "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222",
@@ -84,31 +106,100 @@ class DryRunTransport:
     def __init__(self, log: Log = print, verbose: bool = True, state_file: Path | None = None):
         self.log = log
         self.verbose = verbose
-        self.calls: list[tuple[str, str, Any]] = []
-        self.count_offset = 0  # tests bump this to simulate data changing between preview and export
+        self.calls: list[tuple[str, str, Any]] = []  # this object's calls, for tests to assert on
+        self._count_offset = 0  # simulates data changing between preview and export (see count_offset)
         self._ops: dict[str, dict] = {}
         self._downloads: dict[str, dict] = {}
         self._review_sets: dict[str, dict] = {}
-        # Remembered between CLI runs (when state_file is set), like a real tenant would.
+        self._next_id: int = 1
+        self._queries: dict[str, str] = {}
+        self._emails: list[str] = []
+        # Shared between processes (and remembered between runs) when state_file is set, like a real tenant.
         self.state_file = Path(state_file) if state_file else None
-        saved = json.loads(self.state_file.read_text()) if self.state_file and self.state_file.exists() else {}
-        self._next_id: int = saved.get("next_id", 1)
-        self._queries: dict[str, str] = saved.get("queries", {})
-        self._emails: list[str] = saved.get("emails", [])
+        self._cases: dict[str, str] = {}  # the cases created so far, by ID: asking for any other is a 404
+        self._on_disk = ""
+        self._depth = 0
+        if self.state_file:
+            with self._tenant():
+                pass
+
+    # -- the tenant's memory -------------------------------------------------------------------
+    def _state(self) -> dict[str, Any]:
+        return {"next_id": self._next_id, "queries": self._queries, "emails": self._emails, "ops": self._ops,
+                "downloads": self._downloads, "review_sets": self._review_sets, "count_offset": self._count_offset,
+                "cases": self._cases}
+
+    def _load(self) -> None:
+        text = self.state_file.read_text() if self.state_file.exists() else ""
+        self._on_disk = text
+        saved = json.loads(text) if text.strip() else {}
+        self._next_id = saved.get("next_id", 1)
+        self._queries = saved.get("queries", {})
+        self._emails = saved.get("emails", [])
+        self._ops = saved.get("ops", {})
+        self._downloads = saved.get("downloads", {})
+        self._review_sets = saved.get("review_sets", {})
+        self._count_offset = saved.get("count_offset", 0)
+        self._cases = saved.get("cases", {})
 
     def _save(self) -> None:
+        text = json.dumps(self._state(), indent=2, sort_keys=True)
+        if text == self._on_disk:  # polling an operation changes nothing: don't rewrite the file
+            return
+        partial = self.state_file.with_name(f"{self.state_file.name}.{os.getpid()}.part")
+        partial.write_text(text)
+        os.replace(partial, self.state_file)  # readers never see half a file
+        self._on_disk = text
+
+    @contextmanager
+    def _tenant(self) -> Iterator[None]:
+        """Hold the tenant for one Graph call: lock, read what other processes did, (caller works), write.
+        Locks a sidecar file, not the state file, which is replaced on every write. Nests safely."""
+        if not self.state_file or self._depth:
+            self._depth += 1
+            try:
+                yield
+            finally:
+                self._depth -= 1
+            return
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.state_file.with_name(self.state_file.name + ".lock"), "a") as lock:
+            if fcntl:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            self._depth += 1
+            try:
+                self._load()
+                yield
+                self._save()
+            finally:
+                self._depth -= 1
+                if fcntl:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+
+    @property
+    def count_offset(self) -> int:
+        """Added to every count: tests (and the e2e suite) raise it to simulate new mail arriving
+        between a preview and an export. Shared with every process when there's a state file."""
         if self.state_file:
-            self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            self.state_file.write_text(json.dumps(
-                {"next_id": self._next_id, "queries": self._queries, "emails": self._emails}, indent=2))
+            with self._tenant():
+                return self._count_offset
+        return self._count_offset
+
+    @count_offset.setter
+    def count_offset(self, value: int) -> None:
+        with self._tenant():
+            self._count_offset = value
 
     def _new_id(self, prefix: str) -> str:
         self._next_id += 1
-        self._save()
         return f"{prefix}-{self._next_id - 1}"
 
     def handle(self, method: str, url: str, body: dict | None) -> Response:
         self.calls.append((method, url, body))
+        with self._tenant():
+            return self._handle(method, url, body)
+
+    def _handle(self, method: str, url: str, body: dict | None) -> Response:
         # Any Graph host and API version (commercial, GCC High, DoD, beta): match on the resource path.
         path = re.sub(r"^https?://[^/]+/(v1\.0|beta)", "", url).split("?", 1)[0]
         if self.verbose:
@@ -138,14 +229,18 @@ class DryRunTransport:
         if method == "GET" and re.search(r"/(ediscoveryCases|custodians|userSources)$", path):
             return ok({"value": []})
         if method == "GET" and re.search(r"/ediscoveryCases/[^/]+$", path):
-            return ok({"id": path.rsplit("/", 1)[-1]})
+            case_id = path.rsplit("/", 1)[-1]
+            return ok({"id": case_id, "displayName": self._known(self._cases, case_id, method, url)})
         if method == "GET" and "/operations/" in path:
-            return ok(self._operation(path.rsplit("/", 1)[-1]))
+            op_id = path.rsplit("/", 1)[-1]
+            self._known(self._ops, op_id, method, url)
+            return ok(self._operation(op_id))
         if method == "POST" and path.endswith("/ediscoveryCases"):
-            return ok({"id": self._new_id("case"), "displayName": body["displayName"]}, 201)
+            case_id = self._new_id("case")
+            self._cases[case_id] = body["displayName"]
+            return ok({"id": case_id, "displayName": body["displayName"]}, 201)
         if method == "POST" and path.endswith("/custodians"):
             self._emails.append(body["email"])
-            self._save()
             return ok({"id": self._new_id("custodian"), "email": body["email"]}, 201)
         if method == "POST" and path.endswith("/userSources"):
             return ok({"id": self._new_id("usersource"), "email": body["email"]}, 201)
@@ -154,21 +249,31 @@ class DryRunTransport:
         if method == "POST" and path.endswith("/searches"):
             sid = self._new_id("search")
             self._queries[sid] = body.get("contentQuery", "")
-            self._save()
             return ok({"id": sid, "displayName": body["displayName"]}, 201)
         if method == "PATCH" and "/searches/" in path:
-            self._queries[path.rsplit("/", 1)[-1]] = body.get("contentQuery", "")
-            self._save()
+            search_id = path.rsplit("/", 1)[-1]
+            self._known(self._queries, search_id, method, url)
+            self._queries[search_id] = body.get("contentQuery", "")
             return ok(status=204)
         if method == "POST" and (m := _ACTION_RE.search(path)):
+            self._known(self._queries, m.group(1), method, url)
             op_id = self._new_id("op")
             self._ops[op_id] = {"action": m.group(2), "search": m.group(1), "body": body}
             location = url.split("/searches/", 1)[0] + f"/operations/{op_id}"
             return ok(status=202, headers={"Location": location})
         return ok()
 
+    @staticmethod
+    def _known(issued: dict, item_id: str, method: str, url: str):
+        """The tenant's record for an ID it handed out, or a 404 like Microsoft's for one it never did (or
+        lost, if the state file was deleted): a stale ID in a job's checkpoint or a matter's saved state is
+        then loud, not a made-up answer such as an estimate of 0 items."""
+        if item_id not in issued:
+            raise GraphError(404, method, url, '{"error": {"code": "itemNotFound", "message": "The item was not found."}}')
+        return issued[item_id]
+
     def _operation(self, op_id: str) -> dict:
-        op = self._ops.get(op_id, {"action": "estimateStatistics", "search": ""})
+        op = self._ops[op_id]
         count = fake_count(self._queries.get(op["search"], "")) + self.count_offset
         result: dict[str, Any] = {"id": op_id, "status": "succeeded", "percentProgress": 100}
         if op["action"] in ("applyHold", "removeHold", "addToReviewSet"):
@@ -186,11 +291,13 @@ class DryRunTransport:
         return result
 
     def download(self, url: str, dest: Path) -> Path:
-        info = self._downloads.get(url, {"kind": "report", "rows": 50, "kql": ""})
+        with self._tenant():
+            info = self._downloads.get(url, {"kind": "report", "rows": 50, "kql": ""})
+            emails = list(self._emails)
         if self.verbose:
             self.log(f"  [dry-run] DOWNLOAD {url} -> {dest}")
         if info["kind"] == "report":
-            write_sample_report(dest, rows=info["rows"], emails=self._emails or ["custodian@contoso.com"], kql=info["kql"])
+            write_sample_report(dest, rows=info["rows"], emails=emails or ["custodian@contoso.com"], kql=info["kql"])
         else:
             dest.write_bytes(b"(dry-run export package placeholder)")
         return dest
