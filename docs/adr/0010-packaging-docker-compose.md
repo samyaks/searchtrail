@@ -14,3 +14,9 @@
 ## Departure
 The plan lists a `web` image too. Phase 0 doesn't add it (no screens to serve yet); WS-G adds the
 web image, a reverse proxy serving the built frontend and `/api`, and TLS.
+
+Phase 1 added it: `deploy/Dockerfile.web` builds the frontend and serves it with Caddy
+(`deploy/Caddyfile`), which passes `/api` to the `api` service unchanged, on `WEB_PORT` (5173).
+Caddy over nginx: it streams request and response bodies without the buffering and size limits
+nginx needs tuning for, finds the `api` container again after it restarts, and can manage TLS
+certificates itself for the install guide. TLS and HSTS come with the install guide.

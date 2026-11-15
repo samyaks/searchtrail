@@ -1,0 +1,10 @@
+# Build context for Dockerfile.web (the repository root): only the frontend sources and the Caddyfile.
+*
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/public/
+!frontend/src/
+!deploy/Caddyfile

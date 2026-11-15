@@ -12,6 +12,7 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test --trace off",
     "gen:api": "openapi-typescript ../contracts/openapi.yaml -o src/api/schema.d.ts && node scripts/extract-examples.mjs",
     "lint:contract": "spectral lint ../contracts/openapi.yaml --ruleset ../.spectral.yaml --fail-severity=warn"
   },
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@stoplight/spectral-cli": "^6.15.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
