@@ -83,6 +83,16 @@ describe('editing the draft and estimating it', () => {
     expect(custom.length).toBe(custom.kql.length);
     expect(() => buildMockKql({ ...falcon, keywords: [], raw_kql: null })).toThrow(CriteriaInvalid);
   });
+
+  test('raw KQL whose parentheses or quotes don\'t pair up is refused, as the backend refuses it', async () => {
+    const falcon = (await draft()).criteria;
+    const refused = await post('/kql/preview', { criteria: { ...falcon, raw_kql: 'invoice) OR (kind:email' } });
+    expect(refused.status).toBe(422);
+    expect(refused.json).toMatchObject({ code: 'criteria_invalid', message: expect.stringContaining('closes a parenthesis it never opened') });
+    expect(() => buildMockKql({ ...falcon, raw_kql: '"side letter' })).toThrow('has a quote that is never closed');
+    expect(() => buildMockKql({ ...falcon, raw_kql: '(a OR b' })).toThrow('opens a parenthesis it never closes');
+    expect(buildMockKql({ ...falcon, keywords: ['x'], raw_kql: '"pay (net 30)" OR (a AND b)' }).kql).toContain('("pay (net 30)" OR (a AND b))');
+  });
 });
 
 describe('jobs', () => {

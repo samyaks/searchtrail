@@ -43,7 +43,7 @@ def test_unknown_route_uses_the_error_shape(sessions):
 
 
 def test_security_headers_except_csp_on_the_api_docs(sessions):
-    c = client(sessions)
+    c = client(sessions, dry_run=True)  # the docs are served in dry run (see test_api_hardening.py)
     assert c.get("/api/v1/health").headers["content-security-policy"].startswith("default-src 'none'")
     docs = c.get("/api/docs")
     assert docs.status_code == 200

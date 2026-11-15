@@ -1,6 +1,8 @@
 # SearchTrail: Postgres, migrations, API and worker.
 #   docker compose -f deploy/docker-compose.yml up --build
-# Dry-run is on by default (SEARCHTRAIL_DRY_RUN=1): no Microsoft tenant is needed.
+# Dry-run is on by default (SEARCHTRAIL_DRY_RUN=1): no Microsoft tenant is needed. The database
+# remembers which mode it was set up in, and the API and worker refuse it in the other mode, so a
+# live database left without its .env is refused (API unhealthy, worker exits), not served unsigned-in.
 # Settings: copy deploy/.env.example to deploy/.env.
 name: searchtrail
 

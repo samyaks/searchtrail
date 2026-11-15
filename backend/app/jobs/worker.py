@@ -19,6 +19,7 @@ from pathlib import Path
 from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.db import repositories
 from app.db.models import JobRow
 from app.db.session import session_factory
 from app.microsoft import get_gateway
@@ -185,7 +186,14 @@ class Worker:
         if requeued:
             log.info("requeued %d job(s) left running by a stopped worker", requeued)
 
+    def check_mode(self) -> None:
+        """Raise ModeMismatch if the database belongs to the other mode: a dry-run worker would write
+        simulated counts into a live installation's matters and logs."""
+        with self.sessions() as session:
+            repositories.check_mode(session, dry_run=self.settings.dry_run)
+
     def loop(self, *, once: bool = False) -> None:
+        self.check_mode()
         last_requeue: float | None = None  # None: sweep at once (monotonic() starts near 0 after boot)
         while not self.stopping:
             self.beat()
@@ -223,7 +231,11 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     log.info("worker %s started (dry run: %s)", worker.worker_id, settings.dry_run)
-    worker.loop(once=args.once)
+    try:
+        worker.loop(once=args.once)
+    except repositories.ModeMismatch as exc:
+        log.error("%s", exc)
+        return 2
     log.info("worker stopped")
     return 0
 

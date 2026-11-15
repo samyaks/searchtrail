@@ -19,6 +19,10 @@ export function buildMockKql(criteria: Criteria): Schemas['KqlPreview'] {
   if (criteria.keywords.length === 0 && !criteria.raw_kql) {
     throw new CriteriaInvalid('Add at least one search term, or a raw KQL query, so there is something to look for.');
   }
+  const rawProblem = criteria.raw_kql ? unbalanced(criteria.raw_kql) : null;
+  if (rawProblem) {
+    throw new CriteriaInvalid(`raw_kql ${rawProblem}. It is ANDed onto the query in parentheses, so its own parentheses and quotes must pair up.`);
+  }
   const joiner = criteria.keyword_mode === 'all' ? ' AND ' : ' OR ';
   const parts: string[] = [];
   const methodology: string[] = [];
@@ -47,4 +51,21 @@ export function buildMockKql(criteria: Criteria): Schemas['KqlPreview'] {
   const kql = parts.join(' AND ');
   const warnings = kql.length > 3000 ? ['This query is long. Purview may reject queries over about 4,000 characters.'] : [];
   return { kql, length: kql.length, methodology, warnings };
+}
+
+/** The backend's rule for raw KQL (searchtrail/query.py `_unbalanced`): its parentheses and quotes must pair
+ * up, or a stray ")" would close the wrapping parentheses and put an OR outside every other filter. */
+function unbalanced(kql: string): string | null {
+  let depth = 0;
+  let quoted = false;
+  for (const ch of kql) {
+    if (ch === '"') quoted = !quoted;
+    else if (!quoted && ch === '(') depth += 1;
+    else if (!quoted && ch === ')') {
+      depth -= 1;
+      if (depth < 0) return 'closes a parenthesis it never opened';
+    }
+  }
+  if (quoted) return 'has a quote that is never closed';
+  return depth ? 'opens a parenthesis it never closes' : null;
 }
