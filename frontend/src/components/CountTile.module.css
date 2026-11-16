@@ -1,0 +1,49 @@
+/* count tiles, from the Preview design: a label, a big number, a note */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: var(--st-space-4);
+  margin: 0;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-1);
+  padding: 18px 20px;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.tile dd {
+  margin: 0;
+}
+.label {
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  color: var(--st-muted);
+}
+.value {
+  font-family: var(--st-font-heading);
+  font-size: 36px;
+  line-height: 1.1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.note[data-tone='ok'] {
+  font-weight: 600;
+  color: var(--st-ok-green);
+}
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--st-ok-green);
+}

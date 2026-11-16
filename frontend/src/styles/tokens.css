@@ -17,6 +17,12 @@
   --st-highlighter-ink: #17150a; /* text on highlighter */
   --st-highlighter-soft: #fff6c2; /* selected row */
   --st-red-soft: #f6d9d5; /* removed lines in diffs */
+  --st-bar: #3a3f47; /* a bar in a breakdown */
+  --st-bar-quiet: #9aa0a9; /* the bar for items with no label */
+  --st-bar-track: #f0f1ec; /* the empty part of a bar */
+  --st-notice-edge: #e3c641; /* the border of a notice (on highlighter-soft) */
+  --st-red-rule: #e7b4ae; /* the right margin rule of the methodology card */
+  --st-line-number: #6b717c; /* line numbers on the methodology card */
 
   /* type */
   --st-font-heading: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;

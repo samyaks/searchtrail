@@ -1,0 +1,68 @@
+/* the pleading-paper card, from the Scope design: numbered lines, a double red rule, Courier Prime */
+.paper {
+  position: relative;
+  overflow: hidden;
+  padding: 22px 22px 22px 66px;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--st-margin-red);
+}
+.rule[data-edge='left-outer'] {
+  left: 50px;
+}
+.rule[data-edge='left-inner'] {
+  left: 54px;
+}
+.rule[data-edge='right'] {
+  right: 12px;
+  border-left-color: var(--st-red-rule);
+}
+.numbers {
+  position: absolute;
+  top: 22px;
+  bottom: 22px;
+  left: 0;
+  width: 40px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-align: right;
+  font-family: var(--st-font-mono);
+  font-size: 12px;
+  line-height: 24px;
+  color: var(--st-line-number);
+}
+.text {
+  font-family: var(--st-font-mono);
+  font-size: 14px;
+  line-height: 24px;
+}
+.title {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.subtitle {
+  text-align: center;
+  color: var(--st-muted);
+}
+/* each statement is numbered (1., 2., ...) inside the pleading-paper line numbers */
+.lines {
+  margin: 0;
+  padding-left: 3ch;
+  list-style: decimal;
+}
+.lines[data-after-heading] {
+  margin-top: 24px;
+}
+.mark {
+  padding: 0 2px;
+  background: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+}

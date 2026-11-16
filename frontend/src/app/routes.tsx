@@ -11,6 +11,9 @@ import { MatterLayout } from './MatterLayout';
 import { Shell } from './Shell';
 
 export const routes: RouteObject[] = [
+  // The component gallery, for development: `import.meta.env.DEV` is false in a production build, so neither
+  // the route nor the gallery's code is in it.
+  ...(import.meta.env.DEV ? [{ path: '_gallery', lazy: async () => ({ Component: (await import('./gallery/Gallery')).Gallery }) }] : []),
   {
     element: <Shell />,
     children: [

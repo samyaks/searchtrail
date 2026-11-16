@@ -1,0 +1,19 @@
+/* nothing to show: muted text with room around it, as under the Matters and item tables in the designs */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--st-space-2);
+  padding: 28px 20px;
+  color: var(--st-muted);
+}
+.title {
+  margin: 0;
+  font-size: var(--st-text-lg);
+  font-weight: 700;
+  color: var(--st-ink);
+}
+.text {
+  margin: 0;
+  max-width: 70ch;
+}

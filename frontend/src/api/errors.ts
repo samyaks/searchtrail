@@ -98,6 +98,9 @@ const TREATMENTS: Record<ErrorCode, Treatment> = {
   },
 };
 
+/** Every error code the API can return, for tests and the component gallery. */
+export const ERROR_CODES = Object.keys(TREATMENTS) as ErrorCode[];
+
 export type ErrorAction = { kind: 'retry'; label: string } | { kind: 'link'; label: string; to: string };
 
 export type ErrorDescription = {
