@@ -1,0 +1,34 @@
+/* notices and warnings, from the Define, Scope and Export designs */
+.banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--st-notice-edge);
+  border-radius: var(--st-radius-md);
+  background: var(--st-highlighter-soft);
+  color: var(--st-highlighter-ink);
+  font-size: 14px;
+}
+.banner[data-tone='warning'] {
+  padding: 10px 12px;
+  border-color: var(--st-margin-red);
+  background: var(--st-sheet);
+  color: var(--st-margin-red);
+  font-weight: 600;
+}
+.text {
+  margin: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
+.inline {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--st-margin-red);
+}

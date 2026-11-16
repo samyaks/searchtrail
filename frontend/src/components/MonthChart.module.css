@@ -1,0 +1,89 @@
+/* items per month, from the Preview design */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  padding: 18px 20px;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+.title {
+  font-family: var(--st-font-body);
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--st-muted);
+}
+.note {
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.none {
+  margin: 0;
+  color: var(--st-muted);
+}
+.scroll {
+  overflow-x: auto;
+}
+.chart,
+.axis {
+  min-width: max(640px, calc(var(--months) * 34px));
+  display: grid;
+  grid-template-columns: repeat(var(--months), minmax(0, 1fr));
+  gap: 6px;
+}
+/* the columns sit on a baseline, with a faint line every 42px */
+.chart {
+  align-items: end;
+  height: 170px;
+  border-bottom: 1px solid var(--st-rule-strong);
+  background-image: linear-gradient(var(--st-rule-soft) 1px, transparent 1px);
+  background-size: 100% 42px;
+}
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--st-space-1);
+  height: 100%;
+}
+.value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--st-muted);
+}
+.bar {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--st-muted);
+}
+/* the busiest month */
+.bar[data-peak] {
+  background: var(--st-ink);
+}
+.axis {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--st-muted);
+  text-align: center;
+}
+.tick {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.year {
+  font-weight: 600;
+  color: var(--st-ink);
+}

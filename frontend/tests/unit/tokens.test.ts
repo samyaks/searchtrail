@@ -24,6 +24,12 @@ const toCss: Record<keyof typeof colors, string> = {
   highlighterInk: 'highlighter-ink',
   highlighterSoft: 'highlighter-soft',
   redSoft: 'red-soft',
+  bar: 'bar',
+  barQuiet: 'bar-quiet',
+  barTrack: 'bar-track',
+  noticeEdge: 'notice-edge',
+  redRule: 'red-rule',
+  lineNumber: 'line-number',
 };
 
 test('tokens.ts holds the same colours as tokens.css', () => {
@@ -57,6 +63,9 @@ const PAIRS: [string, keyof typeof colors, keyof typeof colors][] = [
   ['"exclude" segment', 'sheet', 'marginRed'],
   ['passed check text', 'okGreen', 'sheet'],
   ['secondary text on a quiet chip', 'muted', 'ruleSoft'],
+  ['line numbers on the methodology card', 'lineNumber', 'sheet'],
+  ['text on a notice', 'highlighterInk', 'highlighterSoft'],
+  ['warning text on a card', 'marginRed', 'sheet'],
 ];
 
 test.each(PAIRS)('%s has at least 4.5:1 contrast', (_name, fg, bg) => {

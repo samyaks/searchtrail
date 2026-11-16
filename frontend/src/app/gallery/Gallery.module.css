@@ -1,0 +1,67 @@
+/* the component gallery's own layout (development only) */
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--st-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.title {
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 700;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+  padding-top: var(--st-space-5);
+  border-top: 2px solid var(--st-ink);
+}
+.heading {
+  font-size: 22px;
+  font-weight: 700;
+}
+.note {
+  margin: 0;
+  max-width: 80ch;
+  color: var(--st-muted);
+}
+.specimen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+}
+.label {
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  color: var(--st-muted);
+}
+.stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--st-space-3);
+}
+/* a wide thing (a chart, a table, a card) takes the whole row */
+.stage > * {
+  min-width: 0;
+}
+.stage > section,
+.stage > dl,
+.stage > div:only-child {
+  flex: 1 1 100%;
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: var(--st-space-4);
+  width: 100%;
+}
+.errors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+  gap: var(--st-space-3);
+  width: 100%;
+}
