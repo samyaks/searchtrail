@@ -109,7 +109,8 @@ function ExportDetail({ exportId, matterId, live }: { exportId: string; matterId
           <div>
             <dt>Counts</dt>
             <dd>
-              {n(e.counts.items)} items ({sizeText(e.counts.size_bytes)}) + {n(e.counts.partial_items)} partially indexed ({sizeText(e.counts.partial_size_bytes)})
+              {n(e.counts.items)} items ({sizeText(e.counts.size_bytes)})
+              {e.options.include_partially_indexed && e.counts.partial_items > 0 ? ` + ${n(e.counts.partial_items)} partially indexed (${sizeText(e.counts.partial_size_bytes)})` : ''}
             </dd>
           </div>
           <div>

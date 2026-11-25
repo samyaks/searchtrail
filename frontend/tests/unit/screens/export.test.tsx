@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { findMatter } from '@/mocks/db';
+import { exportCheck } from '@/mocks/handlers/exports';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
 import { exportStatus, exportTotals, historyItems, sizeText, whenText } from '@/screens/export/format';
@@ -121,10 +122,15 @@ test('the export starts only once the matter number is typed exactly, then shows
   expect(startButton()).toBeEnabled();
   await userEvent.click(startButton());
 
-  const status = await within(startCard()).findByRole('status');
-  expect(status).toHaveTextContent(/^Export started at \d\d:\d\d/);
-  expect(within(status).getByRole('progressbar', { name: 'Export progress' })).toHaveAttribute('aria-valuenow', '0');
-  expect(within(status).getByRole('link', { name: 'See it in the log' })).toHaveAttribute('href', `/matters/${FALCON}/log`);
+  const started = await within(startCard()).findByText(/^Export started at \d\d:\d\d/);
+  // The live region holds the sentence alone, so the percentage isn't read out on every poll.
+  const status = within(startCard()).getByRole('status');
+  expect(status).toHaveTextContent(/^Export started at \d\d:\d\d$/);
+  expect(within(status).queryByRole('progressbar')).not.toBeInTheDocument();
+  // The Start button is gone, so focus moves to the sentence that replaced it.
+  await waitFor(() => expect(started).toHaveFocus());
+  expect(within(startCard()).getByRole('progressbar', { name: 'Export progress' })).toHaveAttribute('aria-valuenow', '0');
+  expect(within(startCard()).getByRole('link', { name: 'See it in the log' })).toHaveAttribute('href', `/matters/${FALCON}/log`);
   expect(screen.queryByLabelText(/to confirm$/)).not.toBeInTheDocument();
   await waitFor(() => expect(historyRows()).toHaveLength(3));
   expect(historyRows()[0]).toHaveTextContent('Preparing in Purview');
@@ -141,9 +147,11 @@ test('the export starts only once the matter number is typed exactly, then shows
   const log = (await get(`/matters/${FALCON}/log`)).json.items as Schemas['LogEntry'][];
   expect(log.find((e) => e.action === 'export_started')?.details).toMatchObject({ options: OPTIONS, changes_accepted: false });
 
-  // The next export can be set up from the same card.
+  // The next export can be set up from the same card, from an empty confirmation, with focus in it.
   await userEvent.click(screen.getByRole('button', { name: 'Set up another export' }));
   expect(confirmField()).toHaveValue('');
+  await waitFor(() => expect(confirmField()).toHaveFocus());
+  expect(startButton()).toBeDisabled();
 });
 
 test('reopening the screen while an export runs shows its progress instead of the form', async () => {
@@ -244,6 +252,7 @@ test('blocked: a matter number the API does not accept is shown at the field', a
   await userEvent.click(startButton());
   expect(await within(startCard()).findByRole('alert')).toHaveTextContent('Type the matter number M-2026-0142 exactly to confirm the export.');
   expect(confirmField()).toHaveAttribute('aria-invalid', 'true');
+  expect(confirmField()).toHaveAccessibleDescription('Type the matter number M-2026-0142 exactly to confirm the export.');
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   // Typing again clears it.
   await userEvent.type(confirmField(), 'x');
@@ -261,7 +270,140 @@ test('an export Purview fails is explained, and can be set up again', async () =
   expect(within(alert).getByRole('heading', { name: "Purview couldn't finish that" })).toBeInTheDocument();
   await waitFor(() => expect(historyRows()[0]).toHaveTextContent('Failed in Purview'));
   await userEvent.click(screen.getByRole('button', { name: 'Set up the export again' }));
-  expect(confirmField()).toBeInTheDocument();
+  expect(confirmField()).toHaveValue('');
+  await waitFor(() => expect(confirmField()).toHaveFocus());
+});
+
+/** Long enough for a request the screen might send to have been sent. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+const enterCases: [string, () => void, string][] = [
+  ['the query was not previewed', () => void (findMatter(FALCON)!.preview = null), NUMBER],
+  ['the counts changed and the accept is not ticked', () => setScenario({ exportCheck: 'countsChanged' }), NUMBER],
+  ['the typed number does not match', () => undefined, 'M-2026-014'],
+];
+test.each(enterCases)('Enter in the confirmation field starts nothing when %s', async (_, arrange, typed) => {
+  arrange();
+  renderApp(PATH);
+  await screen.findByText(/^(Query v3 hasn't been previewed|Counts changed since the preview|Counts unchanged since the preview)/);
+  const bodies = postedTo(`/matters/${FALCON}/exports`);
+  await userEvent.type(confirmField(), `${typed}{Enter}`);
+  await settle();
+  expect(bodies).toEqual([]);
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+});
+
+test('an accept is for the counts it was given for: new counts on a later check need a new accept', async () => {
+  setScenario({ exportCheck: 'countsChanged' });
+  renderApp(PATH);
+  await screen.findByText(/^Counts changed since the preview: 630 → 647 items/);
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(screen.getByRole('checkbox', { name: /Export with the new counts anyway/ }));
+  expect(startButton()).toBeEnabled();
+
+  // More mail arrives, and the checks run again.
+  findMatter(FALCON)!.preview!.counts.items += 5;
+  await userEvent.click(within(checkCard()).getByRole('button', { name: 'Check again' }));
+  expect(await screen.findByText(/^Counts changed since the preview: 635 → 652 items/)).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: /Export with the new counts anyway/ })).not.toBeChecked();
+  expect(startButton()).toBeDisabled();
+  const bodies = postedTo(`/matters/${FALCON}/exports`);
+  await userEvent.type(confirmField(), '{Enter}');
+  await settle();
+  expect(bodies).toEqual([]);
+});
+
+test('while the checks run again, the export cannot start', async () => {
+  await openReady();
+  await userEvent.type(confirmField(), NUMBER);
+  expect(startButton()).toBeEnabled();
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  server.use(
+    http.post('/api/v1/matters/:matterId/exports/check', async () => {
+      await held;
+      return HttpResponse.json(exportCheck(findMatter(FALCON)!));
+    }),
+  );
+  await userEvent.click(within(checkCard()).getByRole('button', { name: 'Check again' }));
+  await waitFor(() => expect(startButton()).toBeDisabled());
+  release();
+  await waitFor(() => expect(startButton()).toBeEnabled());
+});
+
+test('a start refused because another tab started an export follows that one, and the next export starts from a blank confirmation', async () => {
+  setScenario({ exportCheck: 'countsChanged' });
+  renderApp(PATH);
+  await screen.findByText(/^Counts changed since the preview/);
+  await userEvent.click(screen.getByRole('checkbox', { name: /Export with the new counts anyway/ }));
+  await userEvent.type(confirmField(), NUMBER);
+
+  // Meanwhile, another tab starts an export.
+  const other = (await post(`/matters/${FALCON}/exports`, { confirm_matter_number: NUMBER, accept_changes: true, options: OPTIONS })).json as Schemas['Job'];
+  await userEvent.click(startButton());
+  expect(await screen.findByRole('progressbar', { name: 'Export progress' })).toBeInTheDocument();
+  expect(screen.queryByLabelText(/to confirm$/)).not.toBeInTheDocument();
+  await waitFor(() => expect(within(startCard()).getByText(/^Export started at/)).toHaveFocus());
+
+  tick(10);
+  expect(await within(startCard()).findByText('Export ready in Purview')).toBeInTheDocument();
+  expect((await get(`/jobs/${other.id}`)).json.status).toBe('succeeded');
+
+  // Nobody confirmed a next export: the typed number and the accept were for the one that was refused.
+  await userEvent.click(screen.getByRole('button', { name: 'Set up another export' }));
+  expect(confirmField()).toHaveValue('');
+  expect(screen.getByRole('checkbox', { name: /Export with the new counts anyway/ })).not.toBeChecked();
+  expect(startButton()).toBeDisabled();
+});
+
+test('if the server will not say how a started export is doing, the card says so and can be set up again', async () => {
+  server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'not_found', message: 'No such job.', details: {} }, { status: 404 })));
+  await openReady();
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(startButton());
+  expect(await within(startCard()).findByRole('alert')).toBeInTheDocument();
+  expect(within(startCard()).queryByRole('progressbar')).not.toBeInTheDocument();
+  await userEvent.click(within(startCard()).getByRole('button', { name: 'Set up the export again' }));
+  expect(confirmField()).toHaveValue('');
+  await waitFor(() => expect(confirmField()).toHaveFocus());
+});
+
+test('if the server will not say how a hand-off is doing, it says so and the hand-off can be started again', async () => {
+  server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'not_found', message: 'No such job.', details: {} }, { status: 404 })));
+  await openReady();
+  const download = within(screen.getByRole('heading', { name: 'Download the package' }).closest('section')!);
+  await userEvent.click(download.getByRole('button', { name: 'Download the package' }));
+  expect(await download.findByRole('alert')).toBeInTheDocument();
+  expect(download.queryByRole('progressbar')).not.toBeInTheDocument();
+  expect(download.getByRole('button', { name: /Download/ })).toBeEnabled();
+});
+
+test("a hand-off's progress and the review set name belong to the export they were started for", async () => {
+  const newest = findMatter(FALCON)!.exports[0]!;
+  Object.assign(newest, { status: 'ready', progress: 1, finished_at: '2026-11-05T11:30:00Z' });
+  await openReady();
+  await waitFor(() => expect(historyRows()).toHaveLength(2));
+  const others = () => within(screen.getByRole('heading', { name: 'Other ways to hand off' }).closest('section')!);
+  expect(others().getByText(newest.name)).toBeInTheDocument();
+
+  await userEvent.click(others().getByRole('button', { name: 'Download the package' }));
+  expect(await others().findByRole('progressbar', { name: 'Downloading the package from Purview' })).toBeInTheDocument();
+  const name = others().getByLabelText('Review set name');
+  await userEvent.clear(name);
+  await userEvent.type(name, 'Falcon newest');
+
+  // Choose the older ready export: its hand-offs show nothing of the newest one's.
+  await userEvent.click(screen.getByRole('button', { name: `Details of ${V2}` }));
+  await waitFor(() => expect(others().getByText(V2)).toBeInTheDocument());
+  expect(others().queryByRole('progressbar')).not.toBeInTheDocument();
+  expect(others().getByText('A download of another export is running. This one can start when it ends.')).toBeInTheDocument();
+  expect(others().getByRole('button', { name: 'Download the package' })).toBeDisabled();
+  expect(others().getByLabelText('Review set name')).toHaveValue('M-2026-0142 Relativity v2');
+
+  // Back on the newest, its download is still shown.
+  await userEvent.click(screen.getByRole('button', { name: `Details of ${newest.name}` }));
+  expect(await others().findByRole('progressbar', { name: 'Downloading the package from Purview' })).toBeInTheDocument();
+  expect(others().getByLabelText('Review set name')).toHaveValue('Falcon newest');
 });
 
 test('when Microsoft is throttling, the check says so and can be tried again', async () => {
@@ -292,6 +434,8 @@ test('download the package: a job with progress, then where it was stored', asyn
   const download = within(screen.getByRole('heading', { name: 'Download the package' }).closest('section')!);
   await userEvent.click(download.getByRole('button', { name: 'Download the package' }));
   const bar = await download.findByRole('progressbar', { name: 'Downloading the package from Purview' });
+  expect(download.getByRole('status')).toHaveTextContent(/^Downloading the package from Purview$/);
+  expect(within(download.getByRole('status')).queryByRole('progressbar')).not.toBeInTheDocument();
   expect(download.getByRole('button', { name: 'Download the package' })).toBeDisabled();
   tick(6);
   await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '67'));
@@ -322,6 +466,7 @@ test('send to a Purview review set: named, a job with progress, then the set it 
   await userEvent.clear(name);
   await userEvent.click(section.getByRole('button', { name: 'Send to review set' }));
   expect(section.getByRole('alert')).toHaveTextContent('Name the review set.');
+  expect(name).toHaveAccessibleDescription('Name the review set.');
 
   const bodies = postedTo('/review-set');
   await userEvent.type(name, 'Falcon for Relativity');

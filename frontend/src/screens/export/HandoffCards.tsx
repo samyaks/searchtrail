@@ -1,6 +1,6 @@
 // Getting the package to the reviewers: the Everlaw steps from the design, and two more hand-offs (download the
 // package into SearchTrail's storage, or add it to a Purview review set for Relativity), each a job with progress.
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { ApiRequestError, type Schemas } from '@/api/client';
 import type { useTrackedJob } from '@/api/jobs';
 import { Button, Card, ErrorNotice, InlineError } from '@/components';
@@ -12,18 +12,29 @@ import { jobError } from './jobError';
 import { Progress } from './Progress';
 
 type Export = Schemas['Export'];
+/** How long the copy button says Copied. */
+const COPIED_MS = 3000;
+
 type HandoffJob = ReturnType<typeof useTrackedJob<'download'>> | ReturnType<typeof useTrackedJob<'review_set'>>;
 
 export function EverlawCard({ matter, exp }: { matter: Schemas['Matter'] | undefined; exp: Export | undefined }) {
-  const [copied, setCopied] = useState<string | null>(null);
-  const copy = (name: string) => {
+  // What the copy button says after a copy, for the export it copied; it goes back to "Copy name" after a while.
+  const [copiedState, setCopied] = useState<{ exportId: string; text: string } | null>(null);
+  const copied = copiedState && copiedState.exportId === exp?.id ? copiedState.text : null;
+  useEffect(() => {
+    if (!copiedState) return;
+    const timer = setTimeout(() => setCopied(null), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [copiedState]);
+  const copy = (target: Export) => {
+    const said = (text: string) => setCopied({ exportId: target.id, text });
     try {
-      navigator.clipboard.writeText(name).then(
-        () => setCopied('Copied'),
-        () => setCopied('Select to copy'),
+      navigator.clipboard.writeText(target.name).then(
+        () => said('Copied'),
+        () => said('Select to copy'),
       );
     } catch {
-      setCopied('Select to copy');
+      said('Select to copy');
     }
   };
   return (
@@ -34,7 +45,7 @@ export function EverlawCard({ matter, exp }: { matter: Schemas['Matter'] | undef
           {exp ? (
             <span className={styles.nameRow}>
               <code className={styles.exportName}>{exp.name}</code>
-              <Button size="sm" onClick={() => copy(exp.name)}>
+              <Button size="sm" onClick={() => copy(exp)}>
                 {copied ?? 'Copy name'}
               </Button>
             </span>
@@ -98,12 +109,35 @@ function runningJobOf(error: unknown): string | undefined {
   return typeof id === 'string' ? id : undefined;
 }
 
+/** The hand-off job this card started, and the export it was started for. */
+type StartedFor = { jobId: string; exportId: string } | null;
+
+/**
+ * Whether the job a hand-off follows belongs to the export shown: the one it was started for here, or the export
+ * its result names. A job found running (on reopening the screen, or from another tab) carries no export, so the
+ * export's own hand-off state says whether it is this one.
+ */
+function jobIsFor(job: HandoffJob, startedFor: StartedFor, exp: Export | undefined, handoff: Schemas['HandoffStatus'] | undefined): boolean {
+  if (!job.jobId || !exp) return false;
+  if (startedFor?.jobId === job.jobId) return startedFor.exportId === exp.id;
+  if (job.result) return job.result.id === exp.id;
+  return handoff === 'running' || handoff === 'failed';
+}
+
 function JobState({ job, running, done, matterId }: { job: HandoffJob; running: string; done: (result: Export) => string; matterId: string }) {
   if (!job.jobId) return null;
+  const finished = job.isSucceeded || job.isFailed;
+  if (!job.isRunning && !finished && job.queryError) {
+    // The server answered no when asked how the job is doing, so polling stopped: say so; the button below is free again.
+    return <ErrorNotice error={job.queryError} matterId={matterId} headingLevel={3} />;
+  }
   if (job.isRunning || !job.job) {
     return (
-      <div role="status" className={styles.stack}>
-        <p className={styles.note}>{running}</p>
+      <div className={styles.stack}>
+        {/* The live region says that it started; the percentage stays out of it, so it isn't read out on every poll. */}
+        <p role="status" className={styles.note}>
+          {running}
+        </p>
         <Progress label={running} value={job.progress} />
       </div>
     );
@@ -123,26 +157,34 @@ function JobState({ job, running, done, matterId }: { job: HandoffJob; running: 
 function DownloadHandoff({ matterId, exp, job }: { matterId: string; exp: Export | undefined; job: OtherProps['downloadJob'] }) {
   const headingId = useId();
   const start = useStartDownload(matterId);
+  const [startedFor, setStartedFor] = useState<StartedFor>(null);
   const ready = exp?.status === 'ready';
   const stored = exp?.download.status === 'done' ? exp.download : null;
+  const ours = jobIsFor(job, startedFor, exp, exp?.download.status);
+  // A refused start is about the export it was asked for.
+  const startError = start.error && start.variables === exp?.id && !runningJobOf(start.error) ? start.error : null;
   return (
     <section aria-labelledby={headingId} className={styles.handoff}>
       <h3 id={headingId} className={styles.handoffTitle}>
         Download the package
       </h3>
       <p className={styles.note}>Copies the finished package from Purview into SearchTrail's storage, so it is kept after Purview deletes it.</p>
-      {stored && !job.isRunning && (
+      {stored && !(ours && job.isRunning) && (
         <p className={styles.note}>
           Downloaded{stored.finished_at ? ` ${whenText(stored.finished_at)}` : ''} to <span className="st-mono">{stored.stored_path}</span>
         </p>
       )}
-      <JobState
-        job={job}
-        matterId={matterId}
-        running="Downloading the package from Purview"
-        done={(result) => `Package downloaded to SearchTrail${result.download.stored_path ? `: ${result.download.stored_path}` : ''}`}
-      />
-      {start.error && !runningJobOf(start.error) && <ErrorNotice error={start.error} matterId={matterId} headingLevel={3} />}
+      {ours ? (
+        <JobState
+          job={job}
+          matterId={matterId}
+          running="Downloading the package from Purview"
+          done={(result) => `Package downloaded to SearchTrail${result.download.stored_path ? `: ${result.download.stored_path}` : ''}`}
+        />
+      ) : (
+        job.isRunning && exp && <p className={styles.note}>A download of another export is running. This one can start when it ends.</p>
+      )}
+      {startError && <ErrorNotice error={startError} matterId={matterId} headingLevel={3} />}
       <Button
         size="sm"
         className={styles.selfStart}
@@ -150,7 +192,10 @@ function DownloadHandoff({ matterId, exp, job }: { matterId: string; exp: Export
         onClick={() =>
           exp &&
           start.mutate(exp.id, {
-            onSuccess: (started) => job.track(started.id),
+            onSuccess: (started) => {
+              setStartedFor({ jobId: started.id, exportId: exp.id });
+              job.track(started.id);
+            },
             onError: (error) => {
               const running = runningJobOf(error);
               if (running) job.track(running);
@@ -167,24 +212,33 @@ function DownloadHandoff({ matterId, exp, job }: { matterId: string; exp: Export
 function ReviewSetHandoff({ matterId, matterNumber, exp, job }: { matterId: string; matterNumber: string | undefined; exp: Export | undefined; job: OtherProps['reviewSetJob'] }) {
   const headingId = useId();
   const fieldId = useId();
+  const problemId = useId();
   const start = useStartReviewSet(matterId);
-  const [name, setName] = useState<string | null>(null);
+  const [startedFor, setStartedFor] = useState<StartedFor>(null);
+  // The name typed, and any problem with it, are for one export: choosing another starts from its suggested name.
+  const [name, setName] = useState<{ exportId: string; value: string } | null>(null);
+  const [problemState, setProblem] = useState<{ exportId: string; text: string } | null>(null);
   const suggested = exp ? `${matterNumber ?? ''} Relativity v${exp.version}`.trim() : '';
-  const value = name ?? suggested;
-  const [problem, setProblem] = useState<string | null>(null);
+  const value = name && name.exportId === exp?.id ? name.value : suggested;
+  const problem = problemState && problemState.exportId === exp?.id ? problemState.text : null;
   const ready = exp?.status === 'ready';
   const inSet = exp?.review_set.status === 'done' ? exp.review_set : null;
+  const ours = jobIsFor(job, startedFor, exp, exp?.review_set.status);
+  const startError = start.error && start.variables?.exportId === exp?.id && !runningJobOf(start.error) ? start.error : null;
 
   const send = () => {
     if (!exp) return;
     const trimmed = value.trim();
-    if (!trimmed) return setProblem('Name the review set.');
-    if (trimmed.length > 200) return setProblem('Keep the name to 200 characters or fewer.');
+    if (!trimmed) return setProblem({ exportId: exp.id, text: 'Name the review set.' });
+    if (trimmed.length > 200) return setProblem({ exportId: exp.id, text: 'Keep the name to 200 characters or fewer.' });
     setProblem(null);
     start.mutate(
       { exportId: exp.id, name: trimmed },
       {
-        onSuccess: (started) => job.track(started.id),
+        onSuccess: (started) => {
+          setStartedFor({ jobId: started.id, exportId: exp.id });
+          job.track(started.id);
+        },
         onError: (error) => {
           const running = runningJobOf(error);
           if (running) job.track(running);
@@ -199,14 +253,18 @@ function ReviewSetHandoff({ matterId, matterNumber, exp, job }: { matterId: stri
         Send to a Purview review set (for Relativity)
       </h3>
       <p className={styles.note}>Adds this export's items to a review set in the Purview case, where Relativity's Purview Sync picks them up.</p>
-      {inSet && !job.isRunning && (
+      {inSet && !(ours && job.isRunning) && (
         <p className={styles.note}>
           In review set <strong>{inSet.name}</strong>
           {inSet.finished_at ? ` since ${whenText(inSet.finished_at)}` : ''}
         </p>
       )}
-      <JobState job={job} matterId={matterId} running="Adding the items to the review set" done={(result) => `Added to review set ${result.review_set.name ?? ''}`.trim()} />
-      {start.error && !runningJobOf(start.error) && <ErrorNotice error={start.error} matterId={matterId} headingLevel={3} />}
+      {ours ? (
+        <JobState job={job} matterId={matterId} running="Adding the items to the review set" done={(result) => `Added to review set ${result.review_set.name ?? ''}`.trim()} />
+      ) : (
+        job.isRunning && exp && <p className={styles.note}>Another export is being added to a review set. This one can be sent when it ends.</p>
+      )}
+      {startError && <ErrorNotice error={startError} matterId={matterId} headingLevel={3} />}
       <div className={styles.confirm}>
         <div className={styles.field}>
           <label htmlFor={fieldId} className={styles.fieldLabel}>
@@ -220,8 +278,9 @@ function ReviewSetHandoff({ matterId, matterNumber, exp, job }: { matterId: stri
             value={value}
             disabled={!ready}
             aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? problemId : undefined}
             onChange={(event) => {
-              setName(event.target.value);
+              if (exp) setName({ exportId: exp.id, value: event.target.value });
               if (problem) setProblem(null);
             }}
           />
@@ -230,7 +289,11 @@ function ReviewSetHandoff({ matterId, matterNumber, exp, job }: { matterId: stri
           {start.isPending ? 'Starting…' : 'Send to review set'}
         </Button>
       </div>
-      {problem && <InlineError>{problem}</InlineError>}
+      {problem && (
+        <div id={problemId}>
+          <InlineError>{problem}</InlineError>
+        </div>
+      )}
     </section>
   );
 }
