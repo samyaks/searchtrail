@@ -17,7 +17,9 @@ export function RunningJobs({ matterId }: { matterId: string }) {
   const client = useQueryClient();
   const jobs = useRunningJobs(matterId);
   const items = jobs.data?.items ?? [];
-  const [announcement, setAnnouncement] = useState('');
+  // Each announcement is a new node in the live region (keyed by its number), so news that repeats the last
+  // ("A preview started." twice) is still read out.
+  const [announcement, setAnnouncement] = useState<{ id: number; text: string } | null>(null);
 
   // The jobs seen running at the last answer, by id (null until the first answer).
   const running = useRef<Map<string, Schemas['JobKind']> | null>(null);
@@ -32,13 +34,13 @@ export function RunningJobs({ matterId }: { matterId: string }) {
     const started = [...now].filter(([id]) => !before.has(id));
     if (ended.length > 0) void client.invalidateQueries({ queryKey: ['matters', matterId] });
     const news = [...started.map(([, kind]) => `${JOB_LABELS[kind]} started.`), ...ended.map(([, kind]) => `${JOB_LABELS[kind]} finished.`)];
-    if (news.length > 0) setAnnouncement(news.join(' '));
+    if (news.length > 0) setAnnouncement((last) => ({ id: (last?.id ?? 0) + 1, text: news.join(' ') }));
   }, [client, jobs.data, matterId]);
 
   return (
     <>
       <div role="status" aria-label="Job updates" className="st-visually-hidden">
-        {announcement}
+        {announcement && <span key={announcement.id}>{announcement.text}</span>}
       </div>
       {items.length > 0 && (
         <ul className={styles.runningList} aria-label="Running now">

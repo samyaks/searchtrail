@@ -12,6 +12,8 @@ type Props = {
   matterId: string;
   /** The page to show: the one asked for, or the last one read if it can't be read. */
   data: Schemas['LogEntryPage'] | undefined;
+  /** The page asked for (it differs from `data`'s while it loads, or when it can't be read). */
+  page: number;
   loading: boolean;
   error: unknown;
   onRetry: () => void;
@@ -60,37 +62,49 @@ function Entry({ entry, bad, focus, onFocused }: { entry: Schemas['LogEntry']; b
   );
 }
 
-export function Entries({ matterId, data, loading, error, onRetry, onPage, badSeq, focusSeq, onFocused }: Props) {
+export function Entries({ matterId, data, page, loading, error, onRetry, onPage, badSeq, focusSeq, onFocused }: Props) {
   const failed = error !== null && error !== undefined;
   const pageSize = data?.page_size || LOG_PAGE_SIZE;
   const pages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
   const first = data ? (data.page - 1) * pageSize + 1 : 0;
   const last = data ? first + data.items.length - 1 : 0;
 
-  // After Newer or Older, focus moves to the new page's list, so it is read from its top (the button pressed may
-  // now be unusable). The buttons are aria-disabled rather than disabled, so focus is never dropped while a page loads.
+  // After Newer or Older, or a "Try again" that works, focus moves to the new page's list, so it is read from its top
+  // (the button pressed may now be unusable or gone). The buttons are aria-disabled rather than disabled, so focus
+  // is never dropped while a page loads. A read that fails, or an entry asked for ("Show entry 5"), which takes focus
+  // itself, lets the wish go, so the list can't take focus later on its own.
   const list = useRef<HTMLOListElement>(null);
   const focusPage = useRef<number | null>(null);
   useEffect(() => {
-    if (focusPage.current === null || data?.page !== focusPage.current || loading) return;
+    if (focusPage.current === null || loading) return;
+    const wanted = focusPage.current;
     focusPage.current = null;
-    list.current?.focus();
+    if (focusSeq === null && data?.page === wanted) list.current?.focus();
+    // focusSeq is read, not watched: only a page read ending should move focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.page, loading]);
-  const go = (page: number, allowed: boolean) => {
+  const go = (next: number, allowed: boolean) => {
     if (!allowed || loading) return;
+    focusPage.current = next;
+    onPage(next);
+  };
+  const retry = () => {
+    if (loading) return;
     focusPage.current = page;
-    onPage(page);
+    onRetry();
   };
   const canNewer = data !== undefined && data.page > 1;
   const canOlder = data !== undefined && data.page < pages;
 
   return (
     <Card title="Entries" padding="none">
-      <div className={styles.entriesBody} aria-busy={loading}>
+      {/* Only the entries are marked busy while a page loads: the job updates' live region, outside them, is busy
+          exactly when a finished job has the log read again, and a busy region's news may not be read out. */}
+      <div className={styles.entriesBody}>
         <RunningJobs matterId={matterId} />
         {failed && !data && (
           <div className={styles.pad}>
-            <ErrorNotice error={error} matterId={matterId} onRetry={onRetry} headingLevel={3} />
+            <ErrorNotice error={error} matterId={matterId} onRetry={retry} headingLevel={3} />
           </div>
         )}
         {failed && data && (
@@ -100,7 +114,7 @@ export function Entries({ matterId, data, loading, error, onRetry, onPage, badSe
               The log couldn&apos;t be read just now: {describeError(error, { matterId }).message.trim().replace(/\.$/, '')}. The
               entries below are the last ones read.
             </span>
-            <Button size="sm" variant="neutral" aria-disabled={loading} onClick={() => !loading && onRetry()}>
+            <Button size="sm" variant="neutral" aria-disabled={loading} onClick={retry}>
               Try again
             </Button>
           </div>
@@ -112,7 +126,7 @@ export function Entries({ matterId, data, loading, error, onRetry, onPage, badSe
           </div>
         )}
         {data && data.items.length > 0 && (
-          <ol ref={list} tabIndex={-1} className={styles.entries} aria-label="Log entries, newest first">
+          <ol ref={list} tabIndex={-1} className={styles.entries} aria-label="Log entries, newest first" aria-busy={loading}>
             {data.items.map((entry) => (
               <Entry key={entry.seq} entry={entry} bad={entry.seq === badSeq} focus={entry.seq === focusSeq} onFocused={onFocused} />
             ))}

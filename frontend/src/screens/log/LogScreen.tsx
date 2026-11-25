@@ -1,5 +1,6 @@
 // Log (docs/design/Log.dc.html): how the set narrowed across query versions, the hash-chained log with its
 // check, and what changed between two versions.
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import type { Schemas } from '@/api/client';
 import { useParams } from 'react-router';
@@ -7,7 +8,7 @@ import { useMatter } from '@/api/queries';
 import { ErrorNotice } from '@/components';
 import { CompareVersions } from './CompareVersions';
 import { Entries } from './Entries';
-import { LOG_PAGE_SIZE, useLogHead, useLogPage, useVerification, useVersions } from './hooks';
+import { LOG_PAGE_SIZE, logKeys, useLogHead, useLogPage, useVerification, useVersions } from './hooks';
 import styles from './LogScreen.module.css';
 import { Narrowing } from './Narrowing';
 import { methodologyReport, saveText } from './report';
@@ -15,6 +16,7 @@ import { VerifyBar } from './VerifyBar';
 
 export function LogScreen() {
   const { matterId = '' } = useParams();
+  const client = useQueryClient();
   const matter = useMatter(matterId);
   const versions = useVersions(matterId);
   const verification = useVerification(matterId);
@@ -22,13 +24,21 @@ export function LogScreen() {
   const [focusSeq, setFocusSeq] = useState<number | null>(null);
   const focused = useCallback(() => setFocusSeq(null), []);
   const log = useLogPage(matterId, page);
-  // The chain's head (the newest entry), which the report records, whichever page is shown.
-  const head = useLogHead(matterId).data;
+  // The chain's head (the newest entry), which the report records, whichever page is shown: null when nothing is
+  // logged yet, undefined while it is read or when it can't be (the report then says it wasn't read).
+  const headQuery = useLogHead(matterId);
+  const head = headQuery.data ?? (headQuery.isSuccess ? null : undefined);
 
   // The last page read, kept on screen (with its pager) when the next one, or a fresh read of it, fails.
   const [lastGood, setLastGood] = useState<{ matterId: string; data: Schemas['LogEntryPage'] } | null>(null);
   if (log.data && !log.isPlaceholderData && log.data !== lastGood?.data) setLastGood({ matterId, data: log.data });
-  const shown = log.data ?? (lastGood?.matterId === matterId ? lastGood.data : undefined);
+  // It is read from the cache, so a fresh read of that page (page 1 is kept fresh for the head, and is read again when
+  // a job ends) shows even while the page asked for keeps failing.
+  const fallback =
+    lastGood?.matterId === matterId
+      ? (client.getQueryData<Schemas['LogEntryPage']>(logKeys.log(matterId, lastGood.data.page)) ?? lastGood.data)
+      : undefined;
+  const shown = log.data ?? fallback;
 
   // An entry asked for ("Show entry 5") that isn't on the page it should be on is let go, so it can't take focus later.
   // (Setting state while rendering, guarded like this, is React's way to derive state from a change.)
@@ -52,7 +62,10 @@ export function LogScreen() {
   const showEntry = (seq: number) => {
     const total = shown?.total ?? seq;
     const pageSize = shown?.page_size || LOG_PAGE_SIZE;
-    setPage(Math.max(1, Math.ceil((total - seq + 1) / pageSize)));
+    const target = Math.max(1, Math.ceil((total - seq + 1) / pageSize));
+    // The page asked for already, and failed (an older page is shown): read it again, or nothing would happen.
+    if (target === page && log.isError) void log.refetch();
+    else setPage(target);
     setFocusSeq(seq);
   };
 
@@ -86,6 +99,7 @@ export function LogScreen() {
           <Entries
             matterId={matterId}
             data={shown}
+            page={page}
             loading={log.isFetching}
             error={log.isError ? log.error : null}
             onRetry={() => void log.refetch()}

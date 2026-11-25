@@ -9,14 +9,17 @@ export type ReportInput = {
   matter: Pick<S['Matter'], 'name' | 'matter_number' | 'purview_case_id'>;
   versions: S['QueryVersion'][]; // oldest first
   verification?: S['LogVerification'];
-  /** The newest log entry: the chain's head. */
-  head?: S['LogEntry'];
+  /** The newest log entry: the chain's head; null when nothing is logged, left out when it couldn't be read. */
+  head?: S['LogEntry'] | null;
   /** When the report was made. */
   at?: Date;
 };
 
-/** "2026-11-05 10:41 UTC", whatever offset the time was written with. */
-export const stamp = (iso: string) => `${new Date(iso).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+/** "2026-11-05 10:41 UTC", whatever offset the time was written with; a time that can't be read is given as written. */
+export function stamp(iso: string): string {
+  const time = new Date(iso);
+  return Number.isNaN(time.getTime()) ? iso : `${time.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
 /** Sizes in mebibytes (1,048,576 bytes), labelled as such. */
 const mebibytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 const plural = (count: number, one: string, many: string) => `${n(count)} ${count === 1 ? one : many}`;
@@ -69,6 +72,7 @@ export function methodologyReport({ matter, versions, verification, head, at = n
   lines.push('', 'Log');
   lines.push(chainLine(verification));
   if (head) lines.push(`Newest entry: ${head.seq}, hash ${head.hash}`);
+  else lines.push(head === null ? 'Newest entry: none, nothing has been logged yet' : 'Newest entry: not read');
   return `${lines.join('\n')}\n`;
 }
 

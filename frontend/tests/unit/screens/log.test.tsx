@@ -46,10 +46,15 @@ function catchReports() {
     return 'blob:report';
   });
   const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+  // Whether the URL was let go before the click's own turn ended (a download may start only after it).
+  let revokedInClick = false;
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     saved[saved.length - 1]!.name = this.download;
+    queueMicrotask(() => {
+      if (revoke.mock.calls.length > 0) revokedInClick = true;
+    });
   });
-  return { saved, create, revoke };
+  return { saved, create, revoke, revokedInClick: () => revokedInClick };
 }
 
 afterEach(() => {
@@ -254,8 +259,11 @@ test('a job started elsewhere while the screen is open shows up, and only its st
   logPolling.idleMs = 30;
   renderApp(LOG);
   await screen.findByRole('list', { name: 'Log entries, newest first' });
-  // The live region is on the page before anything runs, and quiet.
+  // The live region is on the page before anything runs, and quiet; it is never inside a part marked busy (the log
+  // is read again, and so busy, exactly when a job's finish is announced).
   expect(jobUpdates()).toBeEmptyDOMElement();
+  expect(jobUpdates().closest('[aria-busy]')).toBeNull();
+  expect(screen.getByRole('list', { name: 'Log entries, newest first' })).toHaveAttribute('aria-busy');
 
   await post(`/matters/${FALCON}/previews`); // as another tab would
   const progress = await screen.findByText(/^A preview is running \(\d+%\)/);
@@ -267,6 +275,7 @@ test('a job started elsewhere while the screen is open shows up, and only its st
 
   tick(10);
   await waitFor(() => expect(jobUpdates()).toHaveTextContent(/^A preview finished\.$/));
+  expect(jobUpdates().closest('[aria-busy]')).toBeNull();
   await waitFor(() => expect(entries()).toHaveLength(9));
   expect(screen.queryByText(/is running/)).not.toBeInTheDocument();
 });
@@ -324,7 +333,7 @@ test('a comparison that cannot be made says why', async () => {
 });
 
 test('the methodology report downloads a text record of the query, its versions and the chain', async () => {
-  const { saved, revoke } = catchReports();
+  const { saved, revoke, revokedInClick } = catchReports();
   renderApp(LOG);
   await screen.findByText(/^Chain intact/);
   await screen.findByRole('list', { name: 'Log entries, newest first' });
@@ -343,6 +352,7 @@ test('the methodology report downloads a text record of the query, its versions 
   expect(text).toContain('Newest entry: 8, hash cd7c2de3013d2eeac2f7d8bb6abd56515813a04e172e75a17e9b79002a003329');
   // The object URL is let go a moment after the click, so the download can start first.
   await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:report'));
+  expect(revokedInClick()).toBe(false);
 });
 
 test('the report records the newest entry whichever page is shown, and a broken chain says where', async () => {
@@ -404,6 +414,8 @@ test('a page of the log that cannot be read keeps the last page and its pager, w
   await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
   await waitFor(() => expect(seqs()).toEqual(['5', '4', '3', '2', '1']));
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  // The button pressed is gone with its alert, so focus moves to the entries read, not to the page's top.
+  await waitFor(() => expect(screen.getByRole('list', { name: 'Log entries, newest first' })).toHaveFocus());
 
   // A fresh read of a page already shown that fails: its entries stay, and the error is shown, not hidden.
   failing.add('1');
@@ -411,6 +423,150 @@ test('a page of the log that cannot be read keeps the last page and its pager, w
   expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent("The log couldn't be read just now");
   expect(seqs()[0]).toBe('25');
   expect(screen.getByRole('navigation', { name: 'Log pages' })).toBeInTheDocument();
+});
+
+test('a job that starts after a long idle spell is still asked about often at first', async () => {
+  const counts: number[] = [];
+  logPolling.pollMs = (count) => {
+    counts.push(count);
+    return 20;
+  };
+  logPolling.idleMs = 5;
+  const polls = countRequests('GET', `/matters/${FALCON}/jobs`);
+  renderApp(LOG);
+  await waitFor(() => expect(polls.length).toBeGreaterThan(25), { timeout: 4000 });
+  expect(counts).toEqual([]);
+  await post(`/matters/${FALCON}/previews`);
+  await screen.findByText(/^A preview is running/);
+  await waitFor(() => expect(counts.length).toBeGreaterThan(0));
+  // The idle polls don't count: the first wait is the shortest.
+  expect(counts[0]).toBe(0);
+});
+
+test('news that repeats the last is announced again', async () => {
+  logPolling.pollMs = () => 20;
+  logPolling.idleMs = 20;
+  const job = (await post(`/matters/${FALCON}/previews`)).json as Schemas['Job'];
+  let items: Schemas['Job'][] = [];
+  server.use(http.get('/api/v1/matters/:matterId/jobs', () => HttpResponse.json({ items })));
+  renderApp(LOG);
+  await screen.findByRole('list', { name: 'Log entries, newest first' });
+  items = [job];
+  await waitFor(() => expect(jobUpdates()).toHaveTextContent(/^A preview started\.$/));
+  const first = jobUpdates().firstChild;
+  items = [job, { ...job, id: 'job_second' }];
+  await waitFor(() => expect(screen.getAllByText(/^A preview is running/)).toHaveLength(2));
+  expect(jobUpdates()).toHaveTextContent(/^A preview started\.$/);
+  // The same words again, in a new node, so a screen reader reads them again.
+  expect(jobUpdates().firstChild).not.toBe(first);
+});
+
+test('a report made while the newest entry is still being read says it was not read', async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  server.use(
+    http.get('/api/v1/matters/:matterId/log', async () => {
+      await held;
+      return undefined; // then the mock's own answer
+    }),
+  );
+  const { saved } = catchReports();
+  renderApp(LOG);
+  const button = await screen.findByRole('button', { name: 'Methodology report' });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+  const text = await saved[0]!.blob.text();
+  expect(text).toContain('Newest entry: not read');
+  release();
+});
+
+test('pages follow the page size the server answers with', async () => {
+  const falcon = findMatter(FALCON)!;
+  for (let i = 0; i < 17; i += 1) appendLog(falcon, 'matter_updated', `Change ${i + 1}`);
+  setScenario({ logTampered: true });
+  server.use(
+    http.get('/api/v1/matters/:matterId/log', ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page') ?? '1');
+      const newest = [...falcon.log].reverse();
+      return HttpResponse.json({ items: newest.slice((page - 1) * 10, page * 10), total: newest.length, page, page_size: 10 });
+    }),
+  );
+  renderApp(LOG);
+  expect(await screen.findByRole('navigation', { name: 'Log pages' })).toHaveTextContent('Entries 1–10 of 25');
+  await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+  await waitFor(() => expect(screen.getByRole('navigation', { name: 'Log pages' })).toHaveTextContent('Entries 11–20 of 25'));
+  // Entry 5 is on the third page of ten.
+  await userEvent.click(screen.getByRole('button', { name: 'Show entry 5' }));
+  await waitFor(() => expect(screen.getByRole('listitem', { name: 'Entry 5' })).toHaveFocus());
+  expect(screen.getByRole('navigation', { name: 'Log pages' })).toHaveTextContent('Entries 21–25 of 25');
+});
+
+test('an entry asked for that is not on its page is let go, so it takes no focus later', async () => {
+  const falcon = findMatter(FALCON)!;
+  for (let i = 0; i < 17; i += 1) appendLog(falcon, 'matter_updated', `Change ${i + 1}`);
+  server.use(
+    http.post('/api/v1/matters/:matterId/log/verify', () =>
+      HttpResponse.json({ ok: false, entries: 25, first_bad_seq: 30, message: 'Entry 30: missing', verified_at: '2026-11-05T12:00:00Z' }),
+    ),
+  );
+  renderApp(LOG);
+  await screen.findByRole('navigation', { name: 'Log pages' });
+  await userEvent.click(await screen.findByRole('button', { name: 'Show entry 30' }));
+  // No entry has that number yet. Five more are written; then the pages are turned.
+  for (let i = 0; i < 5; i += 1) appendLog(falcon, 'matter_updated', `Later ${i + 1}`);
+  await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+  await waitFor(() => expect(screen.getByRole('list', { name: 'Log entries, newest first' })).toHaveFocus());
+  await userEvent.click(screen.getByRole('button', { name: 'Newer' }));
+  await waitFor(() => expect(seqs()[0]).toBe('30'));
+  await waitFor(() => expect(screen.getByRole('list', { name: 'Log entries, newest first' })).toHaveFocus());
+  expect(screen.getByRole('listitem', { name: 'Entry 30' })).not.toHaveFocus();
+});
+
+test('"Show entry" on a page that failed to open reads it again', async () => {
+  const falcon = findMatter(FALCON)!;
+  for (let i = 0; i < 17; i += 1) appendLog(falcon, 'matter_updated', `Change ${i + 1}`);
+  setScenario({ logTampered: true });
+  let failing = true;
+  server.use(
+    http.get('/api/v1/matters/:matterId/log', ({ request }) =>
+      failing && new URL(request.url).searchParams.get('page') === '2'
+        ? HttpResponse.json({ code: 'internal_error', message: 'The log could not be read.', details: {} }, { status: 500 })
+        : undefined,
+    ),
+  );
+  renderApp(LOG);
+  await screen.findByRole('navigation', { name: 'Log pages' });
+  await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+  await waitFor(() => expect(screen.getByText(/The log couldn't be read just now/)).toBeInTheDocument(), { timeout: 3000 });
+  failing = false;
+  await userEvent.click(screen.getByRole('button', { name: 'Show entry 5' }));
+  await waitFor(() => expect(screen.getByRole('listitem', { name: 'Entry 5' })).toHaveFocus());
+  expect(screen.getByRole('navigation', { name: 'Log pages' })).toHaveTextContent('Entries 21–25 of 25');
+});
+
+test('while an older page keeps failing, the page shown instead still gets new entries', async () => {
+  logPolling.pollMs = () => 20;
+  logPolling.idleMs = 20;
+  const falcon = findMatter(FALCON)!;
+  for (let i = 0; i < 17; i += 1) appendLog(falcon, 'matter_updated', `Change ${i + 1}`);
+  server.use(
+    http.get('/api/v1/matters/:matterId/log', ({ request }) =>
+      new URL(request.url).searchParams.get('page') === '2'
+        ? HttpResponse.json({ code: 'internal_error', message: 'The log could not be read.', details: {} }, { status: 500 })
+        : undefined,
+    ),
+  );
+  renderApp(LOG);
+  await screen.findByRole('navigation', { name: 'Log pages' });
+  await userEvent.click(screen.getByRole('button', { name: 'Older' }));
+  await waitFor(() => expect(screen.getByText(/The log couldn't be read just now/)).toBeInTheDocument(), { timeout: 3000 });
+  expect(seqs()[0]).toBe('25');
+  await post(`/matters/${FALCON}/previews`); // as another tab would
+  await screen.findByText(/^A preview is running/);
+  tick(10);
+  await waitFor(() => expect(seqs()[0]).toBe('26'));
+  expect(entries()[0]).toHaveTextContent('Preview');
+  expect(screen.getByText(/The log couldn't be read just now/)).toBeInTheDocument();
 });
 
 describe('wording', () => {
@@ -459,6 +615,19 @@ describe('wording', () => {
     expect(methodologyReport({ matter, versions: [], verification: intact })).toContain(
       'Hash chain: intact, 1 entry verified (checked 2026-11-05 12:00 UTC)',
     );
+  });
+
+  test('the report says whether the newest entry was read', () => {
+    const matter = { name: 'New', matter_number: 'M-1', purview_case_id: null };
+    expect(methodologyReport({ matter, versions: [] })).toContain('Newest entry: not read');
+    expect(methodologyReport({ matter, versions: [], head: null })).toContain('Newest entry: none, nothing has been logged yet');
+  });
+
+  test('a time that cannot be read is given as written, and the report is still made', () => {
+    expect(stamp('not a time')).toBe('not a time');
+    const matter = { name: 'New', matter_number: 'M-1', purview_case_id: null };
+    const odd = { ok: true, entries: 1, first_bad_seq: null, message: '', verified_at: 'sometime' };
+    expect(methodologyReport({ matter, versions: [], verification: odd })).toContain('(checked sometime)');
   });
 
   test('report times are in UTC whatever offset they were written with', () => {

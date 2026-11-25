@@ -2,6 +2,7 @@
 // Every key sits under ['matters', id, ...], so a finished job (which invalidates ['matters']) refreshes them all:
 // a new version, new entries, and a fresh check of the chain that now includes them.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { api, unwrap } from '@/api/client';
 import { isFinished, pollDelay, serverSaidNo } from '@/api/jobs';
 import { queryKeys } from '@/api/queries';
@@ -69,6 +70,9 @@ export function useLogHead(matterId: string) {
  * `logPolling.idleMs`, so a job started elsewhere (another tab, another person) still shows up here.
  */
 export function useRunningJobs(matterId: string) {
+  // The poll count when the running jobs were first seen: the speed while jobs run counts only the polls since
+  // then, so a job that starts after a long idle spell is still asked about often at first.
+  const busySince = useRef<number | null>(null);
   return useQuery({
     queryKey: queryKeys.matterJobs(matterId, { active: true }),
     queryFn: async ({ signal }) =>
@@ -76,7 +80,13 @@ export function useRunningJobs(matterId: string) {
     refetchInterval: (q) => {
       if (serverSaidNo(q.state.error)) return false;
       const active = q.state.data?.items.some((job) => !isFinished(job)) ?? false;
-      return active ? logPolling.pollMs(q.state.dataUpdateCount + q.state.errorUpdateCount) : logPolling.idleMs;
+      const polls = q.state.dataUpdateCount + q.state.errorUpdateCount;
+      if (!active) {
+        busySince.current = null;
+        return logPolling.idleMs;
+      }
+      busySince.current ??= polls;
+      return logPolling.pollMs(polls - busySince.current);
     },
   });
 }
