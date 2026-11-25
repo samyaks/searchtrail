@@ -3,11 +3,12 @@ import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
 import { filterItems, generatePreviewItems, itemsToCsv } from '../items';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
-import { termHits } from '../counts';
+import { estimateCounts, termHits } from '../counts';
+import { jobDeniedByPurview } from '../denied';
 import { appendLog, signedIn } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
 import { buildPreview } from '../previews';
-import { criteriaInvalid } from './criteria';
+import { criteriaInvalid, estimateVersion, freezeDraft } from './criteria';
 import { route, withMatter } from '../route';
 import { db, type MockMatter } from '../db';
 import { clone, error, iso, nextId, notFound, pageParams, paginate } from '../util';
@@ -70,7 +71,6 @@ export const runHandlers = [
 
   route('post', '/matters/:matterId/term-reports', (context) =>
     withMatter(context, (m) => {
-      const version = currentVersion(m);
       try {
         buildMockKql(m.draft.criteria);
       } catch (e) {
@@ -79,15 +79,29 @@ export const runHandlers = [
         }
         throw e;
       }
-      if (!version) return error(409, 'conflict', 'Estimate the query first. A term report counts within it.');
+      if (!currentVersion(m)) return error(409, 'conflict', 'Estimate the query first. A term report counts within it.');
       const running = activeJob(m.matter.id, 'term_report');
       if (running) return alreadyRunning(running, 'term report');
+      // When Purview denies counting, the job fails at once (jobs.ts: the contract has no 403 here) and the draft isn't
+      // frozen for it, as an estimate is refused before it freezes the draft: neither path leaves a new version that
+      // was never counted. (The backend creates the version, then enqueues the job, so there a denied job would leave
+      // that version unestimated; the mock refuses up front instead, on both paths.)
+      if (jobDeniedByPurview()) return HttpResponse.json(createJob('term_report', m.matter.id, { finish: () => null }), { status: 202 });
+      // A recount counts the query as it is now: a changed draft becomes a new query version first, as it does for an
+      // estimate, so the report names the version it counted and isn't out of date the moment it lands. That new
+      // version is estimated at once, as the estimate endpoint does, so Scope, Preview and the log treat it like any
+      // other version while the count runs. All terms together is that estimate.
+      const wasCurrent = currentVersion(m);
+      const version = freezeDraft(m);
+      if (version !== wasCurrent) estimateVersion(m, version);
       return HttpResponse.json(
         createJob('term_report', m.matter.id, {
           finish: () => {
             const previous = m.termReport;
-            const total = version.counts?.items ?? 300;
-            const rows: S['TermRow'][] = m.draft.criteria.keywords.map((term) => {
+            // A version that was never estimated (seeded Harlow v1) is counted as it is: all terms together is what an
+            // estimate would find, but no estimate is stored or logged for it.
+            const total = version.counts?.items ?? estimateCounts(m, version.criteria).items;
+            const rows: S['TermRow'][] = version.criteria.keywords.map((term) => {
               const before = previous?.rows.find((r) => r.term === term || r.term === `"${term}"`);
               const same = previous?.version === version.version;
               // Each term within the version's other filters (counts.ts): the same terms always get the same hits.
