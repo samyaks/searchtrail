@@ -193,7 +193,7 @@ describe('previews', () => {
   });
 
   test('a preview of a re-estimated matter breaks down the new counts exactly', async () => {
-    const criteria = { ...(await draft()).criteria, keywords: ['alpha'] };
+    const criteria = { ...(await draft()).criteria, keywords: ['payment'] };
     await put(`${M}/draft`, { criteria });
     await runJob((await post(`${M}/estimates`)).json.id);
     await runJob((await post(`${M}/previews`)).json.id);
@@ -547,6 +547,21 @@ describe('counts that behave like a real search', () => {
     // Back to v3's own terms: the same 630 as the contract's example, every time.
     expect(await estimate(FALCON_TERMS)).toBe(630);
     expect(await estimate([...FALCON_TERMS, 'brightline'])).toBe(more);
+  });
+
+  test('a term the seeded items do not contain finds nothing, so adding it changes nothing', async () => {
+    expect(await estimate([...FALCON_TERMS, 'zzznomatch'])).toBe(630);
+    const rows = Object.fromEntries((await report()).rows.map((row) => [row.term, row.items]));
+    expect(rows).toMatchObject({ '"project falcon"': 105, 'invoic*': 440, kickback: 258, '"side letter"': 316, zzznomatch: 0 });
+    expect(await estimate(['zzznomatch'])).toBe(0);
+    // Known words find items: alone, as a stem with *, in a phrase (its small words aside), and the matter's own name.
+    for (const term of ['payment', 'paym*', 'wire transfer', 'the steering committee', 'investigation']) {
+      expect(await estimate([term]), term).toBeGreaterThan(0);
+    }
+    // A phrase with an unknown word, or a stem no known word starts with, finds nothing.
+    for (const term of ['wire zzznomatch', 'zzz*']) expect(await estimate([term]), term).toBe(0);
+    // The same every time.
+    expect(await estimate([...FALCON_TERMS, 'brightline', 'zzznomatch'])).toBe(await estimate([...FALCON_TERMS, 'brightline']));
   });
 
   test('with ALL terms, adding one never raises the total', async () => {
