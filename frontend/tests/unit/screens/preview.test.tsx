@@ -385,10 +385,56 @@ test('a preview job that fails says why, keeps the last preview, and can be trie
   expect(screen.getByText('Showing 1–10 of 655')).toBeInTheDocument();
   await expectNoA11yViolations(document.body);
 
+  // One button to try again: the page's own, not a second one in the notice that does the same thing.
+  expect(within(alert).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /^(Try again|Preview query|Refresh preview|Preview again)/ })).toHaveLength(1);
+
   setScenario({ failJobs: [] });
-  await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
   expect(await screen.findByRole('progressbar')).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+});
+
+test('a failed preview of a newer query version offers one button to preview it, not a second "Try again"', async () => {
+  setScenario({ failJobs: ['preview'] });
+  answerMatter({ ...falcon(), current_version: 4 });
+  renderApp(PATH);
+  await loaded();
+  await userEvent.click(screen.getByRole('button', { name: 'Preview query v4' }));
+  await screen.findByRole('progressbar');
+  tick(10);
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { name: "Purview couldn't finish that" })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /^(Try again|Preview query|Refresh preview|Preview again)/ }).map((b) => b.textContent)).toEqual(['Preview query v4']);
+});
+
+test('a failed first preview offers one button to preview the query', async () => {
+  setScenario({ failJobs: ['preview'] });
+  noPreviewYet();
+  renderApp(PATH);
+  await userEvent.click(await screen.findByRole('button', { name: 'Preview query v3' }));
+  await screen.findByRole('progressbar');
+  tick(10);
+  await screen.findByRole('alert');
+  expect(await screen.findByText('Nothing previewed yet')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /^(Try again|Preview query|Refresh preview|Preview again)/ }).map((b) => b.textContent)).toEqual(['Preview query v3']);
+});
+
+test("when a new preview finishes, the old preview's items are not asked for again", async () => {
+  const requests = watchItemRequests();
+  renderApp(PATH);
+  await loaded();
+  expect(requests.paths()).toEqual([`/api/v1/previews/${FALCON_PREVIEW}/items`]);
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
+  await screen.findByRole('progressbar');
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  const newest = (await get(`/matters/${FALCON}/previews/latest`)).json as Schemas['Preview'];
+  // Once the new preview's items have been asked for, any refetch of the old one's (set off when the job ended,
+  // before the new preview was even read) would have been asked for already.
+  await waitFor(() => expect(requests.paths()).toContain(`/api/v1/previews/${newest.id}/items`));
+  expect(requests.paths()).toEqual([`/api/v1/previews/${FALCON_PREVIEW}/items`, `/api/v1/previews/${newest.id}/items`]);
 });
 
 test('with nothing previewed yet, the screen offers to preview the current query, then shows the result', async () => {

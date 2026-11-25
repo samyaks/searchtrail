@@ -23,6 +23,10 @@ export function PreviewScreen() {
   const job = usePreviewJob(matterId);
   const version = matter.data?.current_version ?? null;
   const busy = job.isRunning || job.isStarting;
+  // One button to start a preview at a time. The preview shown, or the "nothing previewed yet" card, always has one,
+  // named for what it does ("Preview query v4"): a failure notice offers its own "Try again" only when they don't.
+  const pageStarts = Boolean(matter.data) && (Boolean(latest.data) || (latest.data === null && version !== null && !job.isRunning));
+  const retry = pageStarts ? undefined : job.start;
 
   return (
     <div className={styles.screen}>
@@ -33,10 +37,10 @@ export function PreviewScreen() {
         <ErrorNotice
           error={new ApiRequestError(502, job.failure ?? { code: 'purview_operation_failed', message: '', details: {} })}
           matterId={matterId}
-          onRetry={job.start}
+          onRetry={retry}
         />
       )}
-      {job.startError !== null && <ErrorNotice error={job.startError} matterId={matterId} onRetry={job.start} />}
+      {job.startError !== null && <ErrorNotice error={job.startError} matterId={matterId} onRetry={retry} />}
       {/* Asking about the job was refused (the session ended, the job is gone): say so rather than go quiet. A job that
           already ended has said what it had to: a later failed refetch of it isn't news. */}
       {job.queryError !== null && !job.isRunning && !job.isSucceeded && !job.isFailed && (
