@@ -227,6 +227,16 @@ test("a count that finished on one matter isn't shown on the next matter's Terms
   expect(screen.queryByRole('table', { name: /^Search term report/ })).not.toBeInTheDocument();
 });
 
+test("a count still running on one matter isn't shown on the next matter's Terms", async () => {
+  const router = renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  await act(() => router.navigate('/matters/mat_travel/terms'));
+  expect(await screen.findByText('No term report yet')).toBeInTheDocument();
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+});
+
 test('opening the screen while a term report runs picks up its progress instead of offering to start another', async () => {
   const job = (await post(`/matters/${FALCON}/term-reports`)).json as { id: string };
   expect(job.id).toBeTruthy();

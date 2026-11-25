@@ -18,6 +18,11 @@ const JOB_FAILED: ApiError = { code: 'purview_operation_failed', message: '', de
 
 export function TermsScreen() {
   const { matterId = '' } = useParams();
+  // Keyed on the matter, so a count followed on one matter isn't carried over to the next matter's Terms.
+  return <MatterTerms key={matterId} matterId={matterId} />;
+}
+
+function MatterTerms({ matterId }: { matterId: string }) {
   const matter = useMatter(matterId);
   const report = useLatestTermReport(matterId);
   const job = useTrackedJob(matterId, 'term_report');
