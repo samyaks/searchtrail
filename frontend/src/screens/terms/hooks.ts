@@ -23,6 +23,25 @@ export function useLatestTermReport(matterId: string) {
   });
 }
 
+/**
+ * The matter's draft criteria, which a term report counts (under the same key as Scope's and Define's copy). Read
+ * here only to tell, before asking, when the draft can't be counted at all (a From date after the To date).
+ */
+export function useDraft(matterId: string) {
+  return useQuery({
+    queryKey: [...queryKeys.matter(matterId), 'draft'],
+    queryFn: async ({ signal }) => unwrap(await api.GET('/matters/{matterId}/draft', { params: { path: { matterId } }, signal })),
+  });
+}
+
+/** Why the draft can't be counted, checked as Scope checks it as it is typed; null when nothing is known to stop it. */
+export function draftProblem(criteria: Schemas['Criteria'] | undefined): string | null {
+  if (criteria?.date_from && criteria.date_to && criteria.date_from > criteria.date_to) {
+    return 'Counting is off: on Scope, the From date is after the To date, so nothing can match. Fix the dates there first.';
+  }
+  return null;
+}
+
 /** The id of the job a 409 says is already running, if it says. */
 export function runningJobOf(error: unknown): string | null {
   if (!(error instanceof ApiRequestError) || error.status !== 409) return null;

@@ -409,3 +409,29 @@ select.input {
   font-size: 14px;
   font-weight: 600;
 }
+
+/* a confirm step in a custodian's row: what will happen, Cancel, and the change itself */
+.confirm {
+  margin-left: 48px;
+  padding: var(--st-space-3) var(--st-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  border: 1px solid var(--st-red-rule);
+  border-left: 3px solid var(--st-margin-red);
+  border-radius: var(--st-radius-md);
+  background: var(--st-sheet);
+}
+.confirmTitle {
+  margin: 0;
+  font-weight: 600;
+}
+.confirmText {
+  margin: 0;
+  font-size: var(--st-text-sm);
+}
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}

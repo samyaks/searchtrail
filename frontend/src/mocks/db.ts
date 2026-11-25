@@ -3,6 +3,7 @@
 // Matters other than Falcon have no detailed examples in the contract, so they are derived from their
 // list entry, with filler custodians where a matter has more than the six sample people.
 import type { Schemas } from '@/api/client';
+import type { CountAnchor } from './counts';
 import { buildMockKql } from './kql';
 import { example } from './examples';
 import { initialsOf, PEOPLE } from './people';
@@ -23,6 +24,8 @@ export type MockJob = {
   onProgress?: (progress: number) => void;
   /** Runs if the job fails (a scenario made it): puts what it was changing back to a failed state. */
   onFail?: () => void;
+  /** The export an export job is preparing. */
+  exportId?: string;
 };
 
 export type MockMatter = {
@@ -39,6 +42,8 @@ export type MockMatter = {
   log: S['LogEntry'][]; // oldest first
   /** Hold changes Purview hasn't finished: the next read of the matter settles them. */
   settling: Record<string, 'on' | 'off'>;
+  /** What the mock's made-up counts start from (counts.ts): a version with known counts. None for a new matter. */
+  anchor?: CountAnchor;
 };
 
 export type Db = { matters: MockMatter[]; jobs: Map<string, MockJob> };
@@ -110,7 +115,14 @@ export function makeVersion(matter: S['Matter'], version: number, criteria: S['C
 function seedFalcon(summary: S['MatterSummary']): MockMatter {
   const matter = example<S['Matter']>('getMatter', '200');
   const log = example<S['LogEntryPage']>('listLogEntries', '200').items.slice().reverse(); // the example is newest first
-  const versions = example<S['QueryVersionList']>('listVersions', '200').items.slice().sort((a, b) => a.version - b.version);
+  // The contract's versions shorten their KQL ("AND (...)") and methodology to fit the page; the mock serves them in
+  // full, as the backend wrote them, so the screens and the downloaded report show the whole query.
+  const versions = example<S['QueryVersionList']>('listVersions', '200')
+    .items.slice()
+    .sort((a, b) => a.version - b.version)
+    .map((v) => ({ ...v, ...pick(buildMockKql(v.criteria)) }));
+  const termReport = example<S['TermReport']>('getLatestTermReport', '200');
+  const current = versions.find((v) => v.version === matter.current_version)!;
   return {
     matter,
     activityAt: summary.last_activity_at,
@@ -121,12 +133,21 @@ function seedFalcon(summary: S['MatterSummary']): MockMatter {
     sourcesAt: Object.fromEntries(versions.map((v) => [v.version, sourcesFingerprint(matter)])),
     preview: example<S['Preview']>('getLatestPreview', '200'),
     previewItems: [],
-    termReport: example<S['TermReport']>('getLatestTermReport', '200'),
-    exports: example<S['ExportList']>('listExports', '200').items,
+    termReport,
+    // Only the finished exports. The contract's list also shows a v3 export Preparing, from later in the story (the
+    // Export design starts it): the seeded matter is Previewed, its log has no such export and v3 isn't exported yet.
+    exports: example<S['ExportList']>('listExports', '200').items.filter((e) => e.status !== 'preparing'),
     log,
     settling: {},
+    anchor: {
+      criteria: current.criteria,
+      items: current.counts!.items,
+      hits: Object.fromEntries(termReport.rows.map((r) => [r.term.replace(/^"|"$/g, ''), r.items])),
+    },
   };
 }
+
+const pick = (built: S['KqlPreview']) => ({ kql: built.kql, methodology: built.methodology });
 
 function seedOther(summary: S['MatterSummary']): MockMatter {
   const created = new Date(new Date(summary.last_activity_at).getTime() - 5 * 86_400_000);
@@ -172,6 +193,7 @@ function seedOther(summary: S['MatterSummary']): MockMatter {
     matter, activityAt: summary.last_activity_at,
     draft: { criteria, updated_at: matter.created_at, based_on_version: summary.current_version, changed_since_version: false },
     versions, sourcesAt: Object.fromEntries(versions.map((v) => [v.version, sourcesFingerprint(matter)])), preview, previewItems: [], termReport: null, exports: exportRow, log: [created_entry], settling: {},
+    anchor: counts ? { criteria, items: counts.items } : undefined,
   };
 }
 

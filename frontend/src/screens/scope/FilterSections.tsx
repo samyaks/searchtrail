@@ -188,7 +188,8 @@ export function WhenSection({ criteria, onChange, problem, typesProblem }: Secti
         </div>
       </div>
       {backwards && <InlineError>The From date is after the To date, so nothing can match. Swap them or change one.</InlineError>}
-      {problem && <InlineError>{problem}</InlineError>}
+      {/* The API refuses backwards dates too (criteria_invalid): that is the same problem, said once. */}
+      {problem && !backwards && <InlineError>{problem}</InlineError>}
       <p className={styles.hint}>Emails and chats are dated by when they were sent or received.</p>
 
       <div className={styles.stack8}>

@@ -2,6 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Schemas } from '@/api/client';
+import { example } from '@/mocks/examples';
+import { SEEDED_EXPORT_SECONDS } from '@/mocks/jobs';
 import { buildMockKql, CriteriaInvalid } from '@/mocks/kql';
 import { PEOPLE } from '@/mocks/people';
 import { setScenario } from '@/mocks/scenarios';
@@ -77,8 +79,8 @@ describe('editing the draft and estimating it', () => {
   test('the live KQL follows the criteria, and the contract\'s own criteria give the contract\'s own KQL', async () => {
     const falcon = (await draft()).criteria;
     expect((await post('/kql/preview', { criteria: falcon })).json.kql).toContain('"project falcon" OR invoic* OR kickback OR "side letter"');
-    const custom = (await post('/kql/preview', { criteria: { ...falcon, keywords: ['alpha', 'beta gamma'], keyword_mode: 'all', exclude_keywords: ['spam'], date_from: null, date_to: null, file_extensions: [], exclude_participant_domains: [] } })).json;
-    expect(custom.kql).toBe('(alpha AND "beta gamma") AND NOT spam');
+    const custom = (await post('/kql/preview', { criteria: { ...falcon, keywords: ['alpha', 'beta gamma'], keyword_mode: 'all', exclude_keywords: ['spam'], date_from: null, date_to: null, file_extensions: [], exclude_participant_domains: [], exclude_label_ids: [] } })).json;
+    expect(custom.kql).toBe('(alpha AND "beta gamma") AND (kind:email OR (kind:microsoftteams OR kind:im) OR kind:docs) AND NOT spam');
     expect(custom.methodology).toContain('Containing ALL of these terms: alpha, "beta gamma".');
     expect(custom.length).toBe(custom.kql.length);
     expect(() => buildMockKql({ ...falcon, keywords: [], raw_kql: null })).toThrow(CriteriaInvalid);
@@ -467,12 +469,165 @@ describe('the stage of a matter', () => {
 });
 
 describe('the live KQL', () => {
-  test('a date range with one end has one clause, not a wildcard', async () => {
-    const criteria = { ...(await draft()).criteria, keywords: ['alpha'], exclude_keywords: [], file_extensions: [], exclude_participant_domains: [] };
+  test('a date range with one end has one clause per item type, not a wildcard', async () => {
+    const criteria = { ...(await draft()).criteria, keywords: ['alpha'], exclude_keywords: [], file_extensions: [], exclude_participant_domains: [], exclude_label_ids: [], kinds: ['email', 'docs'] };
     const from = (await post('/kql/preview', { criteria: { ...criteria, date_from: '2024-01-01', date_to: null } })).json.kql as string;
     const to = (await post('/kql/preview', { criteria: { ...criteria, date_from: null, date_to: '2025-06-30' } })).json.kql as string;
-    expect(from).toBe('(alpha) AND (sent>=2024-01-01)');
-    expect(to).toBe('(alpha) AND (sent<=2025-06-30)');
+    expect(from).toBe('alpha AND ((kind:email AND (sent>=2024-01-01 OR received>=2024-01-01)) OR (kind:docs AND lastmodifiedtime>=2024-01-01))');
+    expect(to).toBe('alpha AND ((kind:email AND (sent<=2025-06-30 OR received<=2025-06-30)) OR (kind:docs AND lastmodifiedtime<=2025-06-30))');
     expect(`${from}${to}`).not.toContain('*');
+  });
+
+  test('as the backend builds it: dates by item type, domains on mail and chats only, label exclusions kept', async () => {
+    const falcon = (await draft()).criteria;
+    const edited = { ...falcon, keywords: [...falcon.keywords, 'brightline'], doc_date_property: 'created' as const, participant_domains: ['contoso.com'] };
+    const { kql, methodology, warnings } = (await post('/kql/preview', { criteria: edited })).json as Schemas['KqlPreview'];
+    expect(kql).toBe(
+      '("project falcon" OR invoic* OR kickback OR "side letter" OR brightline) AND ' +
+        '((kind:email AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND participants:contoso.com AND NOT participants:newsletters.contoso.com) OR ' +
+        '((kind:microsoftteams OR kind:im) AND ((sent>=2024-01-01 AND sent<=2025-06-30) OR (received>=2024-01-01 AND received<=2025-06-30)) AND participants:contoso.com AND NOT participants:newsletters.contoso.com) OR ' +
+        '(kind:docs AND (created>=2024-01-01 AND created<=2025-06-30) AND (fileextension:docx OR fileextension:xlsx OR fileextension:pptx OR fileextension:pdf))) AND ' +
+        'NOT InformationProtectionLabelId:11111111-1111-4111-8111-111111111111 AND NOT "weekly digest"',
+    );
+    expect(kql).not.toMatch(/kind:docs[^)]*participants/); // a domain filter never drops documents
+    expect(methodology).toEqual([
+      'Item types: emails, Teams chats, documents.',
+      'Date range from 2024-01-01 to 2025-06-30 (inclusive): emails/chats by sent or received date; documents by created date.',
+      'Containing ANY of these terms: "project falcon", invoic*, kickback, "side letter", brightline.',
+      'Terms ending in * match any word starting with that stem.',
+      'Excluding items containing any of: "weekly digest".',
+      'Emails/chats limited to those with a participant at: contoso.com. Documents are not filtered by domain.',
+      'Emails/chats excluded if a participant is at: newsletters.contoso.com.',
+      'Documents limited to file types: docx, xlsx, pptx, pdf.',
+      'Excluding items with these sensitivity labels: Public.',
+    ]);
+    expect(warnings).toEqual(['Domain filters apply to emails and chats only. Documents are not filtered by domain.']);
+  });
+
+  test('a From date after the To date is refused, and nothing is estimated', async () => {
+    const backwards = { ...(await draft()).criteria, date_from: '2026-01-01', date_to: '2025-06-30' };
+    const refused = await post('/kql/preview', { criteria: backwards });
+    expect(refused.status).toBe(422);
+    expect(refused.json).toMatchObject({ code: 'criteria_invalid', message: expect.stringContaining('is after the To date'), details: { field: 'date_from' } });
+    await put(`${M}/draft`, { criteria: backwards });
+    const estimate = await post(`${M}/estimates`);
+    expect(estimate.status).toBe(422);
+    expect(estimate.json.code).toBe('criteria_invalid');
+    expect((await get(`${M}/versions`)).json.items).toHaveLength(3); // no new version, no counts
+  });
+});
+
+describe('counts that behave like a real search', () => {
+  const report = async () => {
+    const job = (await post(`${M}/term-reports`)).json;
+    return (await runJob(job.id)).at(-1).result as Schemas['TermReport'];
+  };
+  const estimate = async (keywords: string[]) => {
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords } });
+    const job = (await post(`${M}/estimates`)).json;
+    return (await runJob(job.id)).at(-1).result.counts.items as number;
+  };
+  const FALCON_TERMS = ['project falcon', 'invoic*', 'kickback', 'side letter'];
+
+  test('adding an OR term never lowers the total or another term\'s hits; removing one never raises them', async () => {
+    const seeded = (await get(`${M}/term-reports/latest`)).json as Schemas['TermReport'];
+    const hits = (r: Schemas['TermReport']) => Object.fromEntries(r.rows.map((row) => [row.term, row.items]));
+
+    const more = await estimate([...FALCON_TERMS, 'brightline']);
+    expect(more).toBeGreaterThan(630);
+    const withMore = await report();
+    expect(withMore.combined.items).toBe(more);
+    expect(hits(withMore)).toMatchObject(hits(seeded)); // 105, 440, 258 and 316 stay as they were
+    expect(hits(withMore).brightline).toBeGreaterThan(0);
+
+    const fewer = await estimate(['project falcon', 'invoic*', 'kickback']);
+    expect(fewer).toBeLessThan(630);
+    expect(hits(await report())).toEqual({ '"project falcon"': 105, 'invoic*': 440, kickback: 258 });
+
+    // Back to v3's own terms: the same 630 as the contract's example, every time.
+    expect(await estimate(FALCON_TERMS)).toBe(630);
+    expect(await estimate([...FALCON_TERMS, 'brightline'])).toBe(more);
+  });
+
+  test('with ALL terms, adding one never raises the total', async () => {
+    const allOf = async (keywords: string[]) => {
+      await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords, keyword_mode: 'all' } });
+      return (await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result.counts.items as number;
+    };
+    // v3's terms, all of them: the fewest-hits term (105) keeps 0.6 of its items per other term, 105 × 0.6³ = 22.7.
+    expect(await allOf(FALCON_TERMS)).toBe(23);
+    // Each term added on top keeps the same share or less of the fewest-hits term's items, so the total only falls.
+    const added = ['brightline', 'offshore', 'rebate', 'consulting fee'];
+    const totals = [23];
+    for (let n = 1; n <= added.length; n += 1) totals.push(await allOf([...FALCON_TERMS, ...added.slice(0, n)]));
+    for (let n = 1; n < totals.length; n += 1) expect(totals[n], `with ${n} added`).toBeLessThanOrEqual(totals[n - 1]!);
+    expect(totals.at(-1)).toBeLessThan(23);
+    // And taking the added terms away again gives back the same 23, every time.
+    expect(await allOf(FALCON_TERMS)).toBe(23);
+  });
+});
+
+describe('the seeded data in full', () => {
+  test('every Falcon query version has its whole KQL and methodology', async () => {
+    const versions = (await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][];
+    for (const v of versions) expect(v.kql).not.toContain('...');
+    const v3 = versions.find((v) => v.version === 3)!;
+    expect(v3.kql).toBe(example<Schemas['KqlPreview']>('previewKql', '200').kql);
+    expect(v3.methodology).toEqual(example<Schemas['KqlPreview']>('previewKql', '200').methodology);
+    expect(versions.find((v) => v.version === 2)!.methodology).toContain('Emails/chats excluded if a participant is at: newsletters.contoso.com.');
+  });
+
+  test('no seeded export sits at the same percentage for ever', async () => {
+    // Falcon is seeded Previewed, so only its finished v2 export is there; its v3 export is the one the Export screen starts.
+    expect(((await get(`${M}/exports`)).json.items as Schemas['Export'][]).map((e) => [e.version, e.status])).toEqual([[2, 'ready']]);
+    // The matter seeded as Exporting carries on from 64% on the job clock and finishes like any export.
+    const Q3 = '/matters/mat_q3trading';
+    expect((await get(`${Q3}/exports`)).json.items[0]).toMatchObject({ status: 'preparing', progress: 0.64 });
+    expect((await get(`${Q3}/jobs`, { active: true })).json.items).toMatchObject([{ kind: 'export', status: 'running', progress: 0.64 }]);
+    tick(SEEDED_EXPORT_SECONDS * 0.18);
+    expect((await get(`${Q3}/exports`)).json.items[0]).toMatchObject({ status: 'preparing', progress: 0.82 });
+    tick(SEEDED_EXPORT_SECONDS * 0.18);
+    expect((await get(`${Q3}/exports`)).json.items[0]).toMatchObject({ status: 'ready', progress: 1 });
+    expect((await get(Q3)).json.stage).toBe('exported');
+    expect(((await get(`${Q3}/log`)).json.items as Schemas['LogEntry'][])[0]!.action).toBe('export_finished');
+  });
+
+  test('a new matter\'s export check says there is no query yet', async () => {
+    const created = (await post('/matters', { matter_number: 'M-77', name: 'New', type: 'dsr' })).json;
+    const check = (await post(`/matters/${created.id}/exports/check`)).json as Schemas['ExportCheck'];
+    expect(check.checks.map((c) => [c.key, c.status, c.message])).toEqual([
+      ['previewed', 'failed', "There's no query to export yet. Estimate and preview one first."],
+      ['same_sources', 'skipped', 'Not checked because nothing has been previewed.'],
+      ['counts_unchanged', 'skipped', "Not checked because the query wasn't previewed."],
+    ]);
+  });
+});
+
+describe('failing scenarios name the right thing', () => {
+  test('a failed job\'s message names its own kind of job', async () => {
+    setScenario({ failJobs: ['preview', 'estimate', 'term_report'] });
+    const failed = async (path: string) => (await runJob((await post(`${M}/${path}`)).json.id)).at(-1).error.message as string;
+    expect(await failed('previews')).toMatch(/^Purview stopped the preview: /);
+    expect(await failed('term-reports')).toMatch(/^Purview stopped the term count: /);
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: ['alpha'] } });
+    expect(await failed('estimates')).toMatch(/^Purview stopped the estimate: /);
+  });
+
+  test('when Purview denies access, exports, previews and term counts fail with that error, like the estimates and hand-offs refused up front', async () => {
+    setScenario({ purviewDenied: 'license_missing' });
+    expect((await post(`${M}/estimates`)).status).toBe(403);
+    expect((await post('/exports/exp_falcon_v2/download')).status).toBe(403);
+    expect((await post('/exports/exp_falcon_v2/review-set', { review_set_name: 'x' })).status).toBe(403);
+
+    const started = await post(`${M}/exports`, { options: OPTIONS, confirm_matter_number: 'M-2026-0142' });
+    expect(started.status).toBe(202); // the contract starts an export with no 403: the job finds out
+    const job = (await runJob(started.json.id)).at(-1);
+    expect(job).toMatchObject({ status: 'failed', error: { code: 'license_missing' } });
+    expect((await get(`${M}/exports`)).json.items[0]).toMatchObject({ status: 'failed' });
+    expect((await get(M)).json.stage).toBe('previewed');
+
+    for (const path of ['previews', 'term-reports']) {
+      expect((await runJob((await post(`${M}/${path}`)).json.id)).at(-1)).toMatchObject({ status: 'failed', error: { code: 'license_missing' } });
+    }
   });
 });

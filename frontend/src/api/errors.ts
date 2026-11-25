@@ -163,6 +163,18 @@ export function describeError(error: unknown, context: { matterId?: string } = {
   return { code: 'internal_error', title: fallback.title, message: fallback.fallback, tone: fallback.tone, action: actionFor('retry') };
 }
 
+/**
+ * What a change refused with session_expired says once the person has signed in again in place (the mocks): the
+ * change wasn't made, and they can try it again. While the session is still ended the Shell says so instead, once.
+ */
+export const REFUSED_BY_ENDED_SESSION: ErrorDescription = {
+  code: 'session_expired',
+  title: "That didn't go through",
+  message: "Your session had ended, so nothing was changed. You're signed in again, so you can try it again.",
+  tone: 'transient',
+  action: { kind: 'retry', label: 'Try again' },
+};
+
 /** True for an API error with this code. */
 export function hasCode(error: unknown, code: ErrorCode): boolean {
   return error instanceof ApiRequestError && error.body.code === code;

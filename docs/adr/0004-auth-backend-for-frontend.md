@@ -17,5 +17,6 @@ acts with delegated permissions. Access tokens in the browser would be exposed t
 
 ## Consequences
 - The CLI keeps its device-code flow; the web app doesn't use it.
-- Expired sessions return `401 session_expired`; the frontend redirects to sign-in.
+- Expired sessions return `401 session_expired`; the frontend shows a "Your session has ended" state with a
+  Sign in button that goes to sign-in (`/api/v1/auth/login?return_to=…`), rather than redirecting on its own.
 - Until WS-C lands, the app only runs in dry-run mode (`app/microsoft/get_gateway` refuses live mode).

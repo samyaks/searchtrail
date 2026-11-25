@@ -2,6 +2,8 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { db } from '@/mocks/db';
+import { SEEDED_EXPORT_SECONDS } from '@/mocks/jobs';
+import { setNow } from '@/mocks/util';
 import { server } from '@/mocks/server';
 import { summaryOf } from '@/mocks/views';
 import { activityText, emptyText } from '@/screens/matters/format';
@@ -153,10 +155,11 @@ test('with no matters at all, the list says how to make the first one', async ()
 test('a matter that is exporting is read again, so its percentage moves', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
+    setNow(new Date('2026-11-05T12:00:00Z'));
     renderApp('/matters');
     expect(await screen.findByText('Exporting 64%')).toBeInTheDocument();
-    const exporting = db.matters.find((m) => m.matter.stage === 'exporting')!;
-    exporting.exports[0]!.progress = 0.81;
+    // The seeded export moves on the job clock, as Purview prepares it.
+    setNow(new Date(Date.parse('2026-11-05T12:00:00Z') + SEEDED_EXPORT_SECONDS * 170));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(EXPORTING_REFRESH_MS + 100);
     });
@@ -192,11 +195,12 @@ test('with the Exported chip chosen, a matter that finishes exporting joins the 
 test('with the Exporting chip chosen, the percentage still moves', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
+    setNow(new Date('2026-11-05T12:00:00Z'));
     renderApp('/matters');
     await screen.findByRole('button', { name: 'All 5' });
     await userEvent.click(chip(/^Exporting/));
     await waitFor(() => expect(rowsOf(screen.getByRole('table', { name: 'Matters' }))).toHaveLength(1));
-    db.matters.find((m) => m.matter.stage === 'exporting')!.exports[0]!.progress = 0.9;
+    setNow(new Date(Date.parse('2026-11-05T12:00:00Z') + SEEDED_EXPORT_SECONDS * 260));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(EXPORTING_REFRESH_MS + 100);
     });
@@ -209,11 +213,16 @@ test('with the Exporting chip chosen, the percentage still moves', async () => {
 test('API errors are shown in plain English', async () => {
   server.use(
     http.get('/api/v1/matters', () =>
-      HttpResponse.json({ code: 'session_expired', message: 'Your session has ended. Sign in again to continue.', details: {} }, { status: 401 }),
+      HttpResponse.json(
+        { code: 'purview_permission_missing', message: 'Ask a Purview administrator to add you to the eDiscovery Manager role group.', details: {} },
+        { status: 403 },
+      ),
     ),
   );
   renderApp('/matters');
-  expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended');
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('You need a Purview permission for this');
+  expect(alert).toHaveTextContent('Ask a Purview administrator to add you to the eDiscovery Manager role group.');
 });
 
 test('a list that fails to load can be tried again', async () => {

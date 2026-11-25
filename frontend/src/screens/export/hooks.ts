@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { useTrackedJob } from '@/api/jobs';
+import { sessionHasEnded } from '@/api/session';
 import { pollMs } from './poll';
 
 export const exportKeys = {
@@ -23,20 +24,24 @@ export function useExportCheck(matterId: string) {
 
 /** The matter's exports, newest first. `live`: something is running, so ask again until it ends. */
 export function useExports(matterId: string, live: boolean) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: exportKeys.list(matterId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/matters/{matterId}/exports', { params: { path: { matterId } }, signal })),
-    refetchInterval: live ? (q) => pollMs(q.state.dataUpdateCount) : false,
+    // Not while the session has ended: signing in again loads it again, which starts this again.
+    refetchInterval: live ? (q) => (sessionHasEnded(client) ? false : pollMs(q.state.dataUpdateCount)) : false,
   });
 }
 
 /** One export, with its files and hand-offs. */
 export function useExport(exportId: string | null, live: boolean) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: exportKeys.detail(exportId ?? ''),
     enabled: Boolean(exportId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/exports/{exportId}', { params: { path: { exportId: exportId! } }, signal })),
-    refetchInterval: live ? (q) => pollMs(q.state.dataUpdateCount) : false,
+    // Not while the session has ended: signing in again loads it again, which starts this again.
+    refetchInterval: live ? (q) => (sessionHasEnded(client) ? false : pollMs(q.state.dataUpdateCount)) : false,
   });
 }
 
@@ -46,6 +51,14 @@ export function useVersions(matterId: string) {
     queryKey: exportKeys.versions(matterId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/matters/{matterId}/versions', { params: { path: { matterId } }, signal })),
   });
+}
+
+type ExportJob = ReturnType<typeof useTrackedJob<'export'>>;
+
+/** The export job the Start card shows: the one it follows, unless the person set it aside. A finished or failed
+ * export stays on the card until the person sets up the next one. */
+export function shownExportJob(exportJob: ExportJob, dismissedJob: string | null): ExportJob | null {
+  return exportJob.jobId && exportJob.jobId !== dismissedJob ? exportJob : null;
 }
 
 /** The three jobs this screen follows, found again if one is running when the screen opens. */

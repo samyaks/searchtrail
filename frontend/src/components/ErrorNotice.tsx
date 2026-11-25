@@ -1,4 +1,7 @@
-import { describeError } from '@/api/errors';
+import { QueryClientContext } from '@tanstack/react-query';
+import { useContext } from 'react';
+import { describeError, REFUSED_BY_ENDED_SESSION, type ErrorDescription } from '@/api/errors';
+import { isSessionExpired, useSessionEnded } from '@/api/session';
 import { Button, ButtonLink } from './Button';
 import styles from './ErrorNotice.module.css';
 
@@ -16,9 +19,26 @@ export type ErrorNoticeProps = {
 /**
  * An error in plain English: what happened, what to do, and a button for it. The message is the API's own;
  * the title, the look (blocked, transient, error) and the action come from the error's code.
+ *
+ * An ended session is the app's to show, not each screen's: inside the app (with a query client) the Shell says it
+ * once, with Sign in, so this shows nothing then. Once the person has signed in again in place (the mocks), what
+ * had failed to load loads again (api/session.ts), so an error still saying the session ended is a change that was
+ * refused: this says it wasn't made, and offers to try again.
  */
-export function ErrorNotice({ error, matterId, onRetry, headingLevel = 2 }: ErrorNoticeProps) {
-  const { title, message, tone, action } = describeError(error, { matterId });
+export function ErrorNotice(props: ErrorNoticeProps) {
+  const client = useContext(QueryClientContext);
+  if (client && isSessionExpired(props.error)) return <RefusedBySession {...props} />;
+  return <Notice {...props} description={describeError(props.error, { matterId: props.matterId })} />;
+}
+
+function RefusedBySession(props: ErrorNoticeProps) {
+  const ended = useSessionEnded();
+  if (ended) return null;
+  return <Notice {...props} description={REFUSED_BY_ENDED_SESSION} />;
+}
+
+function Notice({ description, onRetry, headingLevel = 2 }: ErrorNoticeProps & { description: ErrorDescription }) {
+  const { title, message, tone, action } = description;
   const Heading = `h${headingLevel}` as const;
   return (
     <div role="alert" className={styles.notice} data-tone={tone}>
@@ -31,7 +51,8 @@ export function ErrorNotice({ error, matterId, onRetry, headingLevel = 2 }: Erro
       )}
       {action?.kind === 'link' &&
         (action.to.startsWith('/api/') ? (
-          // The sign-in is the API's, not a route of the app: a full page load.
+          // The sign-in is the API's, not a route of the app: a full page load. (Only shown outside the app's query
+          // client; inside it the Shell offers Sign in.)
           <a className={styles.link} href={action.to}>
             {action.label}
           </a>

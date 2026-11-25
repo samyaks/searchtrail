@@ -1,13 +1,14 @@
 // The search criteria: the draft being edited, the live KQL preview, and estimates of a query version.
 import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
-import { makeCounts, makeVersion } from '../db';
+import { estimateCounts } from '../counts';
+import { makeVersion } from '../db';
 import { deniedByPurview } from '../denied';
 import { appendLog } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
 import { readJson, route, withMatter } from '../route';
-import { clone, error, hashNumber, iso, validationFailed } from '../util';
+import { clone, error, iso, validationFailed } from '../util';
 import { sourcesFingerprint } from '../sources';
 import { currentVersion, draftChanged, draftView, sourcesChanged } from '../views';
 
@@ -27,11 +28,8 @@ function shapeProblem(criteria: unknown): string | null {
   return null;
 }
 
-/** Plausible counts for a query: the same every time for the same text. */
-export function estimateCounts(kql: string, custodians: number): S['Counts'] {
-  const items = 40 + (hashNumber(kql) % 900);
-  return makeCounts(items, Math.floor(items / 25), Math.max(1, custodians));
-}
+/** The contract's 422 for criteria the builder refuses, naming the field it is about when there is one. */
+export const criteriaInvalid = (e: CriteriaInvalid) => error(422, 'criteria_invalid', e.message, e.field ? { field: e.field } : {});
 
 export const criteriaHandlers = [
   route('get', '/matters/:matterId/draft', (context) => withMatter(context, (m) => HttpResponse.json(draftView(m)))),
@@ -54,7 +52,7 @@ export const criteriaHandlers = [
     try {
       return HttpResponse.json(buildMockKql(body!.criteria as S['Criteria']));
     } catch (e) {
-      if (e instanceof CriteriaInvalid) return error(422, 'criteria_invalid', e.message);
+      if (e instanceof CriteriaInvalid) return criteriaInvalid(e);
       throw e;
     }
   }),
@@ -63,11 +61,11 @@ export const criteriaHandlers = [
     withMatter(context, (m) => {
       const denied = deniedByPurview('startEstimate');
       if (denied) return denied;
-      let built: S['KqlPreview'];
+      // Criteria the builder refuses (a From date after the To date, say) never reach Purview: 422, no counts.
       try {
-        built = buildMockKql(m.draft.criteria);
+        buildMockKql(m.draft.criteria);
       } catch (e) {
-        if (e instanceof CriteriaInvalid) return error(422, 'criteria_invalid', e.message);
+        if (e instanceof CriteriaInvalid) return criteriaInvalid(e);
         throw e;
       }
       const running = activeJob(m.matter.id, 'estimate');
@@ -91,7 +89,7 @@ export const criteriaHandlers = [
         createJob('estimate', m.matter.id, {
           finish: () => {
             // Estimating the same query again finds the same items, so a version keeps its counts.
-            target.counts ??= estimateCounts(built.kql, m.matter.custodians.length);
+            target.counts ??= estimateCounts(m, target.criteria);
             appendLog(m, 'estimate', `Query v${target.version} · ${target.counts.items.toLocaleString('en-US')} items + ${target.counts.partial_items.toLocaleString('en-US')} partially indexed`, target.version, { kql: target.kql, counts: target.counts });
             return { version: target.version, estimated_at: iso(), counts: clone(target.counts) };
           },

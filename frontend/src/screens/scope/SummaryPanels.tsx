@@ -1,5 +1,5 @@
 // The live summary: the right column of docs/design/Scope.dc.html (the estimate, the methodology and the KQL).
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { ApiRequestError, type ApiError, type Schemas } from '@/api/client';
 import { dayAndTime } from '@/app/time';
 import { Banner, Button, ButtonLink, ErrorNotice, InlineError, MethodologyCard } from '@/components';
@@ -26,16 +26,30 @@ type EstimateProps = {
   startError: unknown;
   /** What to do when Estimate was refused for invalid criteria (the message itself is shown under the field). */
   invalidNote: string | null;
+  /**
+   * Why the query on screen can't be run (a From date after the To date, criteria the API can't build a query
+   * from), if it can't: Estimate is off, with this next to it, and nothing offers to go on to Preview or Terms.
+   */
+  blocked: string | null;
   onEstimate: () => void;
 };
 
-export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progress, failure, startError, invalidNote, onEstimate }: EstimateProps) {
+export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progress, failure, startError, invalidNote, blocked, onEstimate }: EstimateProps) {
   const previewed = Boolean(shown && !changed && matter.previewed_version === shown.version);
+  const reasonId = useId();
+  const reason = blocked && (
+    // A span, since a banner's text is a paragraph already; it shows as a line of its own.
+    <span id={reasonId} className={styles.blockedNote}>
+      {blocked}
+    </span>
+  );
   const estimateButton = (
-    <Button variant="primary" size="sm" onClick={onEstimate} disabled={busy}>
+    <Button variant="primary" size="sm" onClick={onEstimate} disabled={busy || blocked !== null} aria-describedby={blocked ? reasonId : undefined}>
       Estimate v{nextVersion}
     </Button>
   );
+  // The reason goes where the Estimate button is; with no button on screen, where Preview and Terms would be.
+  const buttonShown = !busy && (changed ? Boolean(shown) : !shown);
   const pct = Math.round((progress ?? 0) * 100);
   return (
     <section aria-labelledby="est-h" className={styles.panel}>
@@ -65,6 +79,7 @@ export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progr
       {!busy && changed && shown && (
         <Banner title="You changed the query." actions={estimateButton}>
           These counts are still for v{shown.version}. Estimate again to see the effect.
+          {reason}
         </Banner>
       )}
 
@@ -77,6 +92,7 @@ export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progr
         <div className={styles.stack10}>
           <p className={styles.muted14}>Not estimated yet. Estimate the query to ask Purview how many items match.</p>
           <div>{estimateButton}</div>
+          {reason}
         </div>
       )}
 
@@ -103,8 +119,10 @@ export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progr
               </div>
             </dl>
           </div>
-          {/* While an estimate runs, the counts on screen are an older version's, so nothing here offers to go on from them. */}
-          {!busy && (
+          {/* While an estimate runs, the counts on screen are an older version's, so nothing here offers to go on from them;
+              nor while the query on screen can't be run. */}
+          {!busy && !buttonShown && reason}
+          {!busy && !blocked && (
             <div className={styles.row8}>
               <ButtonLink variant="primary" to={`/matters/${encodeURIComponent(matter.id)}/preview`}>
                 {previewed ? 'Open preview' : 'Preview this query'}

@@ -1,11 +1,12 @@
 // The Log screen's reads: query versions, a comparison of two, a page of log entries, and the chain check.
 // Every key sits under ['matters', id, ...], so a finished job (which invalidates ['matters']) refreshes them all:
 // a new version, new entries, and a fresh check of the chain that now includes them.
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef } from 'react';
 import { api, unwrap } from '@/api/client';
 import { isFinished, pollDelay, serverSaidNo } from '@/api/jobs';
 import { queryKeys } from '@/api/queries';
+import { sessionHasEnded } from '@/api/session';
 
 /** Entries per page. */
 export const LOG_PAGE_SIZE = 20;
@@ -73,12 +74,14 @@ export function useRunningJobs(matterId: string) {
   // The poll count when the running jobs were first seen: the speed while jobs run counts only the polls since
   // then, so a job that starts after a long idle spell is still asked about often at first.
   const busySince = useRef<number | null>(null);
+  const client = useQueryClient();
   return useQuery({
     queryKey: queryKeys.matterJobs(matterId, { active: true }),
     queryFn: async ({ signal }) =>
       unwrap(await api.GET('/matters/{matterId}/jobs', { params: { path: { matterId }, query: { active: true } }, signal })),
     refetchInterval: (q) => {
-      if (serverSaidNo(q.state.error)) return false;
+      // Not while the session has ended: signing in again loads everything again, which starts this again.
+      if (serverSaidNo(q.state.error) || sessionHasEnded(client)) return false;
       const active = q.state.data?.items.some((job) => !isFinished(job)) ?? false;
       const polls = q.state.dataUpdateCount + q.state.errorUpdateCount;
       if (!active) {

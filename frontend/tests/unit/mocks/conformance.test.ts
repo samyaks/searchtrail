@@ -194,7 +194,7 @@ describe('exports', () => {
   });
 
   test('an export that is not ready cannot be handed off', async () => {
-    await exercise('startExportDownload', 409, () => post('/exports/exp_falcon_v3/download')); // still preparing
+    await exercise('startExportDownload', 409, () => post('/exports/exp_mat_q3trading/download')); // still preparing
   });
 });
 

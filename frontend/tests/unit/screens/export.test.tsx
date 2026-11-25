@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { findMatter } from '@/mocks/db';
+import { example } from '@/mocks/examples';
 import { exportCheck } from '@/mocks/handlers/exports';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
@@ -43,6 +44,18 @@ const startCard = () => screen.getByRole('heading', { level: 2, name: 'Start the
 const confirmField = () => screen.getByLabelText(/to confirm$/);
 const startButton = () => screen.getByRole('button', { name: 'Start export' });
 const historyRows = () => within(screen.getByRole('table', { name: 'Exports for this matter' })).getAllByRole('row').slice(1);
+const everlawCard = () => within(screen.getByRole('heading', { name: 'Hand-off to Everlaw' }).closest('section')!);
+const V3 = 'M-2026-0142 EVERLAW 20261105T1058Z';
+
+/**
+ * Falcon is seeded Previewed, with its finished v2 export only. Some tests need a newer export beside it: the
+ * contract's v3 export, with `changes` (Ready by default). A Preparing one is followed on the job clock (mocks/jobs.ts).
+ */
+function addV3Export(changes: Partial<Schemas['Export']> = {}): Schemas['Export'] {
+  const v3 = { ...example<Schemas['ExportList']>('listExports', '200').items[0]!, status: 'ready', progress: 1, finished_at: '2026-11-05T11:30:00Z', ...changes } as Schemas['Export'];
+  findMatter(FALCON)!.exports.unshift(v3);
+  return v3;
+}
 
 test('a previewed query passes every check, and the screen shows what will be exported, how, and the history', async () => {
   renderApp(PATH);
@@ -66,20 +79,21 @@ test('a previewed query passes every check, and the screen shows what will be ex
   const method = within(screen.getByRole('heading', { name: 'Methodology sent with this export' }).closest('section')!);
   expect(method.getByText('Item types: emails, Teams chats, documents.')).toBeInTheDocument();
 
-  // The history, newest first.
-  await waitFor(() => expect(historyRows()).toHaveLength(2));
-  const [v3, v2] = historyRows();
-  expect(within(v3!).getByRole('rowheader')).toHaveTextContent('M-2026-0142 EVERLAW 20261105T1058Z');
-  expect(v3).toHaveTextContent('Preparing in Purview');
-  expect(v3).toHaveTextContent('0% · usually minutes to hours');
+  // The history, newest first: the v2 export (v3 is the one to start here).
+  await waitFor(() => expect(historyRows()).toHaveLength(1));
+  const [v2] = historyRows();
   expect(within(v2!).getByRole('rowheader')).toHaveTextContent(V2);
   expect(v2).toHaveTextContent('1,148 + 41 partial');
   expect(v2).toHaveTextContent('Ready in Purview');
   expect(v2).toHaveTextContent('Download expires 4 Dec');
 
-  // The Everlaw steps name the newest export in Purview; the other hand-offs act on the newest ready one.
-  const everlaw = within(screen.getByRole('heading', { name: 'Hand-off to Everlaw' }).closest('section')!);
-  expect(everlaw.getByText('M-2026-0142 EVERLAW 20261105T1058Z')).toBeInTheDocument();
+  // The Everlaw steps describe the export Start would create (v3), not an older one; the other hand-offs act on the
+  // newest ready export.
+  const everlaw = everlawCard();
+  expect(everlaw.getByText('SearchTrail starts the export of query v3 in Purview as')).toBeInTheDocument();
+  expect(everlaw.getByText(/The name appears here once it has started\./)).toBeInTheDocument();
+  expect(everlaw.queryByText(V2)).not.toBeInTheDocument();
+  expect(everlaw.queryByRole('button', { name: 'Copy name' })).not.toBeInTheDocument();
   expect(everlaw.getByText('M-2026-0142 Project Falcon investigation')).toBeInTheDocument();
   expect(within(screen.getByRole('heading', { name: 'Other ways to hand off' }).closest('section')!).getByText(V2)).toBeInTheDocument();
 
@@ -140,8 +154,12 @@ test('the export starts only once the matter number is typed exactly, then shows
   expect(within(startCard()).getByRole('progressbar', { name: 'Export progress' })).toHaveAttribute('aria-valuenow', '0');
   expect(within(startCard()).getByRole('link', { name: 'See it in the log' })).toHaveAttribute('href', `/matters/${FALCON}/log`);
   expect(screen.queryByLabelText(/to confirm$/)).not.toBeInTheDocument();
-  await waitFor(() => expect(historyRows()).toHaveLength(3));
+  await waitFor(() => expect(historyRows()).toHaveLength(2));
   expect(historyRows()[0]).toHaveTextContent('Preparing in Purview');
+  // The Everlaw steps now name the export being followed, by the name Purview has for it.
+  const startedName = within(historyRows()[0]!).getByRole('rowheader').textContent!;
+  expect(everlawCard().getByText('SearchTrail is exporting query v3 in Purview as')).toBeInTheDocument();
+  expect(everlawCard().getByText(startedName)).toBeInTheDocument();
 
   tick(4.5);
   await waitFor(() => expect(screen.getByRole('progressbar', { name: 'Export progress' })).toHaveAttribute('aria-valuenow', '50'));
@@ -160,6 +178,9 @@ test('the export starts only once the matter number is typed exactly, then shows
   expect(confirmField()).toHaveValue('');
   await waitFor(() => expect(confirmField()).toHaveFocus());
   expect(startButton()).toBeDisabled();
+  // With the form back, the Everlaw steps describe the export Start would create, not the finished one.
+  expect(everlawCard().getByText('SearchTrail starts the export of query v3 in Purview as')).toBeInTheDocument();
+  expect(everlawCard().queryByText(startedName)).not.toBeInTheDocument();
 });
 
 test('reopening the screen while an export runs shows its progress instead of the form', async () => {
@@ -182,7 +203,7 @@ test('blocked: a query that was not previewed cannot be exported, and the screen
   expect(check.getByText('Blocked')).toBeInTheDocument();
   expect(check.getAllByRole('listitem').map((li) => li.textContent)).toEqual([
     "Failed: Query v3 hasn't been previewed. Preview it first, so the export matches what was reviewed.",
-    'Passed: Same custodians and sites as the preview.',
+    'Not checked: Not checked because nothing has been previewed.',
     "Not checked: Not checked because the query wasn't previewed.",
   ]);
   const start = within(startCard());
@@ -193,6 +214,17 @@ test('blocked: a query that was not previewed cannot be exported, and the screen
   await userEvent.type(confirmField(), NUMBER);
   expect(startButton()).toBeDisabled();
   await expectNoA11yViolations(document.body);
+});
+
+test('blocked: a new matter has no query yet, so the screen says so and sends you to Scope', async () => {
+  const created = (await post('/matters', { matter_number: 'M-77', name: 'New', type: 'dsr' })).json as Schemas['Matter'];
+  renderApp(`/matters/${created.id}/export`);
+  const start = within(await waitFor(() => startCard()));
+  expect(await start.findByText("Export blocked: there's no query to export yet.")).toBeInTheDocument();
+  expect(within(checkCard()).getAllByRole('listitem')[0]).toHaveTextContent("Failed: There's no query to export yet. Estimate and preview one first.");
+  expect(document.body).not.toHaveTextContent('Query v?');
+  expect(start.getByRole('link', { name: 'Go to Scope' })).toHaveAttribute('href', `/matters/${created.id}/scope`);
+  expect(start.queryByRole('link', { name: 'Go to Preview' })).not.toBeInTheDocument();
 });
 
 test('blocked: if the query stops matching the preview after the check, the refused start shows the block', async () => {
@@ -395,8 +427,7 @@ test('if the server will not say how a hand-off is doing, it says so and the han
 });
 
 test("a hand-off's progress and the review set name belong to the export they were started for", async () => {
-  const newest = findMatter(FALCON)!.exports[0]!;
-  Object.assign(newest, { status: 'ready', progress: 1, finished_at: '2026-11-05T11:30:00Z' });
+  const newest = addV3Export();
   await openReady();
   await waitFor(() => expect(historyRows()).toHaveLength(2));
   const others = () => within(screen.getByRole('heading', { name: 'Other ways to hand off' }).closest('section')!);
@@ -457,7 +488,7 @@ test('download the package: a job with progress, then where it was stored', asyn
   await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '67'));
   tick(5);
   expect(await download.findByText('Package downloaded to SearchTrail: matters/mat_falcon/exports/exp_falcon_v2')).toBeInTheDocument();
-  await waitFor(() => expect(historyRows()[1]).toHaveTextContent('Package downloaded to SearchTrail'));
+  await waitFor(() => expect(historyRows()[0]).toHaveTextContent('Package downloaded to SearchTrail'));
   expect(download.getByRole('button', { name: 'Download again' })).toBeEnabled();
 });
 
@@ -491,7 +522,7 @@ test('send to a Purview review set: named, a job with progress, then the set it 
   await section.findByRole('progressbar', { name: 'Adding the items to the review set' });
   tick(10);
   expect(await section.findByText('Added to review set Falcon for Relativity')).toBeInTheDocument();
-  await waitFor(() => expect(historyRows()[1]).toHaveTextContent('In review set Falcon for Relativity'));
+  await waitFor(() => expect(historyRows()[0]).toHaveTextContent('In review set Falcon for Relativity'));
 });
 
 test.each([
@@ -521,6 +552,7 @@ test('a failed download is explained', async () => {
 });
 
 test("an export's details: its files, options and hand-offs, from the export itself", async () => {
+  addV3Export({ status: 'preparing', progress: 0.4, finished_at: null, files: [] });
   await openReady();
   await waitFor(() => expect(historyRows()).toHaveLength(2));
   const open = screen.getByRole('button', { name: `Details of ${V2}` });
@@ -534,8 +566,11 @@ test("an export's details: its files, options and hand-offs, from the export its
   await expectNoA11yViolations(document.body);
 
   // Choosing a ready export also points the other hand-offs at it; a preparing one leaves them on the newest ready.
-  await userEvent.click(screen.getByRole('button', { name: 'Details of M-2026-0142 EVERLAW 20261105T1058Z' }));
-  expect(await screen.findByRole('heading', { level: 3, name: 'Export M-2026-0142 EVERLAW 20261105T1058Z' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: `Details of ${V3}` }));
+  expect(await screen.findByRole('heading', { level: 3, name: `Export ${V3}` })).toBeInTheDocument();
+  // The Everlaw steps name the export being shown.
+  expect(everlawCard().getByText('SearchTrail is exporting query v3 in Purview as')).toBeInTheDocument();
+  expect(everlawCard().getByText(V3)).toBeInTheDocument();
   expect(screen.queryByRole('heading', { level: 3, name: `Export ${V2}` })).not.toBeInTheDocument();
   expect(within(screen.getByRole('heading', { name: 'Other ways to hand off' }).closest('section')!).getByText(V2)).toBeInTheDocument();
 });
@@ -554,9 +589,11 @@ test("the export's name can be copied for Everlaw", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
   await openReady();
-  await waitFor(() => expect(historyRows()).toHaveLength(2));
+  // Opening an export in the list names it in the Everlaw steps.
+  await userEvent.click(await screen.findByRole('button', { name: `Details of ${V2}` }));
+  expect(everlawCard().getByText('SearchTrail exported query v2 in Purview as')).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Copy name' }));
-  expect(writeText).toHaveBeenCalledWith('M-2026-0142 EVERLAW 20261105T1058Z');
+  expect(writeText).toHaveBeenCalledWith(V2);
   expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
 });
 
@@ -632,11 +669,7 @@ test('after setting aside an export the server would not say about, a start refu
 });
 
 test("a download found running for one export doesn't show under another whose own download failed earlier", async () => {
-  const newest = findMatter(FALCON)!.exports[0]!;
-  Object.assign(newest, {
-    status: 'ready', progress: 1, finished_at: '2026-11-05T11:30:00Z',
-    download: { status: 'failed', progress: null, stored_path: null, finished_at: null },
-  });
+  const newest = addV3Export({ download: { status: 'failed', progress: null, stored_path: null, finished_at: null } });
   await post('/exports/exp_falcon_v2/download'); // the older export's download, started elsewhere
   tick(3);
   await openReady();

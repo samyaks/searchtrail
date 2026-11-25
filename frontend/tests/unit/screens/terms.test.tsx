@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { onlineManager } from '@tanstack/react-query';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { setSignInHere } from '@/api/session';
 import { findMatter } from '@/mocks/db';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
@@ -27,8 +28,8 @@ vi.mock('@/api/jobs', async (importOriginal) => {
 const PATH = `/matters/${FALCON}/terms`;
 const reportTable = () => screen.findByRole('table', { name: /^Search term report/ });
 const bodyRows = (table: HTMLElement) => within(table.querySelector('tbody')!).getAllByRole('row');
-// The toolbar's Recount (a stale report's banner has one too, further down).
-const recount = () => screen.getAllByRole('button', { name: 'Recount' })[0]!;
+// The Recount button: the toolbar's, or the stale report's banner's while the count is out of date (never both).
+const recount = () => screen.getByRole('button', { name: 'Recount' });
 // The progress block, which takes focus when the button that started the count goes away.
 const progressBlock = () => screen.getByRole('progressbar').closest<HTMLElement>('[tabindex="-1"]');
 // What the latest report's time says, for the report the mock wrote last.
@@ -373,12 +374,15 @@ test('when the query changed since the report, the screen says the counts are ou
   expect(table).toHaveAttribute('data-stale', 'true');
   await expectNoA11yViolations(document.body);
 
-  // The banner says to choose Recount, and has the button.
+  // The banner says to choose Recount, and has the button: the only Recount on the screen while it shows.
+  expect(screen.getAllByRole('button', { name: 'Recount' })).toHaveLength(1);
   await userEvent.click(within(notice).getByRole('button', { name: 'Recount' }));
   expect(await screen.findByRole('progressbar')).toBeInTheDocument();
   expect(screen.queryByText('The query has changed since this count.')).not.toBeInTheDocument();
   // The banner and its button are gone, so focus moves to the progress rather than dropping to the page.
   expect(progressBlock()).toHaveFocus();
+  // The toolbar's Recount is back, waiting for the count.
+  expect(screen.getByRole('button', { name: 'Recount' })).toBeDisabled();
 });
 
 test('a term report the API refuses to start says why in plain English', async () => {
@@ -390,6 +394,63 @@ test('a term report the API refuses to start says why in plain English', async (
   expect(within(alert).getByRole('heading', { name: "These search settings can't be turned into a query" })).toBeInTheDocument();
   expect(alert).toHaveTextContent('There are no search terms to count. Add at least one term first.');
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+});
+
+test('with a From date after the To date in the draft, counting is off, with the reason next to the button', async () => {
+  const criteria = findMatter(FALCON)!.draft.criteria;
+  criteria.date_from = '2026-01-01';
+  criteria.date_to = '2025-06-30';
+  const starts: string[] = [];
+  const onRequest = ({ request }: { request: Request }) => {
+    if (request.method === 'POST') starts.push(new URL(request.url).pathname);
+  };
+  server.events.on('request:start', onRequest);
+  renderApp(PATH);
+  await reportTable();
+  const reason = 'Counting is off: on Scope, the From date is after the To date, so nothing can match. Fix the dates there first.';
+  // The draft differs from v3, so the stale banner has the one Recount: off, and saying why.
+  await waitFor(() => expect(recount()).toBeDisabled());
+  expect(recount()).toHaveAccessibleDescription(reason);
+  expect(screen.getByText(reason)).toBeInTheDocument();
+  await expectNoA11yViolations(document.body);
+  await userEvent.click(recount());
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  server.events.removeListener('request:start', onRequest);
+  expect(starts).toEqual([]);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+  // Once the dates are put right (on Scope), counting is back.
+  criteria.date_to = '2026-06-30';
+  cleanup();
+  renderApp(PATH);
+  await reportTable();
+  await waitFor(() => expect(recount()).toBeEnabled());
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
+});
+
+test('a Recount that the ended session refused: after signing in again in place, it says nothing was counted, not that the session ended', async () => {
+  setSignInHere(() => setScenario({ sessionExpired: false })); // as the mocks do in the browser
+  try {
+    renderApp(PATH);
+    await reportTable();
+    setScenario({ sessionExpired: true });
+    await userEvent.click(recount());
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+    await reportTable();
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByRole('heading', { level: 3, name: "That didn't go through" })).toBeInTheDocument();
+    expect(alert).toHaveTextContent('Your session had ended, so nothing was changed.');
+    expect(screen.queryByText(/Your session has ended/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+
+    // Try again counts, now that the session is live.
+    await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  } finally {
+    setSignInHere(null);
+  }
 });
 
 test('before any term report, the screen offers to count, and then shows the first report', async () => {

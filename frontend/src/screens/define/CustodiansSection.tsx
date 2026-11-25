@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { Schemas } from '@/api/client';
 import { Button, ChipList, IconButton, RemovableChip, Switch } from '@/components';
+import { Confirm } from './Confirm';
 import { ChangeError, FieldError } from './errors';
 import { describedBy, hasAnySource, holdSettling, holdText, normaliseSiteUrl, siteLabel, siteProblem, sourcesOf, type Sources } from './format';
 import { MIN_SEARCH, useDirectorySearch, useRemoveCustodian, useSetHold, useUpsertCustodian } from './hooks';
@@ -53,6 +54,9 @@ export function CustodiansSection({ matter, tenantName, unsaved, setUnsaved, exi
     (next ?? headingRef.current)?.focus();
   }, [matter.custodians]);
 
+  // One confirm step open at a time, across the rows: opening one closes any other.
+  const [confirming, setConfirming] = useState<{ userId: string; kind: ConfirmKind } | null>(null);
+
   const removeCustodian = (userId: string) => {
     const others = matter.custodians.filter((c) => c.user_id !== userId);
     const at = matter.custodians.findIndex((c) => c.user_id === userId);
@@ -73,6 +77,8 @@ export function CustodiansSection({ matter, tenantName, unsaved, setUnsaved, exi
             setUnsaved={(s) => setUnsaved(c.user_id, s)}
             existingSites={existingSites}
             onRemove={() => removeCustodian(c.user_id)}
+            confirming={confirming?.userId === c.user_id ? confirming.kind : null}
+            setConfirming={(kind) => setConfirming(kind ? { userId: c.user_id, kind } : null)}
             removeError={removeErrors[c.user_id]}
             onHoldChanged={() => setRemoveError(c.user_id, null)}
           />
@@ -161,6 +167,9 @@ const SOURCE_LABELS = [
   ['onedrive', 'OneDrive'],
 ] as const;
 
+/** Which confirm step a row has open. */
+type ConfirmKind = 'release' | 'remove';
+
 type RowProps = {
   matterId: string;
   custodian: Custodian;
@@ -168,12 +177,15 @@ type RowProps = {
   setUnsaved: (sources: Sources | null) => void;
   existingSites: string[];
   onRemove: () => void;
+  /** The confirm step this row has open, if any (only one row has one open at a time). */
+  confirming: ConfirmKind | null;
+  setConfirming: (kind: ConfirmKind | null) => void;
   removeError: unknown;
   /** A hold change went through, so a refusal to remove them while on hold is out of date. */
   onHoldChanged: () => void;
 };
 
-function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites, onRemove, removeError, onHoldChanged }: RowProps) {
+function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites, onRemove, confirming, setConfirming, removeError, onHoldChanged }: RowProps) {
   const upsert = useUpsertCustodian(matterId);
   const hold = useSetHold(matterId, c.user_id);
   const [linking, setLinking] = useState(false);
@@ -203,8 +215,25 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
   const settling = holdSettling(c.hold);
   const holdOn = c.hold.status === 'on' || c.hold.status === 'pending';
 
+  // Releasing a hold and removing the person each wait for a confirm step in the row. Cancelling puts focus back on
+  // the control that asked; a removal moves focus on by itself once the row has gone (see removeCustodian).
+  // A confirmed release disables the switch until Purview answers, so focus goes to the hold's status beside it.
+  // A confirm closed because another row opened one leaves focus where the person now is.
+  const rowRef = useRef<HTMLLIElement>(null);
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (confirming || !refocus.current) return;
+    const selector = refocus.current;
+    refocus.current = null;
+    rowRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [confirming]);
+  const closeConfirm = (focus: string | null) => {
+    refocus.current = focus;
+    setConfirming(null);
+  };
+
   return (
-    <li className={styles.custodian}>
+    <li className={styles.custodian} ref={rowRef}>
       <div className={styles.custodianTop}>
         <span aria-hidden="true" className={styles.avatar}>
           {c.initials}
@@ -213,7 +242,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
           <span className={styles.personName}>{c.display_name}</span>
           <span className={styles.muted}>{[c.email, c.department].filter(Boolean).join(' · ')}</span>
         </span>
-        <IconButton label={`Remove ${c.display_name}`} data-remove={c.user_id} onClick={onRemove}>
+        <IconButton label={`Remove ${c.display_name}`} data-remove={c.user_id} aria-expanded={confirming === 'remove'} onClick={() => setConfirming('remove')}>
           <CloseIcon />
         </IconButton>
       </div>
@@ -228,7 +257,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
           ))}
         </div>
         <div className={styles.hold}>
-          <span className={styles.muted} aria-live="polite">
+          <span className={styles.muted} aria-live="polite" tabIndex={-1} data-hold-status>
             {holdText(c.hold)}
           </span>
           <Switch
@@ -236,10 +265,52 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
             hideLabel
             checked={holdOn}
             disabled={settling || hold.isPending}
-            onChange={(on) => hold.mutate(on, { onSuccess: onHoldChanged })}
+            onChange={(on) => (on ? hold.mutate(true, { onSuccess: onHoldChanged }) : setConfirming('release'))}
           />
         </div>
       </div>
+      {confirming === 'release' && (
+        <Confirm
+          title={`Release the legal hold on ${c.display_name}?`}
+          confirmLabel="Release hold"
+          onCancel={() => closeConfirm('[role="switch"]')}
+          onConfirm={() => {
+            closeConfirm('[data-hold-status]');
+            hold.mutate(false, { onSuccess: onHoldChanged });
+          }}
+        >
+          Purview stops preserving their mailbox, Teams chats, OneDrive and linked sites for this matter, so anything they delete from now on can
+          be lost for good. The release is recorded in the log.
+        </Confirm>
+      )}
+      {confirming === 'remove' && holdOn && (
+        // The API refuses to remove someone on hold, so this doesn't offer to: it says why, and offers the release.
+        <Confirm
+          title={`${c.display_name} is on legal hold`}
+          // While Purview is still placing or changing the hold, there is nothing to release yet: Cancel only.
+          confirmLabel={settling || hold.isPending ? undefined : 'Release hold…'}
+          confirmVariant="secondary"
+          onConfirm={() => setConfirming('release')}
+          onCancel={() => closeConfirm('[data-remove]')}
+        >
+          They can't be removed from this matter while their mailbox, Teams chats, OneDrive and linked sites are on hold. Release the hold first,
+          then remove them.
+        </Confirm>
+      )}
+      {confirming === 'remove' && !holdOn && (
+        <Confirm
+          title={`Remove ${c.display_name} from this matter?`}
+          confirmLabel="Remove from matter"
+          onCancel={() => closeConfirm('[data-remove]')}
+          onConfirm={() => {
+            closeConfirm(null);
+            onRemove();
+          }}
+        >
+          Their mailbox, Teams chats, OneDrive and linked sites won't be searched any more. Adding them again later starts with the usual sources and no
+          linked sites.
+        </Confirm>
+      )}
 
       <div className={styles.linked}>
         <span className={styles.muted}>Linked sites:</span>

@@ -3,14 +3,14 @@
 // Out of scope for V1 (docs/V1_PLAN.md): the unique-hits and "if removed" columns, "Try without" and its
 // "What if" panel, and the Excel export.
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { useParams } from 'react-router';
 import { ApiRequestError, type ApiError } from '@/api/client';
 import { useTrackedJob } from '@/api/jobs';
 import { useMatter } from '@/api/queries';
 import { Banner, Button, ButtonLink, EmptyState, ErrorNotice } from '@/components';
 import { barPercent, changeHeader, changeText, countText, previousVersionOf, sizeText, whenText } from './format';
-import { isNewerReport, runningJobOf, termReportKey, useLatestTermReport, useStartTermReport, type TermReport } from './hooks';
+import { draftProblem, isNewerReport, runningJobOf, termReportKey, useDraft, useLatestTermReport, useStartTermReport, type TermReport } from './hooks';
 import styles from './TermsScreen.module.css';
 
 /** What a failed count says when the job didn't say why. */
@@ -31,7 +31,20 @@ function MatterTerms({ matterId }: { matterId: string }) {
   const queryClient = useQueryClient();
 
   const counting = job.isRunning || start.isPending;
-  const startCount = () => start.mutate();
+  // A draft that can't be counted (From after To) isn't sent at all: every count button is off, with the reason
+  // next to it, as Scope does for Estimate.
+  const blocked = draftProblem(useDraft(matterId).data?.criteria);
+  const reasonId = useId();
+  const reason = blocked && (
+    // A span, since a banner's text is a paragraph already; it shows as a line of its own.
+    <span id={reasonId} className={styles.blockedNote}>
+      {blocked}
+    </span>
+  );
+  const blockedProps = { disabled: blocked !== null, 'aria-describedby': blocked ? reasonId : undefined };
+  const startCount = () => {
+    if (!blocked) start.mutate();
+  };
   // A 409 that names the running job isn't a problem: the screen follows that job instead.
   const startError = start.isError && !runningJobOf(start.error) ? start.error : null;
   // Once a count is under way (one started elsewhere, say), an earlier refusal is old news: drop it, so it
@@ -71,11 +84,15 @@ function MatterTerms({ matterId }: { matterId: string }) {
             Counted {whenText(shown.created_at)} for query v{shown.version}. Each term is counted inside every other filter: the same custodians, dates,
             item types and labels. Counting runs on a separate search, so the search you previewed is never changed.
           </p>
-          <div className={styles.actions}>
-            <Button variant="neutral" onClick={startCount} disabled={counting}>
-              Recount
-            </Button>
-          </div>
+          {/* While the count is out of date, the banner below has the one Recount. */}
+          {!(shown.stale && !counting) && (
+            <div className={styles.actions}>
+              <Button variant="neutral" onClick={startCount} {...blockedProps} disabled={counting || blockedProps.disabled}>
+                Recount
+              </Button>
+              {!counting && reason}
+            </div>
+          )}
         </div>
       )}
 
@@ -90,12 +107,13 @@ function MatterTerms({ matterId }: { matterId: string }) {
         <Banner
           title="The query has changed since this count."
           actions={
-            <Button variant="neutral" onClick={startCount}>
+            <Button variant="neutral" onClick={startCount} {...blockedProps}>
               Recount
             </Button>
           }
         >
           These hits are for query v{shown.version}. The search terms or filters are different now, so choose Recount to count them again.
+          {reason}
         </Banner>
       )}
 
@@ -127,13 +145,14 @@ function MatterTerms({ matterId }: { matterId: string }) {
             <EmptyState
               title="No term report yet"
               action={
-                <Button variant="primary" onClick={startCount}>
+                <Button variant="primary" onClick={startCount} {...blockedProps}>
                   Count hits per term
                 </Button>
               }
             >
               See how many items each search term finds within every other filter: the same custodians, dates, item types and labels. Counting runs on a
               separate search, so the search you previewed is never changed.
+              {reason}
             </EmptyState>
           )}
         </div>
