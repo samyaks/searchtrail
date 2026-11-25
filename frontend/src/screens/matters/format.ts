@@ -26,3 +26,11 @@ export function activityText(iso: string, now: Date = new Date()): string {
   if (days === 1) return `Yesterday ${time}`;
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
+
+/** What the empty table says: how to make the first matter, or how to undo the filter or search that hides them all. */
+export function emptyText(stage: Schemas['MatterStage'] | undefined, q: string | undefined): string {
+  if (stage && q) return 'No matters match. Clear the search or choose All.';
+  if (q) return 'No matters match. Clear the search.';
+  if (stage) return 'No matters match. Choose All.';
+  return 'No matters yet. Choose New matter to create the first one.';
+}
