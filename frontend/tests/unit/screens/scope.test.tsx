@@ -347,7 +347,7 @@ describe('editing', () => {
   test('coming back after the draft changed elsewhere starts from the draft as it is now, not an old copy', async () => {
     await openScope();
     await userEvent.click(tab('Define'));
-    await screen.findByRole('heading', { name: 'Define' });
+    await screen.findByRole('heading', { name: 'Matter details' });
     // Another tab saves the draft meanwhile.
     const saved = (await put(`/matters/${FALCON}/draft`, { criteria: { ...STALE_DRAFT.criteria, keywords: ['elsewhere'] } })).json as Schemas['Draft'];
     expect(saved.criteria.keywords).toEqual(['elsewhere']);
@@ -368,7 +368,7 @@ describe('editing', () => {
   test('coming back when the draft cannot be read again says why, instead of starting from the old copy', async () => {
     await openScope();
     await userEvent.click(tab('Define'));
-    await screen.findByRole('heading', { name: 'Define' });
+    await screen.findByRole('heading', { name: 'Matter details' });
     let fail = true;
     server.use(
       http.get('/api/v1/matters/:matterId/draft', () =>
@@ -398,7 +398,7 @@ describe('editing', () => {
     await openScope();
     await addTerm('brightline');
     await userEvent.click(tab('Define')); // well within the 300 ms the screen waits before saving
-    await screen.findByRole('heading', { name: 'Define' });
+    await screen.findByRole('heading', { name: 'Matter details' });
     // Back while the save is still on its way: the screen waits for it instead of showing the draft from before.
     await userEvent.click(tab('Scope'));
     expect(await screen.findByText('Loading the search…')).toBeInTheDocument();
@@ -595,7 +595,7 @@ describe('estimate', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' })); // not saved
     expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
     await userEvent.click(tab('Define'));
-    await screen.findByRole('heading', { name: 'Define' });
+    await screen.findByRole('heading', { name: 'Matter details' });
     await userEvent.click(tab('Scope'));
     // Back on the draft as saved (with kickback), which is what an estimate is of.
     const terms = await screen.findByRole('list', { name: 'Search terms' });
