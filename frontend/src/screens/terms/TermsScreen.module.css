@@ -24,6 +24,14 @@
   flex-wrap: wrap;
   gap: var(--st-space-2);
 }
+/* Why counting is off: next to the button, in the colour of a blocked state (as on Scope). */
+.blockedNote {
+  display: block;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--st-margin-red);
+}
 .loading {
   margin: 0;
   color: var(--st-muted);

@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { useTrackedJob } from '@/api/jobs';
+import { sessionHasEnded } from '@/api/session';
 import { pollMs } from './poll';
 
 export const exportKeys = {
@@ -23,20 +24,24 @@ export function useExportCheck(matterId: string) {
 
 /** The matter's exports, newest first. `live`: something is running, so ask again until it ends. */
 export function useExports(matterId: string, live: boolean) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: exportKeys.list(matterId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/matters/{matterId}/exports', { params: { path: { matterId } }, signal })),
-    refetchInterval: live ? (q) => pollMs(q.state.dataUpdateCount) : false,
+    // Not while the session has ended: signing in again loads it again, which starts this again.
+    refetchInterval: live ? (q) => (sessionHasEnded(client) ? false : pollMs(q.state.dataUpdateCount)) : false,
   });
 }
 
 /** One export, with its files and hand-offs. */
 export function useExport(exportId: string | null, live: boolean) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: exportKeys.detail(exportId ?? ''),
     enabled: Boolean(exportId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/exports/{exportId}', { params: { path: { exportId: exportId! } }, signal })),
-    refetchInterval: live ? (q) => pollMs(q.state.dataUpdateCount) : false,
+    // Not while the session has ended: signing in again loads it again, which starts this again.
+    refetchInterval: live ? (q) => (sessionHasEnded(client) ? false : pollMs(q.state.dataUpdateCount)) : false,
   });
 }
 

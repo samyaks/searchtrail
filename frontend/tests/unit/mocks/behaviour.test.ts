@@ -550,11 +550,20 @@ describe('counts that behave like a real search', () => {
   });
 
   test('with ALL terms, adding one never raises the total', async () => {
-    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keyword_mode: 'all' } });
-    const all = (await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result.counts.items as number;
-    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: [...FALCON_TERMS, 'brightline'] } });
-    const more = (await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result.counts.items as number;
-    expect(more).toBeLessThanOrEqual(all);
+    const allOf = async (keywords: string[]) => {
+      await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords, keyword_mode: 'all' } });
+      return (await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result.counts.items as number;
+    };
+    // v3's terms, all of them: the fewest-hits term (105) keeps 0.6 of its items per other term, 105 × 0.6³ = 22.7.
+    expect(await allOf(FALCON_TERMS)).toBe(23);
+    // Each term added on top keeps the same share or less of the fewest-hits term's items, so the total only falls.
+    const added = ['brightline', 'offshore', 'rebate', 'consulting fee'];
+    const totals = [23];
+    for (let n = 1; n <= added.length; n += 1) totals.push(await allOf([...FALCON_TERMS, ...added.slice(0, n)]));
+    for (let n = 1; n < totals.length; n += 1) expect(totals[n], `with ${n} added`).toBeLessThanOrEqual(totals[n - 1]!);
+    expect(totals.at(-1)).toBeLessThan(23);
+    // And taking the added terms away again gives back the same 23, every time.
+    expect(await allOf(FALCON_TERMS)).toBe(23);
   });
 });
 

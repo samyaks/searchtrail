@@ -38,9 +38,10 @@ export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progr
   const previewed = Boolean(shown && !changed && matter.previewed_version === shown.version);
   const reasonId = useId();
   const reason = blocked && (
-    <p id={reasonId} className={styles.blockedNote}>
+    // A span, since a banner's text is a paragraph already; it shows as a line of its own.
+    <span id={reasonId} className={styles.blockedNote}>
       {blocked}
-    </p>
+    </span>
   );
   const estimateButton = (
     <Button variant="primary" size="sm" onClick={onEstimate} disabled={busy || blocked !== null} aria-describedby={blocked ? reasonId : undefined}>

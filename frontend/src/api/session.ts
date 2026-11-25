@@ -30,9 +30,14 @@ export function isSessionExpired(error: unknown): boolean {
   return error instanceof ApiRequestError && error.body.code === 'session_expired';
 }
 
+/** Whether a request has found the session ended (and the person hasn't signed in again yet), without subscribing. */
+export function sessionHasEnded(client: QueryClient): boolean {
+  return client.getQueryData(ENDED_KEY) === true;
+}
+
 /** Called for every failed query and mutation (see queryClient.ts): an ended session is noted for the Shell to show. */
 export function noteSessionEnded(client: QueryClient, error: unknown): void {
-  if (isSessionExpired(error) && client.getQueryData(ENDED_KEY) !== true) client.setQueryData(ENDED_KEY, true);
+  if (isSessionExpired(error) && !sessionHasEnded(client)) client.setQueryData(ENDED_KEY, true);
 }
 
 /** True once any request has found the session ended, until the person signs in again. */
@@ -53,13 +58,18 @@ export const signsInHere = () => signInHere !== null;
 
 /**
  * Sign in again. With the real API: go to its sign-in, which comes back to this page. With the mocks: start a new
- * mock session, then load again everything that failed, without leaving the page.
+ * mock session, then load again everything that failed, without leaving the page. What failed to load starts
+ * afresh (loading, not the old "session ended" error); a change that was refused keeps its error, so the screen
+ * can say it wasn't made (components/ErrorNotice.tsx).
  */
 export function signIn(client: QueryClient | undefined): void {
   if (signInHere && client) {
     signInHere();
     client.setQueryData(ENDED_KEY, false);
-    void client.invalidateQueries(); // the ended-session flag itself is never fetched, so it stays false
+    const failed = new Set(client.getQueryCache().findAll({ predicate: (query) => isSessionExpired(query.state.error) }));
+    void client.resetQueries({ predicate: (query) => failed.has(query) });
+    // The ended-session flag itself is never fetched, so it stays false.
+    void client.invalidateQueries({ predicate: (query) => !failed.has(query) });
     return;
   }
   sessionNavigation.assign(loginUrl());

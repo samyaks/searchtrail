@@ -1,6 +1,8 @@
 // A small confirm step in the row, for changes that are hard to take back (releasing a legal hold, removing a
 // custodian): what will happen, Cancel, and a button that names the change. Cancel has focus when it opens, so Enter
 // or Space by mistake does nothing; Cancel or Escape puts focus back where the person was (the caller does that).
+// When the change can't be made yet (removing someone on hold), it says why, and the button, if any, is the step
+// that comes first.
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { Button } from '@/components';
 import styles from './DefineScreen.module.css';
@@ -10,13 +12,15 @@ type Props = {
   title: string;
   /** What will happen, in plain words. */
   children: ReactNode;
-  /** The button that makes the change ("Release hold"). */
-  confirmLabel: string;
-  onConfirm: () => void;
+  /** The button that makes the change ("Release hold"). Without one, only Cancel is offered. */
+  confirmLabel?: string;
+  onConfirm?: () => void;
+  /** `danger` (the default) for the change itself; `secondary` for a step that only leads to another confirm. */
+  confirmVariant?: 'danger' | 'secondary';
   onCancel: () => void;
 };
 
-export function Confirm({ title, children, confirmLabel, onConfirm, onCancel }: Props) {
+export function Confirm({ title, children, confirmLabel, onConfirm, onCancel, confirmVariant = 'danger' }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const bodyId = useId();
@@ -44,9 +48,12 @@ export function Confirm({ title, children, confirmLabel, onConfirm, onCancel }: 
         <Button size="sm" data-cancel onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" variant="danger" onClick={onConfirm}>
-          {confirmLabel}
-        </Button>
+        {/* Described by what will happen, so it is read out with the button too. */}
+        {confirmLabel && onConfirm && (
+          <Button size="sm" variant={confirmVariant} aria-describedby={bodyId} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        )}
       </div>
     </div>
   );

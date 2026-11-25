@@ -11,6 +11,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError, unwrap, type ApiError, type Schemas } from './client';
 import { queryKeys, type JobQuery } from './queries';
+import { sessionHasEnded } from './session';
 
 export type JobKind = Schemas['JobKind'];
 
@@ -54,12 +55,17 @@ export function serverSaidNo(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status >= 400 && error.status < 500 && error.status !== 429;
 }
 
-/** When to poll a query again: never once it said no; otherwise later the more often it was asked, answered or not. */
+/**
+ * When to poll a query again: never once it said no, nor while the session has ended (the page is hidden until the
+ * person signs in again, which loads everything again and so starts the polling again); otherwise later the more
+ * often it was asked, answered or not.
+ */
 function nextPoll(
+  client: QueryClient,
   state: { dataUpdateCount: number; errorUpdateCount: number; error: unknown },
   pollMs: (pollCount: number) => number,
 ): number | false {
-  if (serverSaidNo(state.error)) return false;
+  if (serverSaidNo(state.error) || sessionHasEnded(client)) return false;
   return pollMs(state.dataUpdateCount + state.errorUpdateCount);
 }
 
@@ -78,7 +84,7 @@ export function useJob<K extends JobKind = JobKind>(jobId: string | null | undef
     queryKey: queryKeys.job(jobId ?? ''),
     enabled: Boolean(jobId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/jobs/{jobId}', { params: { path: { jobId: jobId! } }, signal })),
-    refetchInterval: (q) => (q.state.data && isFinished(q.state.data) ? false : nextPoll(q.state, pollMs)),
+    refetchInterval: (q) => (q.state.data && isFinished(q.state.data) ? false : nextPoll(client, q.state, pollMs)),
   });
 
   const job = query.data as TypedJob<K> | undefined;
@@ -112,12 +118,13 @@ export function useJob<K extends JobKind = JobKind>(jobId: string | null | undef
 
 /** A matter's jobs, newest first as the API gives them. `active` limits it to queued or running ones. */
 export function useMatterJobs(matterId: string, query: JobQuery = {}, { pollMs = pollDelay }: Options = {}) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: queryKeys.matterJobs(matterId, query),
     queryFn: async ({ signal }) =>
       unwrap(await api.GET('/matters/{matterId}/jobs', { params: { path: { matterId }, query }, signal })),
     // While something is running, keep asking, so a job started in this tab or another is noticed and followed.
-    refetchInterval: (q) => (q.state.data?.items.some((j) => !isFinished(j)) ? nextPoll(q.state, pollMs) : false),
+    refetchInterval: (q) => (q.state.data?.items.some((j) => !isFinished(j)) ? nextPoll(client, q.state, pollMs) : false),
   });
 }
 

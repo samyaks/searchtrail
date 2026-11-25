@@ -54,6 +54,9 @@ export function CustodiansSection({ matter, tenantName, unsaved, setUnsaved, exi
     (next ?? headingRef.current)?.focus();
   }, [matter.custodians]);
 
+  // One confirm step open at a time, across the rows: opening one closes any other.
+  const [confirming, setConfirming] = useState<{ userId: string; kind: ConfirmKind } | null>(null);
+
   const removeCustodian = (userId: string) => {
     const others = matter.custodians.filter((c) => c.user_id !== userId);
     const at = matter.custodians.findIndex((c) => c.user_id === userId);
@@ -74,6 +77,8 @@ export function CustodiansSection({ matter, tenantName, unsaved, setUnsaved, exi
             setUnsaved={(s) => setUnsaved(c.user_id, s)}
             existingSites={existingSites}
             onRemove={() => removeCustodian(c.user_id)}
+            confirming={confirming?.userId === c.user_id ? confirming.kind : null}
+            setConfirming={(kind) => setConfirming(kind ? { userId: c.user_id, kind } : null)}
             removeError={removeErrors[c.user_id]}
             onHoldChanged={() => setRemoveError(c.user_id, null)}
           />
@@ -162,6 +167,9 @@ const SOURCE_LABELS = [
   ['onedrive', 'OneDrive'],
 ] as const;
 
+/** Which confirm step a row has open. */
+type ConfirmKind = 'release' | 'remove';
+
 type RowProps = {
   matterId: string;
   custodian: Custodian;
@@ -169,12 +177,15 @@ type RowProps = {
   setUnsaved: (sources: Sources | null) => void;
   existingSites: string[];
   onRemove: () => void;
+  /** The confirm step this row has open, if any (only one row has one open at a time). */
+  confirming: ConfirmKind | null;
+  setConfirming: (kind: ConfirmKind | null) => void;
   removeError: unknown;
   /** A hold change went through, so a refusal to remove them while on hold is out of date. */
   onHoldChanged: () => void;
 };
 
-function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites, onRemove, removeError, onHoldChanged }: RowProps) {
+function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites, onRemove, confirming, setConfirming, removeError, onHoldChanged }: RowProps) {
   const upsert = useUpsertCustodian(matterId);
   const hold = useSetHold(matterId, c.user_id);
   const [linking, setLinking] = useState(false);
@@ -207,7 +218,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
   // Releasing a hold and removing the person each wait for a confirm step in the row. Cancelling puts focus back on
   // the control that asked; a removal moves focus on by itself once the row has gone (see removeCustodian).
   // A confirmed release disables the switch until Purview answers, so focus goes to the hold's status beside it.
-  const [confirming, setConfirming] = useState<'release' | 'remove' | null>(null);
+  // A confirm closed because another row opened one leaves focus where the person now is.
   const rowRef = useRef<HTMLLIElement>(null);
   const refocus = useRef<string | null>(null);
   useEffect(() => {
@@ -268,11 +279,25 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
             hold.mutate(false, { onSuccess: onHoldChanged });
           }}
         >
-          Purview stops preserving their mailbox, Teams chats, OneDrive and linked sites for this matter, so anything deleted from them from now on
-          can be lost for good. The release is recorded in the log.
+          Purview stops preserving their mailbox, Teams chats, OneDrive and linked sites for this matter, so anything they delete from now on can
+          be lost for good. The release is recorded in the log.
         </Confirm>
       )}
-      {confirming === 'remove' && (
+      {confirming === 'remove' && holdOn && (
+        // The API refuses to remove someone on hold, so this doesn't offer to: it says why, and offers the release.
+        <Confirm
+          title={`${c.display_name} is on legal hold`}
+          // While Purview is still placing or changing the hold, there is nothing to release yet: Cancel only.
+          confirmLabel={settling || hold.isPending ? undefined : 'Release hold…'}
+          confirmVariant="secondary"
+          onConfirm={() => setConfirming('release')}
+          onCancel={() => closeConfirm('[data-remove]')}
+        >
+          They can't be removed from this matter while their mailbox, Teams chats, OneDrive and linked sites are on hold. Release the hold first,
+          then remove them.
+        </Confirm>
+      )}
+      {confirming === 'remove' && !holdOn && (
         <Confirm
           title={`Remove ${c.display_name} from this matter?`}
           confirmLabel="Remove from matter"
@@ -283,7 +308,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
           }}
         >
           Their mailbox, Teams chats, OneDrive and linked sites won't be searched any more. Adding them again later starts with the usual sources and no
-          linked sites.{holdOn && ' They are on legal hold: release the hold first, or the removal is refused.'}
+          linked sites.
         </Confirm>
       )}
 

@@ -64,7 +64,8 @@ function SessionEnded() {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   return (
-    <section role="alert" aria-labelledby="session-ended" className={styles.sessionEnded}>
+    // No role="alert": focus moves to the heading, which reads it out; an alert as well would read it twice.
+    <section aria-labelledby="session-ended" className={styles.sessionEnded}>
       <h1 id="session-ended" ref={heading} tabIndex={-1}>
         Your session has ended
       </h1>
@@ -81,9 +82,14 @@ export function Shell() {
   const ended = useSessionEnded();
   const main = useRef<HTMLElement>(null);
   const wasEnded = useRef(false);
-  // Back from a sign-in in place: the notice that had focus is gone, so focus goes to the page again.
+  // Back from a sign-in in place: the notice that had focus is gone, so focus goes to the page's own heading (or,
+  // while the page has none, to the page itself).
   useEffect(() => {
-    if (wasEnded.current && !ended) main.current?.focus();
+    if (wasEnded.current && !ended) {
+      const heading = main.current?.querySelector<HTMLElement>('h1, h2');
+      if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+      (heading ?? main.current)?.focus();
+    }
     wasEnded.current = ended;
   }, [ended]);
   const user = me.data?.user;

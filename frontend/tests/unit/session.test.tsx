@@ -71,7 +71,12 @@ test('the whole app, when the session has ended: it says so in place of the page
   renderApp('/matters');
   const heading = await screen.findByRole('heading', { level: 1, name: 'Your session has ended' });
   await vi.waitFor(() => expect(heading).toHaveFocus());
-  expect(screen.getByRole('alert')).toHaveTextContent("Sign in again with your Microsoft account to carry on. You'll come back to this page.");
+  expect(screen.getByRole('region', { name: 'Your session has ended' })).toHaveTextContent(
+    "Sign in again with your Microsoft account to carry on. You'll come back to this page.",
+  );
+  // Said once: not as an alert as well (focus on the heading reads it), and not again by the page's own notices.
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('heading', { name: /session has ended/, hidden: true })).toHaveLength(1);
   // The page itself is hidden, not shown half-loaded beside the notice.
   expect(screen.queryByRole('heading', { name: 'Matters' })).not.toBeInTheDocument();
   expect(within(screen.getByRole('navigation', { name: 'Main' })).getByText('Signed out')).toBeInTheDocument();
@@ -93,25 +98,46 @@ test('with the mocks, Sign in starts a new session in place: the page loads agai
   expect(await screen.findByText('Project Falcon investigation')).toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: 'Your session has ended' })).not.toBeInTheDocument();
   expect(within(screen.getByRole('navigation', { name: 'Main' })).getByText('Contoso Ltd')).toBeInTheDocument();
-  await vi.waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
+  // The notice that had focus has gone, so focus goes to the page's own heading.
+  await vi.waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Matters' })).toHaveFocus());
   expect(assign).not.toHaveBeenCalled();
 });
 
-test("with the mocks, a screen's own Sign in link signs in in place too", async () => {
+test("inside the app, a screen's notice leaves an ended session to the Shell, then says the change wasn't made", async () => {
   setSignInHere(() => setScenario({ sessionExpired: false }));
   const client = makeQueryClient();
+  const retry = vi.fn();
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <ErrorNotice error={apiError('session_expired', 401)} />
+        <ErrorNotice error={apiError('session_expired', 401)} onRetry={retry} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  setScenario({ sessionExpired: true });
   client.setQueryData(['session', 'ended'], true);
-  await userEvent.click(screen.getByRole('link', { name: 'Sign in' }));
+  // While the session has ended, the Shell says so, once: the notice shows nothing.
+  await vi.waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(screen.queryByText(/session has ended/)).not.toBeInTheDocument();
+
+  signIn(client);
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { name: "That didn't go through" })).toBeInTheDocument();
+  expect(alert).toHaveTextContent("Your session had ended, so nothing was changed. You're signed in again, so you can try it again.");
+  expect(within(alert).queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
+  await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+  expect(retry).toHaveBeenCalledTimes(1);
+});
+
+test('signing in again in place loads what had failed afresh, rather than keeping its "session ended" error', async () => {
+  setSignInHere(() => setScenario({ sessionExpired: false }));
+  setScenario({ sessionExpired: true });
+  const client = makeQueryClient();
+  await client.fetchQuery({ queryKey: ['me'], queryFn: () => Promise.reject(apiError('session_expired', 401)) }).catch(() => {});
+  expect(client.getQueryState(['me'])?.status).toBe('error');
+  signIn(client);
+  // Not left in the error state while it loads again (nothing observes it here, so it waits for its next use).
+  expect(client.getQueryState(['me'])).toMatchObject({ status: 'pending', error: null });
   expect(ended(client)).toBe(false);
-  expect(assign).not.toHaveBeenCalled();
 });
 
 test('a request is retried once if it might work next time, never if the server said no', () => {

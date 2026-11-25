@@ -6,6 +6,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useState } from 'react';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { queryKeys } from '@/api/queries';
+import { sessionHasEnded } from '@/api/session';
 import { holdSettling, sameCriteria, type Sources } from './format';
 
 type Matter = Schemas['Matter'];
@@ -33,8 +34,9 @@ export function useDefineMatter(matterId: string) {
     queryFn: () => getMatter(matterId),
     // Not while changes to who is searched wait to be sent: a read would show the API's copy without them. The read
     // once they have settled starts the polling again if a hold is still settling.
+    // Nor while the session has ended: signing in again reads the matter again, which starts this again.
     refetchInterval: (query) =>
-      query.state.data?.custodians.some((c) => holdSettling(c.hold)) && client.isMutating({ mutationKey: sourcesKey(matterId) }) === 0
+      query.state.data?.custodians.some((c) => holdSettling(c.hold)) && client.isMutating({ mutationKey: sourcesKey(matterId) }) === 0 && !sessionHasEnded(client)
         ? timing.holdPollMs
         : false,
   });

@@ -51,6 +51,19 @@ async function releaseHold(name: string) {
   await userEvent.click(within(screen.getByRole('group', { name: `Release the legal hold on ${name}?` })).getByRole('button', { name: 'Release hold' }));
 }
 
+/**
+ * Open Define with Megan Bowen shown as not on hold, then put her hold back behind the screen's back (as another tab
+ * would), so the screen offers to remove her and the API refuses: the refusal can only be seen this way, since
+ * the screen doesn't offer to remove someone it knows is on hold.
+ */
+async function openWithHoldPlacedElsewhere() {
+  const megan = findMatter('mat_falcon')!.matter.custodians.find((c) => c.display_name === 'Megan Bowen')!;
+  const hold = megan.hold;
+  megan.hold = { status: 'off', since: null };
+  await openDefine();
+  megan.hold = hold;
+}
+
 beforeEach(() => {
   timing.holdPollMs = 30;
   timing.searchDebounceMs = 20;
@@ -287,7 +300,7 @@ function slowRemovals() {
 test('a custodian can be removed, but not while on hold', async () => {
   slowRemovals(); // the row has gone by the time the API answers, and comes back when refused
   const sent = recordWrites();
-  await openDefine();
+  await openWithHoldPlacedElsewhere();
   await removeCustodian('Alex Wilber');
   await waitFor(() => expect(screen.queryByText('alex.wilber@contoso.com · Procurement')).not.toBeInTheDocument());
   // Focus goes to the next custodian's remove button.
@@ -326,11 +339,46 @@ test('removing a custodian asks first, says what it does, and Cancel or Escape c
   expect(sent).toEqual([]);
   expect(screen.getByText('alex.wilber@contoso.com · Procurement')).toBeInTheDocument();
 
-  // Someone on hold: the step says the hold has to be released first.
-  await userEvent.click(screen.getByRole('button', { name: 'Remove Megan Bowen' }));
-  expect(screen.getByRole('group', { name: 'Remove Megan Bowen from this matter?' })).toHaveAccessibleDescription(
-    /They are on legal hold: release the hold first, or the removal is refused\.$/,
-  );
+  // The confirm button is described by what it does, too.
+  await userEvent.click(remove);
+  expect(screen.getByRole('button', { name: 'Remove from matter' })).toHaveAccessibleDescription(/^Their mailbox, Teams chats, OneDrive and linked sites won't be searched/);
+});
+
+test('for someone on hold, Remove says why they cannot be removed yet and offers to release the hold, not to remove them', async () => {
+  const sent = recordWrites();
+  await openDefine();
+  const remove = screen.getByRole('button', { name: 'Remove Megan Bowen' });
+  await userEvent.click(remove);
+  const step = screen.getByRole('group', { name: 'Megan Bowen is on legal hold' });
+  expect(step).toHaveAccessibleDescription(/^They can't be removed from this matter while .* are on hold\. Release the hold first, then remove them\.$/);
+  expect(within(step).queryByRole('button', { name: 'Remove from matter' })).not.toBeInTheDocument();
+  expect(within(step).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  await expectNoA11yViolations(document.body);
+  await userEvent.click(within(step).getByRole('button', { name: 'Cancel' }));
+  expect(remove).toHaveFocus();
+  // Her row stayed where it was: nothing was hidden or sent.
+  expect(screen.getByText('megan.bowen@contoso.com · Finance')).toBeInTheDocument();
+
+  // "Release hold…" leads to the release's own confirm step, which still asks.
+  await userEvent.click(remove);
+  await userEvent.click(within(screen.getByRole('group', { name: 'Megan Bowen is on legal hold' })).getByRole('button', { name: 'Release hold…' }));
+  const release = screen.getByRole('group', { name: 'Release the legal hold on Megan Bowen?' });
+  expect(within(release).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  expect(screen.queryByRole('group', { name: 'Megan Bowen is on legal hold' })).not.toBeInTheDocument();
+  await userEvent.click(within(release).getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByRole('switch', { name: 'Legal hold for Megan Bowen' })).toHaveFocus();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(sent).toEqual([]);
+});
+
+test('only one confirm step is open at a time, across the custodians', async () => {
+  await openDefine();
+  await userEvent.click(screen.getByRole('button', { name: 'Remove Alex Wilber' }));
+  expect(screen.getByRole('group', { name: 'Remove Alex Wilber from this matter?' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('switch', { name: 'Legal hold for Megan Bowen' }));
+  expect(screen.getByRole('group', { name: 'Release the legal hold on Megan Bowen?' })).toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'Remove Alex Wilber from this matter?' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove Alex Wilber' })).toHaveAttribute('aria-expanded', 'false');
 });
 
 test('releasing a hold asks first and says what it means; Cancel keeps the hold and puts focus back on the switch', async () => {
@@ -339,7 +387,8 @@ test('releasing a hold asks first and says what it means; Cancel keeps the hold 
   const holdSwitch = screen.getByRole('switch', { name: 'Legal hold for Megan Bowen' });
   await userEvent.click(holdSwitch);
   const confirm = screen.getByRole('group', { name: 'Release the legal hold on Megan Bowen?' });
-  expect(confirm).toHaveAccessibleDescription(/so anything deleted from them from now on can be lost for good\. The release is recorded in the log\.$/);
+  expect(confirm).toHaveAccessibleDescription(/so anything they delete from now on can be lost for good\. The release is recorded in the log\.$/);
+  expect(within(confirm).getByRole('button', { name: 'Release hold' })).toHaveAccessibleDescription(/so anything they delete from now on can be lost for good/);
   expect(holdSwitch).toHaveAttribute('aria-checked', 'true');
   expect(within(confirm).getByRole('button', { name: 'Cancel' })).toHaveFocus();
   await expectNoA11yViolations(document.body);
@@ -365,7 +414,7 @@ test('placing a hold needs no confirm step', async () => {
 
 test('a refusal to remove someone on hold goes once their hold is released', async () => {
   const purview = slowPurview();
-  await openDefine();
+  await openWithHoldPlacedElsewhere();
   await removeCustodian('Megan Bowen');
   const refusal = 'Megan Bowen is on hold. Release the hold before removing them.';
   expect(await within(custodianRow('Megan Bowen')).findByText(refusal)).toBeInTheDocument();

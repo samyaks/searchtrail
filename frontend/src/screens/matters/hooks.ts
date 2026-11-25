@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useRef, useState } from 'react';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { queryKeys } from '@/api/queries';
+import { sessionHasEnded } from '@/api/session';
 
 export type MatterListQuery = { stage?: Schemas['MatterStage']; q?: string };
 
@@ -31,11 +32,13 @@ function isFilteredListKey(key: readonly unknown[]): boolean {
  */
 export function useMatterList(query: MatterListQuery) {
   const filtered = Boolean(query.stage || query.q);
+  const client = useQueryClient();
   return useQuery({
     queryKey: listKey(query),
     queryFn: async () => unwrap(await api.GET('/matters', { params: { query } })),
     placeholderData: keepPreviousData,
-    refetchInterval: (q) => (!filtered && q.state.data?.items.some((m) => m.stage === 'exporting') ? EXPORTING_REFRESH_MS : false),
+    // Not while the session has ended: signing in again loads the list again, which starts this again.
+    refetchInterval: (q) => (!filtered && !sessionHasEnded(client) && q.state.data?.items.some((m) => m.stage === 'exporting') ? EXPORTING_REFRESH_MS : false),
   });
 }
 

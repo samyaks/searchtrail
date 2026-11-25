@@ -111,6 +111,7 @@
 
 /* Why Estimate is off: next to the button, in the colour of a blocked state. */
 .blockedNote {
+  display: block;
   margin: 0;
   font-size: 14px;
   font-weight: 600;

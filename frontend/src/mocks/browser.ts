@@ -17,5 +17,11 @@ Object.assign(window, { stMocks: { set: setScenario, reset: resetMocks, get: () 
 
 // The mocks can't serve the real sign-in (a full page load to /api/v1/auth/login, then Microsoft), and a page load
 // would wipe the mock data. So Sign in starts a new mock session in place instead: the session is live again and
-// the app loads again what failed (api/session.ts).
-setSignInHere(() => setScenario({ sessionExpired: false }));
+// the app loads again what failed (api/session.ts). Only once the worker has started (main.tsx starts it): if it
+// fails to start, requests go to the real API, and so does Sign in.
+const start = worker.start.bind(worker);
+worker.start = async (...options: Parameters<typeof start>) => {
+  const registration = await start(...options);
+  setSignInHere(() => setScenario({ sessionExpired: false }));
+  return registration;
+};

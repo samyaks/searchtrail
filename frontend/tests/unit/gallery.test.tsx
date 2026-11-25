@@ -43,7 +43,8 @@ test('the gallery shows an error notice for each code, and for a network failure
   const titles = within(section).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
   expect(titles).toHaveLength(ERROR_CODES.length + 1);
   expect(titles).toContain("Can't reach SearchTrail");
-  expect(titles).toContain('Your session has ended');
+  // Inside the app, an ended session is the Shell's to say; a screen's notice for it is a change that didn't go through.
+  expect(titles).toContain("That didn't go through");
 });
 
 test('the whole gallery has no accessibility violations', async () => {

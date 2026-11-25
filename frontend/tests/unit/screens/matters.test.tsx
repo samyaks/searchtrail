@@ -213,11 +213,16 @@ test('with the Exporting chip chosen, the percentage still moves', async () => {
 test('API errors are shown in plain English', async () => {
   server.use(
     http.get('/api/v1/matters', () =>
-      HttpResponse.json({ code: 'session_expired', message: 'Your session has ended. Sign in again to continue.', details: {} }, { status: 401 }),
+      HttpResponse.json(
+        { code: 'purview_permission_missing', message: 'Ask a Purview administrator to add you to the eDiscovery Manager role group.', details: {} },
+        { status: 403 },
+      ),
     ),
   );
   renderApp('/matters');
-  expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended');
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('You need a Purview permission for this');
+  expect(alert).toHaveTextContent('Ask a Purview administrator to add you to the eDiscovery Manager role group.');
 });
 
 test('a list that fails to load can be tried again', async () => {

@@ -60,7 +60,12 @@ function kindClause(kind: string, c: Criteria): string {
   return group(parts, 'AND');
 }
 
-/** The backend's checks that these mock screens meet (searchtrail/query.py `CullCriteria.check`). */
+/**
+ * Checks on the criteria. The dates and the raw KQL's pairing are the backend's own (searchtrail/query.py
+ * `CullCriteria.check`). The first, at least one search term or raw KQL, is the mock's only: the backend allows a
+ * search with neither (and only warns that it is very broad); the mock refuses it so the screens' refusal states can
+ * be tried.
+ */
 function check(c: Criteria) {
   if (c.keywords.length === 0 && !c.raw_kql) {
     throw new CriteriaInvalid('Add at least one search term, or a raw KQL query, so there is something to look for.');
