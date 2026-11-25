@@ -137,8 +137,10 @@ function actionFor(kind: Treatment['action'], matterId?: string): ErrorAction | 
  */
 export function describeError(error: unknown, context: { matterId?: string } = {}): ErrorDescription {
   if (error instanceof ApiRequestError) {
-    const treatment = TREATMENTS[error.body.code] ?? TREATMENTS.internal_error;
-    const code = error.body.code in TREATMENTS ? error.body.code : 'internal_error';
+    // Object.hasOwn, so a code such as "constructor" isn't found on the object's prototype.
+    const known = Object.hasOwn(TREATMENTS, error.body.code);
+    const code = known ? error.body.code : 'internal_error';
+    const treatment = TREATMENTS[code as keyof typeof TREATMENTS];
     return {
       code,
       title: treatment.title,

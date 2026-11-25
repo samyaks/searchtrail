@@ -83,3 +83,12 @@ test('hasCode tells one API error from another', () => {
   expect(hasCode(apiError('conflict', '', 409), 'not_found')).toBe(false);
   expect(hasCode(new Error('conflict'), 'conflict')).toBe(false);
 });
+
+test('a code the contract does not have is an internal error, even one named like a built-in property', () => {
+  for (const code of ['not_a_code', 'constructor', 'toString', '__proto__']) {
+    const described = describeError(apiError(code, '', 500));
+    expect(described.code, code).toBe('internal_error');
+    expect(typeof described.title, code).toBe('string');
+    expect(described.title, code).not.toBe('');
+  }
+});

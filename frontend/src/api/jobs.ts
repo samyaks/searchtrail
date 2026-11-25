@@ -9,7 +9,7 @@
 // started it), so the progress comes back instead of the screen offering to start it again.
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { api, unwrap, type ApiError, type Schemas } from './client';
+import { api, ApiRequestError, unwrap, type ApiError, type Schemas } from './client';
 import { queryKeys, type JobQuery } from './queries';
 
 export type JobKind = Schemas['JobKind'];
@@ -46,6 +46,23 @@ export function invalidateAfterJob(client: QueryClient) {
   void client.invalidateQueries({ queryKey: ['exports'] });
 }
 
+/**
+ * True when the server answered no (a 4xx other than 429), so asking again won't help: the job is gone or this
+ * person can't see it. A 429 or a 5xx, or no answer at all, is passing trouble, and polling goes on.
+ */
+export function serverSaidNo(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status >= 400 && error.status < 500 && error.status !== 429;
+}
+
+/** When to poll a query again: never once it said no; otherwise later the more often it was asked, answered or not. */
+function nextPoll(
+  state: { dataUpdateCount: number; errorUpdateCount: number; error: unknown },
+  pollMs: (pollCount: number) => number,
+): number | false {
+  if (serverSaidNo(state.error)) return false;
+  return pollMs(state.dataUpdateCount + state.errorUpdateCount);
+}
+
 type Options = {
   /** Milliseconds until the next poll. Tests make this short. */
   pollMs?: (pollCount: number) => number;
@@ -61,7 +78,7 @@ export function useJob<K extends JobKind = JobKind>(jobId: string | null | undef
     queryKey: queryKeys.job(jobId ?? ''),
     enabled: Boolean(jobId),
     queryFn: async ({ signal }) => unwrap(await api.GET('/jobs/{jobId}', { params: { path: { jobId: jobId! } }, signal })),
-    refetchInterval: (q) => (q.state.data && isFinished(q.state.data) ? false : pollMs(q.state.dataUpdateCount)),
+    refetchInterval: (q) => (q.state.data && isFinished(q.state.data) ? false : nextPoll(q.state, pollMs)),
   });
 
   const job = query.data as TypedJob<K> | undefined;
@@ -79,8 +96,8 @@ export function useJob<K extends JobKind = JobKind>(jobId: string | null | undef
     job,
     /** 0 to 1. */
     progress: job?.progress ?? 0,
-    /** The job is queued or running (or about to be asked about). */
-    isRunning: Boolean(jobId) && !finished && !query.isError,
+    /** The job is queued or running (or about to be asked about). A passing request error doesn't change that. */
+    isRunning: Boolean(jobId) && !finished && !serverSaidNo(query.error),
     isSucceeded: job?.status === 'succeeded',
     isFailed: job?.status === 'failed',
     /** Typed by the job's kind; null until it has succeeded. */
@@ -100,7 +117,7 @@ export function useMatterJobs(matterId: string, query: JobQuery = {}, { pollMs =
     queryFn: async ({ signal }) =>
       unwrap(await api.GET('/matters/{matterId}/jobs', { params: { path: { matterId }, query }, signal })),
     // While something is running, keep asking, so a job started in this tab or another is noticed and followed.
-    refetchInterval: (q) => (q.state.data?.items.some((j) => !isFinished(j)) ? pollMs(q.state.dataUpdateCount) : false),
+    refetchInterval: (q) => (q.state.data?.items.some((j) => !isFinished(j)) ? nextPoll(q.state, pollMs) : false),
   });
 }
 

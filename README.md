@@ -20,7 +20,8 @@ command-line tool it grew from:
 ## Run the web app locally
 
 ```bash
-# Backend: Postgres, migrations, API (:8000) and worker in Docker, dry run on (no tenant needed)
+# The whole app in Docker, dry run on (no tenant needed): Postgres, migrations, API (:8000), worker,
+# and the web app on http://localhost:8080 (the built frontend, with /api passed to the API)
 docker compose -f deploy/docker-compose.yml up --build
 curl localhost:8000/api/v1/health
 
@@ -32,6 +33,7 @@ pytest && ruff check .
 cd frontend && npm ci && npm run dev
 npm run dev:api        # mocks off, /api proxied to the backend on :8000
 npm run lint && npm run typecheck && npm test
+npm run test:e2e       # Playwright against the running compose stack (once: npx playwright install chromium)
 
 # After changing contracts/openapi.yaml (contract PRs only): regenerate the derived code
 scripts/codegen.sh
