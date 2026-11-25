@@ -13,6 +13,12 @@ export const colors = {
   highlighterInk: '#17150A',
   highlighterSoft: '#FFF6C2',
   redSoft: '#F6D9D5',
+  bar: '#3A3F47',
+  barQuiet: '#9AA0A9',
+  barTrack: '#F0F1EC',
+  noticeEdge: '#E3C641',
+  redRule: '#E7B4AE',
+  lineNumber: '#6B717C',
 } as const;
 
 export const fonts = {

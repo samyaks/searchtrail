@@ -1,0 +1,89 @@
+/* a breakdown card, from the Preview design: one row per value, a bar as long as its count */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.title {
+  margin: 0 0 6px;
+  font-family: var(--st-font-body);
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--st-muted);
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.none {
+  margin: 0;
+  color: var(--st-muted);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--st-target-sm);
+  padding: 0 var(--st-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--st-radius-md);
+  background: transparent;
+  color: var(--st-ink);
+  font: inherit;
+  font-size: 14px;
+}
+button.row {
+  cursor: pointer;
+}
+button.row:hover {
+  background: var(--st-paper);
+}
+/* the bar that is chosen as a filter */
+button.row[aria-pressed='true'] {
+  border-color: var(--st-ink);
+  background: var(--st-highlighter-soft);
+}
+.name {
+  flex: 0 0 150px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.track {
+  flex: 1;
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--st-bar-track);
+}
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--st-bar);
+}
+.fill[data-quiet] {
+  background: var(--st-bar-quiet);
+}
+button.row[aria-pressed='true'] .fill {
+  background: var(--st-ink);
+}
+.count {
+  flex: 0 0 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--st-muted);
+}
