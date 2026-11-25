@@ -277,6 +277,32 @@ describe('editing', () => {
     expect(within(region('Dates and item types')).getByRole('alert')).toHaveTextContent('The From date is after the To date');
   });
 
+  test('a backwards date range cannot be estimated or previewed: Estimate is off, with the reason next to it', async () => {
+    const sent = record();
+    await openScope();
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-01-01' } });
+    const reason = 'Estimate is off: the From date is after the To date, so nothing can match. Fix the dates first.';
+    // Saved as the person types (work in progress is never lost), and the draft now differs from v3.
+    const estimate = await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    expect(estimate).toBeDisabled();
+    expect(estimate).toHaveAccessibleDescription(reason);
+    expect(within(estimateRegion()).getByText(reason)).toBeInTheDocument();
+    // Nothing offers to go on with a query that can't match.
+    expect(within(estimateRegion()).queryByRole('link', { name: /preview/i })).not.toBeInTheDocument();
+    expect(within(estimateRegion()).queryByRole('link', { name: 'Test terms' })).not.toBeInTheDocument();
+    // The API agrees (criteria_invalid): no query, no methodology, and the problem is said once, under the dates.
+    expect(await within(region('Purview query (KQL)')).findByText("The query can't be built yet. See the message under Dates and item types.")).toBeInTheDocument();
+    expect(within(region('Dates and item types')).getAllByRole('alert')).toHaveLength(1);
+    await userEvent.click(estimate);
+    expect(sent.calls).not.toContain('estimate');
+    await expectNoA11yViolations(estimateRegion());
+
+    // Fixing the dates brings Estimate back.
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2024-03-01' } });
+    await waitFor(() => expect(within(estimateRegion()).getByRole('button', { name: 'Estimate v4' })).toBeEnabled());
+    expect(within(estimateRegion()).queryByText(reason)).not.toBeInTheDocument();
+  });
+
   test('file types and domains are added and removed', async () => {
     const sent = record();
     await openScope();
@@ -428,7 +454,7 @@ describe('criteria_invalid', () => {
     const kql = within(region('Purview query (KQL)'));
     expect(await kql.findByRole('alert')).toHaveTextContent('Add at least one search term, or a raw KQL query');
     await addTerm('kickback');
-    expect(await kql.findByText(/^\(kickback\)/)).toBeInTheDocument();
+    expect(await kql.findByText(/^kickback AND \(\(kind:email/)).toBeInTheDocument();
     expect(kql.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -739,7 +765,7 @@ describe('estimate', () => {
     tick(10);
     const alert = await within(estimateRegion()).findByRole('alert');
     expect(within(alert).getByRole('heading', { name: "Purview couldn't finish that" })).toBeInTheDocument();
-    expect(alert).toHaveTextContent('Purview stopped the export: the search could not be found.');
+    expect(alert).toHaveTextContent('Purview stopped the estimate: the search could not be found.');
     expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 

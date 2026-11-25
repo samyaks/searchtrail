@@ -378,6 +378,9 @@ test('a preview job that fails says why, keeps the last preview, and can be trie
   tick(10);
   const alert = await screen.findByRole('alert');
   expect(within(alert).getByRole('heading', { name: "Purview couldn't finish that" })).toBeInTheDocument();
+  // The failure names the preview, not another kind of job.
+  expect(alert).toHaveTextContent('Purview stopped the preview: the search could not be found.');
+  expect(alert).not.toHaveTextContent('export');
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   expect(screen.getByText('Showing 1–10 of 655')).toBeInTheDocument();
   await expectNoA11yViolations(document.body);
@@ -452,6 +455,17 @@ test('when the draft changed after the preview, a banner says so and points to S
   const banner = screen.getByText('The search has changed since this preview.').closest('[role="status"]') as HTMLElement;
   expect(banner).toHaveTextContent('This preview is of query v3. Estimate the changes on Scope, then preview again before you export.');
   expect(within(banner).getByRole('link', { name: 'Go to Scope' })).toHaveAttribute('href', `/matters/${FALCON}/scope`);
+  // The toolbar can still preview query v3 again, and says so.
+  expect(screen.getByRole('button', { name: 'Refresh preview' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: /^Preview query/ })).not.toBeInTheDocument();
+});
+
+test('when the draft changed and a newer version was estimated, the toolbar names the version it would preview', async () => {
+  answerMatter({ ...falcon(), draft_changed: true, current_version: 4 });
+  renderApp(PATH);
+  await loaded();
+  expect(screen.getByRole('button', { name: 'Preview query v4' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Refresh preview' })).not.toBeInTheDocument();
 });
 
 test('when a newer query version has not been previewed, a banner offers to preview it', async () => {
@@ -461,6 +475,8 @@ test('when a newer query version has not been previewed, a banner offers to prev
   const banner = screen.getByText("Query v4 hasn't been previewed.").closest('[role="status"]') as HTMLElement;
   expect(banner).toHaveTextContent('This preview is of query v3. Preview again before you export');
   expect(within(banner).getByRole('button', { name: 'Preview query v4' })).toBeEnabled();
+  // One button to start a preview: the banner's. The toolbar's would do the same thing under another name.
+  expect(screen.getAllByRole('button', { name: /^(Preview query|Refresh preview|Preview again)/ })).toHaveLength(1);
 });
 
 test('a preview the API marks stale gets a banner too', async () => {
@@ -470,12 +486,14 @@ test('a preview the API marks stale gets a banner too', async () => {
   await loaded();
   const banner = screen.getByText('This preview is out of date.').closest('[role="status"]') as HTMLElement;
   expect(within(banner).getByRole('button', { name: 'Preview again' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Refresh preview' })).not.toBeInTheDocument();
 });
 
 test('a current preview has no stale banner', async () => {
   renderApp(PATH);
   await loaded();
   expect(screen.queryByText(/hasn't been previewed|has changed since this preview|out of date/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Refresh preview' })).toBeEnabled();
 });
 
 test('when the preview cannot be loaded, the error says so and offers to try again', async () => {

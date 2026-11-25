@@ -48,6 +48,14 @@ export function useVersions(matterId: string) {
   });
 }
 
+type ExportJob = ReturnType<typeof useTrackedJob<'export'>>;
+
+/** The export job the Start card shows: the one it follows, unless the person set it aside. A finished or failed
+ * export stays on the card until the person sets up the next one. */
+export function shownExportJob(exportJob: ExportJob, dismissedJob: string | null): ExportJob | null {
+  return exportJob.jobId && exportJob.jobId !== dismissedJob ? exportJob : null;
+}
+
 /** The three jobs this screen follows, found again if one is running when the screen opens. */
 export function useExportJobs(matterId: string) {
   return {

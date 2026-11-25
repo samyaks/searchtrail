@@ -117,6 +117,7 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
   const retrySave = () => void requestSave(criteria);
 
   const runEstimate = async () => {
+    if (blocked) return;
     setStartError(null);
     setStarting(true);
     try {
@@ -153,6 +154,14 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
   const invalid = kqlInvalid ?? startInvalid;
   const invalidAt = invalid ? sectionOf(invalid.body.details.field) : null;
   const problemFor = (section: Section) => (invalid && invalidAt === section ? invalid.body.message : null);
+  // A query that can't be run isn't offered to Purview at all: Estimate is off, with the reason next to it. The dates
+  // are checked as they are typed; anything else the API can't build a query from is known from the live preview.
+  const backwards = Boolean(criteria.date_from && criteria.date_to && criteria.date_from > criteria.date_to);
+  const blocked = backwards
+    ? 'Estimate is off: the From date is after the To date, so nothing can match. Fix the dates first.'
+    : kqlInvalid
+      ? `Estimate is off until the query can be built. Fix the problem ${invalidAt ? `under ${SECTION_NAMES[invalidAt]}` : 'shown with the query'} first.`
+      : null;
 
   // What the counts are for, and the version an estimate would be.
   const current = matter.current_version;
@@ -211,6 +220,7 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
               ? `Nothing was sent to Purview. Fix the problem ${invalidAt ? `under ${SECTION_NAMES[invalidAt]}` : 'shown with the query'}, then estimate again.`
               : null
           }
+          blocked={blocked}
           onEstimate={() => void runEstimate()}
         />
         <MethodologyPanel

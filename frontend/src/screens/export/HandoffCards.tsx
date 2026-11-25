@@ -17,7 +17,15 @@ const COPIED_MS = 3000;
 
 type HandoffJob = ReturnType<typeof useTrackedJob<'download'>> | ReturnType<typeof useTrackedJob<'review_set'>>;
 
-export function EverlawCard({ matter, exp }: { matter: Schemas['Matter'] | undefined; exp: Export | undefined }) {
+type EverlawProps = {
+  matter: Schemas['Matter'] | undefined;
+  /** The existing export on screen (the one being started or followed, or opened in the list), if there is one. */
+  exp: Export | undefined;
+  /** Otherwise the steps are for the export Start would create: of this query version. */
+  nextVersion: number | null;
+};
+
+export function EverlawCard({ matter, exp, nextVersion }: EverlawProps) {
   // What the copy button says after a copy, for the export it copied; it goes back to "Copy name" after a while.
   const [copiedState, setCopied] = useState<{ exportId: string; text: string } | null>(null);
   const copied = copiedState && copiedState.exportId === exp?.id ? copiedState.text : null;
@@ -41,16 +49,21 @@ export function EverlawCard({ matter, exp }: { matter: Schemas['Matter'] | undef
     <Card title="Hand-off to Everlaw" padding="lg">
       <ol className={styles.steps}>
         <li>
-          <span>SearchTrail starts the export in Purview as</span>
           {exp ? (
-            <span className={styles.nameRow}>
-              <code className={styles.exportName}>{exp.name}</code>
-              <Button size="sm" onClick={() => copy(exp)}>
-                {copied ?? 'Copy name'}
-              </Button>
-            </span>
+            <>
+              <span>SearchTrail {exp.status === 'ready' ? 'exported' : 'is exporting'} query v{exp.version} in Purview as</span>
+              <span className={styles.nameRow}>
+                <code className={styles.exportName}>{exp.name}</code>
+                <Button size="sm" onClick={() => copy(exp)}>
+                  {copied ?? 'Copy name'}
+                </Button>
+              </span>
+            </>
           ) : (
-            <span className={styles.muted}> the matter number, EVERLAW and the time it starts. The name appears here once it has started.</span>
+            <>
+              <span>SearchTrail starts the export{nextVersion !== null ? ` of query v${nextVersion}` : ''} in Purview as</span>
+              <span className={styles.muted}> the matter number, EVERLAW and the time it starts. The name appears here once it has started.</span>
+            </>
           )}
         </li>
         <li>

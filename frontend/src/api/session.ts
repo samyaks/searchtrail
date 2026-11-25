@@ -1,5 +1,7 @@
-// Sign-in. The API runs the Microsoft sign-in (a redirect to /auth/login) and keeps the session in a cookie,
-// so the browser's part is only to go there when a request says the session has ended.
+// Sign-in. The API runs the Microsoft sign-in (a redirect to /auth/login) and keeps the session in a cookie.
+// When a request says the session has ended (401 session_expired), the app says so and offers Sign in
+// (app/Shell.tsx); it doesn't jump away by itself, so nothing on screen is lost without the person choosing to go.
+import { type QueryClient, useQuery } from '@tanstack/react-query';
 import { ApiRequestError } from './client';
 
 export const LOGIN_PATH = '/api/v1/auth/login';
@@ -21,60 +23,44 @@ export const sessionNavigation = {
   assign: (url: string) => globalThis.location.assign(url),
 };
 
-let redirecting = false;
+/** Whether a request found the session ended, kept in the query cache so every part of the app sees the same. */
+const ENDED_KEY = ['session', 'ended'] as const;
 
-/** When this tab last went to sign in, kept across page loads (sessionStorage is per tab). */
-const STARTED_KEY = 'searchtrail.signInStartedAt';
-/** A sign-in started this recently that ends in an ended session again didn't take (blocked cookies, say). */
-export const SIGN_IN_GRACE_MS = 2 * 60_000;
-
-function signInStartedAt(): number | null {
-  try {
-    const value = Number(globalThis.sessionStorage?.getItem(STARTED_KEY));
-    return Number.isFinite(value) && value > 0 ? value : null;
-  } catch {
-    return null; // storage blocked: no guard across page loads, but still one redirect per page
-  }
+export function isSessionExpired(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.body.code === 'session_expired';
 }
 
-function rememberSignInStarted(now: number): void {
-  try {
-    globalThis.sessionStorage?.setItem(STARTED_KEY, String(now));
-  } catch {
-    // storage blocked: see above
-  }
+/** Called for every failed query and mutation (see queryClient.ts): an ended session is noted for the Shell to show. */
+export function noteSessionEnded(client: QueryClient, error: unknown): void {
+  if (isSessionExpired(error) && client.getQueryData(ENDED_KEY) !== true) client.setQueryData(ENDED_KEY, true);
+}
+
+/** True once any request has found the session ended, until the person signs in again. */
+export function useSessionEnded(): boolean {
+  const { data } = useQuery({ queryKey: ENDED_KEY, queryFn: () => false, enabled: false, initialData: false, staleTime: Infinity, gcTime: Infinity });
+  return data;
 }
 
 /**
- * Send the person to sign in, once: several requests failing at the same moment must not start several
- * navigations. Does nothing if the page is already part of the sign-in, or if this tab went to sign in moments
- * ago and the session has ended again: going round again would loop, so the screen's "Sign in" notice is left
- * for the person to press instead.
+ * How Sign in works without the real API: the mocks (mocks/browser.ts) set one that starts a new mock session, so
+ * the demo recovers in place. Without one, Sign in goes to the API's sign-in, a full page load.
  */
-export function redirectToLogin(now: number = Date.now()): void {
-  if (redirecting || globalThis.location?.pathname.startsWith('/api/')) return;
-  const started = signInStartedAt();
-  if (started !== null && now - started < SIGN_IN_GRACE_MS) return;
-  redirecting = true;
-  rememberSignInStarted(now);
+let signInHere: (() => void) | null = null;
+export function setSignInHere(fn: (() => void) | null): void {
+  signInHere = fn;
+}
+export const signsInHere = () => signInHere !== null;
+
+/**
+ * Sign in again. With the real API: go to its sign-in, which comes back to this page. With the mocks: start a new
+ * mock session, then load again everything that failed, without leaving the page.
+ */
+export function signIn(client: QueryClient | undefined): void {
+  if (signInHere && client) {
+    signInHere();
+    client.setQueryData(ENDED_KEY, false);
+    void client.invalidateQueries(); // the ended-session flag itself is never fetched, so it stays false
+    return;
+  }
   sessionNavigation.assign(loginUrl());
-}
-
-/**
- * For tests: forget that a redirect has started, in this page and across page loads. `pageOnly` forgets only this
- * page's, as a new page load does.
- */
-export function resetRedirect({ pageOnly = false }: { pageOnly?: boolean } = {}): void {
-  redirecting = false;
-  if (pageOnly) return;
-  try {
-    globalThis.sessionStorage?.removeItem(STARTED_KEY);
-  } catch {
-    // nothing to forget
-  }
-}
-
-/** Called for every failed query and mutation (see queryClient.ts): an ended session goes to sign-in. */
-export function handleSessionExpired(error: unknown): void {
-  if (error instanceof ApiRequestError && error.body.code === 'session_expired') redirectToLogin();
 }

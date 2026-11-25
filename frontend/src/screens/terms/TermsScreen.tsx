@@ -71,11 +71,14 @@ function MatterTerms({ matterId }: { matterId: string }) {
             Counted {whenText(shown.created_at)} for query v{shown.version}. Each term is counted inside every other filter: the same custodians, dates,
             item types and labels. Counting runs on a separate search, so the search you previewed is never changed.
           </p>
-          <div className={styles.actions}>
-            <Button variant="neutral" onClick={startCount} disabled={counting}>
-              Recount
-            </Button>
-          </div>
+          {/* While the count is out of date, the banner below has the one Recount. */}
+          {!(shown.stale && !counting) && (
+            <div className={styles.actions}>
+              <Button variant="neutral" onClick={startCount} disabled={counting}>
+                Recount
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

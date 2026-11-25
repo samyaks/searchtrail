@@ -152,3 +152,23 @@
   max-width: 1180px;
   margin: 0 auto;
 }
+
+/* the session has ended: in place of the page, what happened and the way back in */
+.sessionEnded {
+  max-width: 560px;
+  margin: var(--st-space-6) auto;
+  padding: var(--st-space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--st-space-3);
+  background: var(--st-sheet);
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+}
+.sessionEnded h1 {
+  margin: 0;
+}
+.sessionEnded p {
+  margin: 0;
+}

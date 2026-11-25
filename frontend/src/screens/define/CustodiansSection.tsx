@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import type { Schemas } from '@/api/client';
 import { Button, ChipList, IconButton, RemovableChip, Switch } from '@/components';
+import { Confirm } from './Confirm';
 import { ChangeError, FieldError } from './errors';
 import { describedBy, hasAnySource, holdSettling, holdText, normaliseSiteUrl, siteLabel, siteProblem, sourcesOf, type Sources } from './format';
 import { MIN_SEARCH, useDirectorySearch, useRemoveCustodian, useSetHold, useUpsertCustodian } from './hooks';
@@ -203,8 +204,25 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
   const settling = holdSettling(c.hold);
   const holdOn = c.hold.status === 'on' || c.hold.status === 'pending';
 
+  // Releasing a hold and removing the person each wait for a confirm step in the row. Cancelling puts focus back on
+  // the control that asked; a removal moves focus on by itself once the row has gone (see removeCustodian).
+  // A confirmed release disables the switch until Purview answers, so focus goes to the hold's status beside it.
+  const [confirming, setConfirming] = useState<'release' | 'remove' | null>(null);
+  const rowRef = useRef<HTMLLIElement>(null);
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (confirming || !refocus.current) return;
+    const selector = refocus.current;
+    refocus.current = null;
+    rowRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [confirming]);
+  const closeConfirm = (focus: string | null) => {
+    refocus.current = focus;
+    setConfirming(null);
+  };
+
   return (
-    <li className={styles.custodian}>
+    <li className={styles.custodian} ref={rowRef}>
       <div className={styles.custodianTop}>
         <span aria-hidden="true" className={styles.avatar}>
           {c.initials}
@@ -213,7 +231,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
           <span className={styles.personName}>{c.display_name}</span>
           <span className={styles.muted}>{[c.email, c.department].filter(Boolean).join(' · ')}</span>
         </span>
-        <IconButton label={`Remove ${c.display_name}`} data-remove={c.user_id} onClick={onRemove}>
+        <IconButton label={`Remove ${c.display_name}`} data-remove={c.user_id} aria-expanded={confirming === 'remove'} onClick={() => setConfirming('remove')}>
           <CloseIcon />
         </IconButton>
       </div>
@@ -228,7 +246,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
           ))}
         </div>
         <div className={styles.hold}>
-          <span className={styles.muted} aria-live="polite">
+          <span className={styles.muted} aria-live="polite" tabIndex={-1} data-hold-status>
             {holdText(c.hold)}
           </span>
           <Switch
@@ -236,10 +254,38 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
             hideLabel
             checked={holdOn}
             disabled={settling || hold.isPending}
-            onChange={(on) => hold.mutate(on, { onSuccess: onHoldChanged })}
+            onChange={(on) => (on ? hold.mutate(true, { onSuccess: onHoldChanged }) : setConfirming('release'))}
           />
         </div>
       </div>
+      {confirming === 'release' && (
+        <Confirm
+          title={`Release the legal hold on ${c.display_name}?`}
+          confirmLabel="Release hold"
+          onCancel={() => closeConfirm('[role="switch"]')}
+          onConfirm={() => {
+            closeConfirm('[data-hold-status]');
+            hold.mutate(false, { onSuccess: onHoldChanged });
+          }}
+        >
+          Purview stops preserving their mailbox, Teams chats, OneDrive and linked sites for this matter, so anything deleted from them from now on
+          can be lost for good. The release is recorded in the log.
+        </Confirm>
+      )}
+      {confirming === 'remove' && (
+        <Confirm
+          title={`Remove ${c.display_name} from this matter?`}
+          confirmLabel="Remove from matter"
+          onCancel={() => closeConfirm('[data-remove]')}
+          onConfirm={() => {
+            closeConfirm(null);
+            onRemove();
+          }}
+        >
+          Their mailbox, Teams chats, OneDrive and linked sites won't be searched any more. Adding them again later starts with the usual sources and no
+          linked sites.{holdOn && ' They are on legal hold: release the hold first, or the removal is refused.'}
+        </Confirm>
+      )}
 
       <div className={styles.linked}>
         <span className={styles.muted}>Linked sites:</span>

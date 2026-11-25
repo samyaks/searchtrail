@@ -1,4 +1,7 @@
+import { QueryClientContext } from '@tanstack/react-query';
+import { useContext } from 'react';
 import { describeError } from '@/api/errors';
+import { LOGIN_PATH, signIn, signsInHere } from '@/api/session';
 import { Button, ButtonLink } from './Button';
 import styles from './ErrorNotice.module.css';
 
@@ -20,6 +23,7 @@ export type ErrorNoticeProps = {
 export function ErrorNotice({ error, matterId, onRetry, headingLevel = 2 }: ErrorNoticeProps) {
   const { title, message, tone, action } = describeError(error, { matterId });
   const Heading = `h${headingLevel}` as const;
+  const client = useContext(QueryClientContext);
   return (
     <div role="alert" className={styles.notice} data-tone={tone}>
       <Heading className={styles.title}>{title}</Heading>
@@ -32,7 +36,17 @@ export function ErrorNotice({ error, matterId, onRetry, headingLevel = 2 }: Erro
       {action?.kind === 'link' &&
         (action.to.startsWith('/api/') ? (
           // The sign-in is the API's, not a route of the app: a full page load.
-          <a className={styles.link} href={action.to}>
+          // Where there is no real sign-in (the mocks), it signs in again here instead (api/session.ts).
+          <a
+            className={styles.link}
+            href={action.to}
+            onClick={(event) => {
+              if (action.to.startsWith(LOGIN_PATH) && signsInHere() && client) {
+                event.preventDefault();
+                signIn(client);
+              }
+            }}
+          >
             {action.label}
           </a>
         ) : (

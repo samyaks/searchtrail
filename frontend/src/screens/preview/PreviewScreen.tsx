@@ -123,6 +123,11 @@ function PreviewBody({ preview, matter, onRefresh, busy }: { preview: Preview; m
   const bars = (dimension: Dimension, buckets: Schemas['NamedCount'][]) =>
     buckets.map((b) => ({ key: barKey(dimension, b.name), label: b.name, count: b.count, quiet: dimension === 'label' && b.name === 'No label' }));
   const selectedKey = filter ? barKey(filter.dimension, filter.name) : null;
+  // One button to start a preview at a time: when the banner offers one, it is the only one. Otherwise the toolbar's
+  // says what it does: the same query again, or the newer query version that a new preview would be of.
+  const current = matter.current_version;
+  const bannerStarts = !matter.draft_changed && ((current !== null && current !== preview.version) || preview.stale);
+  const startLabel = current !== null && current !== preview.version ? `Preview query v${current}` : 'Refresh preview';
 
   return (
     <>
@@ -137,9 +142,11 @@ function PreviewBody({ preview, matter, onRefresh, busy }: { preview: Preview; m
           {madeWhen(preview.created_at)}. It lists metadata only; document contents stay in Purview until export.
         </p>
         <div className={styles.actions}>
-          <Button onClick={onRefresh} disabled={busy}>
-            Refresh preview
-          </Button>
+          {!bannerStarts && (
+            <Button onClick={onRefresh} disabled={busy}>
+              {startLabel}
+            </Button>
+          )}
           <Button icon={<DownloadIcon />} aria-disabled={download.isPending} onClick={download.isPending ? undefined : () => download.mutate()}>
             {download.isPending ? 'Downloading…' : 'Download preview.csv'}
           </Button>

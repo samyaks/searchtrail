@@ -108,6 +108,14 @@
   font-size: 14px;
   color: var(--st-muted);
 }
+
+/* Why Estimate is off: next to the button, in the colour of a blocked state. */
+.blockedNote {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--st-margin-red);
+}
 .hint {
   margin: 0;
   font-size: var(--st-text-sm);

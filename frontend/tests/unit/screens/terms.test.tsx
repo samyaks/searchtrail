@@ -27,8 +27,8 @@ vi.mock('@/api/jobs', async (importOriginal) => {
 const PATH = `/matters/${FALCON}/terms`;
 const reportTable = () => screen.findByRole('table', { name: /^Search term report/ });
 const bodyRows = (table: HTMLElement) => within(table.querySelector('tbody')!).getAllByRole('row');
-// The toolbar's Recount (a stale report's banner has one too, further down).
-const recount = () => screen.getAllByRole('button', { name: 'Recount' })[0]!;
+// The Recount button: the toolbar's, or the stale report's banner's while the count is out of date (never both).
+const recount = () => screen.getByRole('button', { name: 'Recount' });
 // The progress block, which takes focus when the button that started the count goes away.
 const progressBlock = () => screen.getByRole('progressbar').closest<HTMLElement>('[tabindex="-1"]');
 // What the latest report's time says, for the report the mock wrote last.
@@ -373,12 +373,15 @@ test('when the query changed since the report, the screen says the counts are ou
   expect(table).toHaveAttribute('data-stale', 'true');
   await expectNoA11yViolations(document.body);
 
-  // The banner says to choose Recount, and has the button.
+  // The banner says to choose Recount, and has the button: the only Recount on the screen while it shows.
+  expect(screen.getAllByRole('button', { name: 'Recount' })).toHaveLength(1);
   await userEvent.click(within(notice).getByRole('button', { name: 'Recount' }));
   expect(await screen.findByRole('progressbar')).toBeInTheDocument();
   expect(screen.queryByText('The query has changed since this count.')).not.toBeInTheDocument();
   // The banner and its button are gone, so focus moves to the progress rather than dropping to the page.
   expect(progressBlock()).toHaveFocus();
+  // The toolbar's Recount is back, waiting for the count.
+  expect(screen.getByRole('button', { name: 'Recount' })).toBeDisabled();
 });
 
 test('a term report the API refuses to start says why in plain English', async () => {

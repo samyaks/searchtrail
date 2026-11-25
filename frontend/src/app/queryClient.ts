@@ -1,6 +1,6 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { ApiRequestError } from '@/api/client';
-import { handleSessionExpired } from '@/api/session';
+import { noteSessionEnded } from '@/api/session';
 
 /** Retry once, and only when trying again could help: not for a 4xx, which the server meant. */
 export function retryOnce(failureCount: number, error: unknown): boolean {
@@ -9,10 +9,11 @@ export function retryOnce(failureCount: number, error: unknown): boolean {
 }
 
 export function makeQueryClient() {
-  return new QueryClient({
-    // An ended session sends the person to sign in, whichever request found out.
-    queryCache: new QueryCache({ onError: handleSessionExpired }),
-    mutationCache: new MutationCache({ onError: handleSessionExpired }),
+  const client: QueryClient = new QueryClient({
+    // An ended session, whichever request found out, is shown once by the Shell with a Sign in button.
+    queryCache: new QueryCache({ onError: (error) => noteSessionEnded(client, error) }),
+    mutationCache: new MutationCache({ onError: (error) => noteSessionEnded(client, error) }),
     defaultOptions: { queries: { retry: retryOnce, refetchOnWindowFocus: false } },
   });
+  return client;
 }

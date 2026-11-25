@@ -7,7 +7,7 @@ import type { useTrackedJob } from '@/api/jobs';
 import { Banner, Button, ButtonLink, ErrorNotice, InlineError } from '@/components';
 import styles from './ExportScreen.module.css';
 import { clock } from './format';
-import { useStartExport } from './hooks';
+import { shownExportJob, useStartExport } from './hooks';
 import { CheckMark } from './icons';
 import { jobError } from './jobError';
 import { Progress } from './Progress';
@@ -20,6 +20,9 @@ type Props = {
   check: UseQueryResult<Schemas['ExportCheck']>;
   options: Schemas['ExportOptions'];
   exportJob: ExportJob;
+  /** The export job the person set aside ("Set up another export"): the card shows the form again, not that job. */
+  dismissedJob: string | null;
+  onDismissJob: (jobId: string | null) => void;
 };
 
 /**
@@ -45,7 +48,7 @@ function focusLostOrIn(section: HTMLElement | null): boolean {
   return !active || active === document.body || Boolean(section?.contains(active));
 }
 
-export function StartCard({ matterId, matterNumber, check, options, exportJob }: Props) {
+export function StartCard({ matterId, matterNumber, check, options, exportJob, dismissedJob, onDismissJob: setDismissedJob }: Props) {
   const headingId = useId();
   const fieldId = useId();
   const acceptId = useId();
@@ -57,8 +60,6 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
   const [typed, setTyped] = useState('');
   // The check the counts were accepted for (acceptKey), not a plain yes: it lapses when the counts change.
   const [acceptedFor, setAcceptedFor] = useState<string | null>(null);
-  // A finished or failed export stays on the card until the person sets up the next one.
-  const [dismissedJob, setDismissedJob] = useState<string | null>(null);
   const start = useStartExport(matterId);
 
   const data = check.data;
@@ -72,7 +73,7 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
   const checksAllow = checkSettled && (data!.ready || accepted);
   const canStart = typedOk && checksAllow && !start.isPending;
 
-  const shownJob = exportJob.jobId && exportJob.jobId !== dismissedJob ? exportJob : null;
+  const shownJob = shownExportJob(exportJob, dismissedJob);
   const shownId = shownJob?.jobId ?? null;
 
   // Whenever the card leaves the form or comes back to it (a start, a conflict that follows the running export,
@@ -206,7 +207,21 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
     body = (
       <>
         <p className={styles.muted}>SearchTrail asks Purview to build the package. Nothing reaches Everlaw until someone imports it there.</p>
-        {blocked === 'export_not_previewed' && (
+        {blocked === 'export_not_previewed' && data!.version === null && (
+          <Banner
+            tone="warning"
+            role="status"
+            title="Export blocked: there's no query to export yet."
+            actions={
+              <ButtonLink to={`/matters/${encodeURIComponent(matterId)}/scope`} size="sm" variant="highlight">
+                Go to Scope
+              </ButtonLink>
+            }
+          >
+            Build and estimate a query on Scope, then preview it, so the export matches what was reviewed.
+          </Banner>
+        )}
+        {blocked === 'export_not_previewed' && data!.version !== null && (
           <Banner
             tone="warning"
             role="status"
