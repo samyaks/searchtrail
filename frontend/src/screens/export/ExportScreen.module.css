@@ -1,0 +1,366 @@
+/* The Export screen, after docs/design/Export.dc.html. Tokens only (src/styles/tokens.css). */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-5);
+}
+.columns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--st-space-5);
+}
+.main {
+  flex: 1.3 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+}
+.aside {
+  flex: 1 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+}
+
+.muted,
+.note {
+  margin: 0;
+  color: var(--st-muted);
+}
+.muted {
+  font-size: 14px;
+}
+.note {
+  font-size: var(--st-text-sm);
+}
+.mutedText {
+  color: var(--st-muted);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
+.selfStart {
+  align-self: flex-start;
+}
+
+/* Export check */
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.check strong {
+  font-weight: 600;
+}
+.check[data-status='failed'] strong {
+  color: var(--st-margin-red);
+}
+.mark {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--st-ok-green);
+  color: var(--st-sheet);
+}
+.mark[data-status='failed'] {
+  background: var(--st-margin-red);
+}
+.mark[data-status='skipped'] {
+  background: var(--st-rule-soft);
+  color: var(--st-muted);
+}
+.cardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+
+/* Options */
+.options {
+  display: flex;
+  flex-direction: column;
+}
+.option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-4);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--st-rule-soft);
+}
+.option[data-last] {
+  border-bottom: 0;
+  padding-top: var(--st-space-3);
+}
+.optionText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.4;
+  flex: 1 1 260px;
+}
+.optionLabel {
+  font-weight: 600;
+}
+
+/* Start the export: the one card with a heavier border, as in the design. */
+.startCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  border: 1.5px solid var(--st-ink);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.cardTitle,
+.plainTitle {
+  margin: 0;
+  font-family: var(--st-font-heading);
+  font-size: var(--st-text-lg);
+  font-weight: 400;
+}
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-1);
+  flex: 1 1 240px;
+}
+.fieldLabel {
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+}
+.input {
+  min-height: var(--st-target);
+  box-sizing: border-box;
+  padding: 0 var(--st-space-3);
+  border: 1px solid var(--st-rule-strong);
+  border-radius: var(--st-radius-md);
+  background: var(--st-sheet);
+  color: var(--st-ink);
+  font-family: var(--st-font-mono);
+  font-size: var(--st-text-md);
+}
+.input:focus-visible {
+  outline: var(--st-focus);
+  outline-offset: 2px;
+}
+.input[aria-invalid='true'] {
+  border-color: var(--st-margin-red);
+}
+.input:disabled {
+  background: var(--st-rule-soft);
+  color: var(--st-muted);
+}
+.accept {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px var(--st-space-3);
+  border: 1px solid var(--st-margin-red);
+  border-radius: var(--st-radius-md);
+  font-size: 14px;
+}
+.checkbox input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--st-ink);
+}
+.checkbox strong {
+  font-weight: 600;
+}
+.done {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.done .mark {
+  margin-top: 0;
+}
+
+/* Job progress */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.progressTrack {
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: var(--st-radius-pill);
+  background: var(--st-bar-track);
+  border: 1px solid var(--st-rule);
+  overflow: hidden;
+}
+.progressFill {
+  display: block;
+  height: 100%;
+  background: var(--st-ink);
+  transition: width 0.3s ease;
+}
+.progressText {
+  flex: none;
+  min-width: 4ch;
+  text-align: right;
+  font-size: var(--st-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--st-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .progressFill {
+    transition: none;
+  }
+}
+
+/* Hand-off */
+.steps {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  font-size: 14px;
+}
+.steps strong {
+  font-weight: 600;
+}
+.nameRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--st-space-2);
+  margin-top: 6px;
+}
+.exportName {
+  padding: 6px var(--st-space-2);
+  border-radius: var(--st-radius-sm);
+  background: var(--st-paper);
+  font-family: var(--st-font-mono);
+  font-size: 14px;
+  word-break: break-all;
+}
+.handoff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+  padding-top: var(--st-space-3);
+  border-top: 1px solid var(--st-rule-soft);
+}
+.handoffTitle {
+  margin: 0;
+  font-family: var(--st-font-body);
+  font-size: var(--st-text-md);
+  font-weight: 600;
+}
+.methodology {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-2);
+}
+
+/* History */
+.tableWrap {
+  margin-top: var(--st-space-3);
+  border-top: 1px solid var(--st-rule);
+}
+/* The table's own panel border would double the card's. */
+.tableWrap > div {
+  border: 0;
+  border-radius: 0 0 var(--st-radius-card) var(--st-radius-card);
+}
+.inset {
+  padding: var(--st-space-4) 20px 20px;
+}
+.exportNameCell {
+  font-family: var(--st-font-mono);
+  font-size: 14px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.status {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.statusLabel {
+  font-weight: 600;
+}
+.statusLabel[data-tone='ok'] {
+  color: var(--st-ok-green);
+}
+.statusLabel[data-tone='danger'] {
+  color: var(--st-margin-red);
+}
+.statusLabel[data-tone='muted'] {
+  color: var(--st-muted);
+}
+.statusDetail {
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+  padding: var(--st-space-4) 20px 20px;
+  border-top: 1px solid var(--st-rule);
+  background: var(--st-paper);
+}
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: var(--st-space-3) var(--st-space-5);
+  font-size: 14px;
+}
+.facts dt {
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  color: var(--st-muted);
+}
+.facts dd {
+  margin: 0;
+}
