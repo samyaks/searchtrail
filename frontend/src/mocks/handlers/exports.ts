@@ -4,6 +4,7 @@ import type { Schemas } from '@/api/client';
 import { db, type MockMatter } from '../db';
 import { deniedByPurview, throttledByMicrosoft } from '../denied';
 import { appendLog, signedIn } from '../log';
+import { exportJobBehaviour } from '../exportJob';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
 import { idParam, readJson, route, withMatter } from '../route';
 import { scenario } from '../scenarios';
@@ -28,11 +29,18 @@ export function exportCheck(m: MockMatter): S['ExportCheck'] {
   const when = preview ? new Date(preview.created_at).toISOString().slice(11, 16) : '';
 
   if (!previewed) {
+    // The backend's wording (app/jobs/export_checks.py), including a matter that has no query yet.
     return {
       ready: false, blocked_code: 'export_not_previewed', ...base, counts: null,
       checks: [
-        { key: 'previewed', status: 'failed', message: `Query v${version?.version ?? '?'} hasn't been previewed. Preview it first, so the export matches what was reviewed.` },
-        { key: 'same_sources', status: 'passed', message: 'Same custodians and sites as the preview.' },
+        version
+          ? { key: 'previewed', status: 'failed', message: `Query v${version.version} hasn't been previewed. Preview it first, so the export matches what was reviewed.` }
+          : { key: 'previewed', status: 'failed', message: "There's no query to export yet. Estimate and preview one first." },
+        !preview
+          ? { key: 'same_sources', status: 'skipped', message: 'Not checked because nothing has been previewed.' }
+          : sameSources
+            ? { key: 'same_sources', status: 'passed', message: 'Same custodians and sites as the preview.' }
+            : { key: 'same_sources', status: 'failed', message: 'The custodians or sites changed since the preview. Preview again, so the export matches what was reviewed.' },
         { key: 'counts_unchanged', status: 'skipped', message: "Not checked because the query wasn't previewed." },
       ],
     };
@@ -134,27 +142,7 @@ export const exportHandlers = [
       m.matter.stage = 'exporting';
       appendLog(m, 'export_started', `${exp.name} · ${n(counts.items)} items + ${n(counts.partial_items)} partially indexed`, exp.version, { options: exp.options, counts, changes_accepted: exp.changes_accepted });
       return HttpResponse.json(
-        createJob('export', m.matter.id, {
-          onProgress: (progress) => {
-            exp.progress = progress;
-          },
-          onFail: () => {
-            exp.status = 'failed';
-            m.matter.stage = stageBefore; // as it was before the export started
-          },
-          finish: () => {
-            const done = iso();
-            Object.assign(exp, {
-              status: 'ready', progress: 1, finished_at: done, expires_at: iso(new Date(Date.now() + 30 * 86_400_000)),
-              files: [{ name: 'Exchange.zip', size_bytes: Math.round(counts.size_bytes * 0.6) }, { name: 'SharePoint.zip', size_bytes: Math.round(counts.size_bytes * 0.4) }],
-            });
-            // Exported, unless the query moved on to a new version while the export ran.
-            m.matter.stage = m.matter.current_version === exp.version ? 'exported' : 'scoping';
-            m.versions.find((v) => v.version === exp.version)!.exported = true;
-            appendLog(m, 'export_finished', `${exp.name} · ready in Purview`, exp.version, { files: exp.files }, true);
-            return clone(exp);
-          },
-        }),
+        createJob('export', m.matter.id, { ...exportJobBehaviour(m, exp, stageBefore), exportId: exp.id }),
         { status: 202 },
       );
     }),

@@ -3,12 +3,14 @@ import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
 import { filterItems, generatePreviewItems, itemsToCsv } from '../items';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
+import { termHits } from '../counts';
 import { appendLog, signedIn } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
 import { buildPreview } from '../previews';
+import { criteriaInvalid } from './criteria';
 import { route, withMatter } from '../route';
 import { db, type MockMatter } from '../db';
-import { clone, error, hashNumber, iso, nextId, notFound, pageParams, paginate } from '../util';
+import { clone, error, iso, nextId, notFound, pageParams, paginate } from '../util';
 import { currentVersion, previewView, termReportView } from '../views';
 
 type S = Schemas;
@@ -72,7 +74,9 @@ export const runHandlers = [
       try {
         buildMockKql(m.draft.criteria);
       } catch (e) {
-        if (e instanceof CriteriaInvalid) return error(422, 'criteria_invalid', 'There are no search terms to count. Add at least one term first.');
+        if (e instanceof CriteriaInvalid) {
+          return m.draft.criteria.keywords.length === 0 ? error(422, 'criteria_invalid', 'There are no search terms to count. Add at least one term first.') : criteriaInvalid(e);
+        }
         throw e;
       }
       if (!version) return error(409, 'conflict', 'Estimate the query first. A term report counts within it.');
@@ -86,7 +90,8 @@ export const runHandlers = [
             const rows: S['TermRow'][] = m.draft.criteria.keywords.map((term) => {
               const before = previous?.rows.find((r) => r.term === term || r.term === `"${term}"`);
               const same = previous?.version === version.version;
-              const items = before && same ? before.items : 20 + (hashNumber(`${version.version}:${term}`) % Math.max(30, Math.floor(total * 0.7)));
+              // Each term within the version's other filters (counts.ts): the same terms always get the same hits.
+              const items = before && same ? before.items : termHits(m, version.criteria, term);
               return {
                 term: /\s/.test(term) ? `"${term}"` : term, items, size_bytes: items * 48_213,
                 previous_items: before ? (same ? before.previous_items : before.items) : null,
