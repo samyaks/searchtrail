@@ -46,6 +46,9 @@
   gap: var(--st-space-3);
   margin: 0;
 }
+.phase {
+  margin: 0;
+}
 .percent {
   font-weight: 700;
   font-variant-numeric: tabular-nums;

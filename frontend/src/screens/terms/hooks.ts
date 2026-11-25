@@ -44,3 +44,11 @@ export function useStartTermReport(matterId: string, onJob: (jobId: string) => v
     },
   });
 }
+
+/**
+ * Whether `a` is a later report than `b`. The same report fetched twice isn't, even if the server wrote its time
+ * differently ("Z" or "+00:00", with or without fractions of a second), so the times are compared as instants.
+ */
+export function isNewerReport(a: Pick<TermReport, 'id' | 'created_at'>, b: Pick<TermReport, 'id' | 'created_at'>): boolean {
+  return a.id !== b.id && Date.parse(a.created_at) > Date.parse(b.created_at);
+}

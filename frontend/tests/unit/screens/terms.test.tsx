@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { screen, waitFor, within } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { findMatter } from '@/mocks/db';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
 import { barPercent, changeHeader, changeText, sizeText, whenText } from '@/screens/terms/format';
+import { isNewerReport } from '@/screens/terms/hooks';
 import { expectNoA11yViolations } from '../a11y';
 import { FALCON, get, post, tick } from '../mocks/api';
 import { renderApp } from '../renderApp';
@@ -27,6 +29,10 @@ const reportTable = () => screen.findByRole('table', { name: /^Search term repor
 const bodyRows = (table: HTMLElement) => within(table.querySelector('tbody')!).getAllByRole('row');
 // The toolbar's Recount (a stale report's banner has one too, further down).
 const recount = () => screen.getAllByRole('button', { name: 'Recount' })[0]!;
+// The progress block, which takes focus when the button that started the count goes away.
+const progressBlock = () => screen.getByRole('progressbar').closest<HTMLElement>('[tabindex="-1"]');
+// What the latest report's time says, for the report the mock wrote last.
+const countedAt = (iso: string) => new RegExp(`^Counted ${whenText(iso)} for query v3\\.`);
 
 /** A promise a test opens when it chooses, to hold a request back. */
 function gate() {
@@ -80,24 +86,27 @@ test('the latest term report shows hits per term, with bars, the change since th
 test('Recount starts a term report, shows its progress, and then shows the new report', async () => {
   renderApp(PATH);
   await reportTable();
+  // The live region is there, empty, before the count starts, so its first words are read out.
+  expect(screen.getByRole('status')).toHaveTextContent(/^$/);
   await userEvent.click(recount());
 
   const bar = await screen.findByRole('progressbar', { name: 'Counting hits per term' });
   expect(screen.getByText('Starting the count…')).toBeInTheDocument();
   expect(recount()).toBeDisabled();
-  // Only the title line is a live region, so the long note isn't read out again with every percent.
-  expect(screen.getByRole('status')).toHaveTextContent('Starting the count…');
-  expect(screen.getByRole('status')).not.toHaveTextContent('You can leave this screen');
+  // Only the phase is a live region: not the long note, and not the percent, which the progress bar carries.
+  expect(screen.getByRole('status')).toHaveTextContent(/^Starting the count…$/);
+  expect(screen.getByText('0%')).toBeInTheDocument();
   await expectNoA11yViolations(document.body);
 
   tick(4.5); // half of the 9 seconds a mock job takes
   await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '50'));
-  expect(screen.getByText('Counting hits per term…')).toBeInTheDocument();
-  expect(screen.getByRole('status')).toHaveTextContent('50%');
+  expect(screen.getByText('50%')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent(/^Counting hits per term…$/);
 
   tick(10);
   await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
-  await waitFor(() => expect(screen.getByText(new RegExp(`^Counted ${whenText('2026-11-05T12:00:14Z')} for query v3\\.`))).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(countedAt('2026-11-05T12:00:14Z'))).toBeInTheDocument());
+  expect(screen.getByRole('status')).toHaveTextContent(/^$/);
   expect(recount()).toBeEnabled();
   expect(bodyRows(await reportTable())).toHaveLength(4);
 });
@@ -117,7 +126,8 @@ test('while a new count is being started after one finished, the progress starts
   await userEvent.click(recount());
   const bar = await screen.findByRole('progressbar', { name: 'Counting hits per term' });
   expect(bar).toHaveAttribute('aria-valuenow', '0');
-  expect(screen.getByRole('status')).toHaveTextContent('Starting the count…0%');
+  expect(screen.getByRole('status')).toHaveTextContent(/^Starting the count…$/);
+  expect(screen.getByText('0%')).toBeInTheDocument();
   expect(screen.queryByText('Counting hits per term…')).not.toBeInTheDocument();
 
   held.open();
@@ -162,6 +172,59 @@ test('the first count of a matter shows its report at once, with no flash of the
   expect(screen.queryByText('No term report yet')).not.toBeInTheDocument();
   expect(screen.getByRole('table', { name: /^Search term report/ })).toBeInTheDocument();
   held.open();
+});
+
+test('a finished count is kept as the latest report: leaving and coming back before the refetch lands still shows it', async () => {
+  const router = renderApp(PATH);
+  await reportTable();
+  const before = screen.getByText(/^Counted /).textContent;
+  const held = gate();
+  server.use(
+    http.get('/api/v1/matters/:matterId/term-reports/latest', async () => {
+      await held.wait;
+      return undefined;
+    }),
+  );
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  tick(10);
+  await waitFor(() => expect(screen.getByText(countedAt('2026-11-05T12:00:14Z'))).toBeInTheDocument());
+
+  await act(() => router.navigate(`/matters/${FALCON}/log`));
+  await waitFor(() => expect(screen.queryByRole('table', { name: /^Search term report/ })).not.toBeInTheDocument());
+  await act(() => router.navigate(PATH));
+  // No job to take the report from now, and the refetch is still held: the cache has the new report.
+  expect(await screen.findByText(countedAt('2026-11-05T12:00:14Z'))).toBeInTheDocument();
+  expect(screen.getByText(/^Counted /).textContent).not.toBe(before);
+  held.open();
+});
+
+test('the refetched copy of the report a count just made wins, even with its time written differently', async () => {
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  // From now on the API writes the same report's time as "+00:00" with microseconds, and says it's out of date
+  // (the query changed just after the count), which the job's own copy can't know.
+  server.use(
+    http.get('/api/v1/matters/:matterId/term-reports/latest', () => {
+      const report = findMatter(FALCON)!.termReport!;
+      return HttpResponse.json({ ...report, created_at: report.created_at.replace(/Z$/, '.000000+00:00'), stale: true });
+    }),
+  );
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  expect(await screen.findByText('The query has changed since this count.')).toBeInTheDocument();
+  expect(screen.getByText(countedAt('2026-11-05T12:00:14Z'))).toBeInTheDocument();
+});
+
+test("a count that finished on one matter isn't shown on the next matter's Terms", async () => {
+  const router = renderApp(PATH);
+  await reportTable();
+  await countOnce();
+  await act(() => router.navigate('/matters/mat_travel/terms'));
+  expect(await screen.findByText('No term report yet')).toBeInTheDocument();
+  expect(screen.queryByRole('table', { name: /^Search term report/ })).not.toBeInTheDocument();
 });
 
 test('opening the screen while a term report runs picks up its progress instead of offering to start another', async () => {
@@ -243,6 +306,29 @@ test('after a failed count, a Recount the API refuses shows only why it was refu
   expect(screen.queryByRole('heading', { name: "Purview couldn't finish that" })).not.toBeInTheDocument();
 });
 
+test('a refused Recount is dropped once a count started elsewhere is followed, so that count can say it failed', async () => {
+  setScenario({ failJobs: ['term_report'] });
+  const keywords = [...findMatter(FALCON)!.draft.criteria.keywords];
+  findMatter(FALCON)!.draft.criteria.keywords = [];
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  await screen.findByRole('heading', { name: "These search settings can't be turned into a query" });
+
+  findMatter(FALCON)!.draft.criteria.keywords = keywords;
+  await post(`/matters/${FALCON}/term-reports`); // another tab starts one, which will fail
+  // Coming back online asks again what's running, and finds it.
+  act(() => {
+    onlineManager.setOnline(false);
+    onlineManager.setOnline(true);
+  });
+  await screen.findByRole('progressbar');
+  await waitFor(() => expect(screen.queryByRole('heading', { name: "These search settings can't be turned into a query" })).not.toBeInTheDocument());
+  tick(10);
+  expect(await screen.findByRole('heading', { level: 3, name: "Purview couldn't finish that" })).toBeInTheDocument();
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+});
+
 test('a count that fails without saying why still says it failed', async () => {
   server.use(
     http.get('/api/v1/jobs/:jobId', ({ params }) =>
@@ -272,8 +358,7 @@ test('when the query changed since the report, the screen says the counts are ou
   findMatter(FALCON)!.draft.criteria.keywords.push('bribe');
   renderApp(PATH);
   const table = await reportTable();
-  const notice = await screen.findByRole('status');
-  expect(notice).toHaveTextContent('The query has changed since this count.');
+  const notice = (await screen.findByText('The query has changed since this count.')).closest<HTMLElement>('[role="status"]')!;
   expect(notice).toHaveTextContent('These hits are for query v3.');
   expect(table).toHaveAttribute('data-stale', 'true');
   await expectNoA11yViolations(document.body);
@@ -282,6 +367,8 @@ test('when the query changed since the report, the screen says the counts are ou
   await userEvent.click(within(notice).getByRole('button', { name: 'Recount' }));
   expect(await screen.findByRole('progressbar')).toBeInTheDocument();
   expect(screen.queryByText('The query has changed since this count.')).not.toBeInTheDocument();
+  // The banner and its button are gone, so focus moves to the progress rather than dropping to the page.
+  expect(progressBlock()).toHaveFocus();
 });
 
 test('a term report the API refuses to start says why in plain English', async () => {
@@ -304,6 +391,7 @@ test('before any term report, the screen offers to count, and then shows the fir
   await userEvent.click(screen.getByRole('button', { name: 'Count hits per term' }));
   expect(await screen.findByRole('progressbar')).toBeInTheDocument();
   expect(screen.queryByText('No term report yet')).not.toBeInTheDocument();
+  expect(progressBlock()).toHaveFocus();
   tick(10);
 
   const table = await reportTable();
@@ -348,6 +436,17 @@ describe('how the screen writes things', () => {
     expect(changeText(row(10, null, null), 1, null)).toBe('No earlier count');
     expect(changeHeader([row(1, null), row(2, 5, 2)])).toBe('Since v2');
     expect(changeHeader([row(1, null, null)])).toBe('Since last count');
+  });
+
+  test('which of two reports is the later one', () => {
+    const a = { id: 'trm_1', created_at: '2026-11-05T12:00:14Z' };
+    // The same report, its time written another way: neither is later.
+    expect(isNewerReport(a, { id: 'trm_1', created_at: '2026-11-05T12:00:14.000000+00:00' })).toBe(false);
+    expect(isNewerReport({ id: 'trm_1', created_at: '2026-11-05T12:00:14.123456Z' }, a)).toBe(false);
+    // Another report: by its instant, not by how the string sorts ("Z" sorts after "+").
+    expect(isNewerReport({ id: 'trm_2', created_at: '2026-11-05T12:00:14Z' }, { id: 'trm_1', created_at: '2026-11-05T12:00:14+00:00' })).toBe(false);
+    expect(isNewerReport({ id: 'trm_2', created_at: '2026-11-05T13:00:00+01:00' }, a)).toBe(false);
+    expect(isNewerReport({ id: 'trm_2', created_at: '2026-11-05T12:00:15+00:00' }, a)).toBe(true);
   });
 
   test('sizes, bars and times', () => {

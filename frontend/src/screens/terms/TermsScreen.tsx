@@ -10,7 +10,7 @@ import { useTrackedJob } from '@/api/jobs';
 import { useMatter } from '@/api/queries';
 import { Banner, Button, ButtonLink, EmptyState, ErrorNotice } from '@/components';
 import { barPercent, changeHeader, changeText, countText, previousVersionOf, sizeText, whenText } from './format';
-import { runningJobOf, termReportKey, useLatestTermReport, useStartTermReport, type TermReport } from './hooks';
+import { isNewerReport, runningJobOf, termReportKey, useLatestTermReport, useStartTermReport, type TermReport } from './hooks';
 import styles from './TermsScreen.module.css';
 
 /** What a failed count says when the job didn't say why. */
@@ -29,19 +29,28 @@ export function TermsScreen() {
   const startCount = () => start.mutate();
   // A 409 that names the running job isn't a problem: the screen follows that job instead.
   const startError = start.isError && !runningJobOf(start.error) ? start.error : null;
+  // Once a count is under way (one started elsewhere, say), an earlier refusal is old news: drop it, so it
+  // doesn't hide what becomes of that count.
+  const { reset: resetStart } = start;
+  const refused = start.isError;
+  useEffect(() => {
+    if (job.isRunning && refused) resetStart();
+  }, [job.isRunning, refused, resetStart]);
+  // The followed job is kept when the person moves to another matter's Terms, so only use what it ended with here.
+  const onThisMatter = job.job?.matter_id === matterId;
   // The last job's failure, unless something newer replaced it: a count under way, or a start that was refused.
   // (A 409 that handed over the running job isn't a refusal: if that job fails, say so.)
-  const jobFailure = job.isFailed && !counting && !startError ? (job.failure ?? JOB_FAILED) : null;
+  const jobFailure = job.isFailed && onThisMatter && !counting && !startError ? (job.failure ?? JOB_FAILED) : null;
 
   // A finished count carries its report, so show it at once instead of the old one until the refetch lands.
-  const fresh = job.isSucceeded ? job.result : null;
-  const shown = fresh && (!report.data || fresh.created_at > report.data.created_at) ? fresh : (report.data ?? null);
+  const fresh = job.isSucceeded && onThisMatter ? job.result : null;
+  const shown = fresh && (!report.data || isNewerReport(fresh, report.data)) ? fresh : (report.data ?? null);
   const seeded = useRef<string | null>(null);
   useEffect(() => {
     if (fresh && seeded.current !== fresh.id) {
       seeded.current = fresh.id;
       const cached = queryClient.getQueryData<TermReport | null>(termReportKey(matterId));
-      if (!cached || fresh.created_at > cached.created_at) queryClient.setQueryData(termReportKey(matterId), fresh);
+      if (!cached || isNewerReport(fresh, cached)) queryClient.setQueryData(termReportKey(matterId), fresh);
     }
   }, [fresh, matterId, queryClient]);
 
@@ -66,9 +75,7 @@ export function TermsScreen() {
       )}
 
       {/* While a new start is on its way the tracked job may still be the last, finished one: don't show its 100%. */}
-      {counting && (
-        <Progress progress={job.isRunning ? job.progress : 0} queued={!job.isRunning || !job.job || job.job.status === 'queued'} />
-      )}
+      <Progress counting={counting} progress={job.isRunning ? job.progress : 0} queued={!job.isRunning || !job.job || job.job.status === 'queued'} />
 
       {jobFailure && <ErrorNotice error={new ApiRequestError(502, jobFailure)} matterId={matterId} onRetry={startCount} headingLevel={3} />}
 
@@ -130,29 +137,46 @@ export function TermsScreen() {
   );
 }
 
-/** A running count: how far along it is. It carries on if the person leaves the screen. */
-function Progress({ progress, queued }: { progress: number; queued: boolean }) {
+/**
+ * A running count: how far along it is. It carries on if the person leaves the screen. The block stays in the
+ * page, hidden, while nothing is counting, so its live region is already there when the first text goes in and
+ * that is read out. Only the phase is live: the percent is left to the progress bar, not read out on every poll.
+ */
+function Progress({ counting, progress, queued }: { counting: boolean; progress: number; queued: boolean }) {
+  const block = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // The button that started the count is gone (the stale banner's, the empty state's, Try again): rather than
+    // leave focus on the page itself, bring it here. Focus that is still somewhere is left alone.
+    const active = document.activeElement;
+    if (counting && (active === null || active === document.body)) block.current?.focus();
+  }, [counting]);
   const percent = Math.round(progress * 100);
   return (
-    <div className={styles.progress}>
-      <p className={styles.progressTitle} role="status">
-        <strong>{queued ? 'Starting the count…' : 'Counting hits per term…'}</strong>
-        <span className={styles.percent}>{percent}%</span>
-      </p>
-      <div
-        className={styles.progressTrack}
-        role="progressbar"
-        aria-label="Counting hits per term"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent}
-      >
-        <span className={styles.progressFill} style={{ width: `${percent}%` }} />
+    <div ref={block} className={counting ? styles.progress : 'st-visually-hidden'} tabIndex={counting ? -1 : undefined}>
+      <div className={styles.progressTitle}>
+        <p className={styles.phase} role="status">
+          {counting && <strong>{queued ? 'Starting the count…' : 'Counting hits per term…'}</strong>}
+        </p>
+        {counting && <span className={styles.percent}>{percent}%</span>}
       </div>
-      <p className={styles.progressNote}>
-        Purview counts each term on a separate search, which can take a few minutes. You can leave this screen: the count carries on and shows here when
-        it's done.
-      </p>
+      {counting && (
+        <>
+          <div
+            className={styles.progressTrack}
+            role="progressbar"
+            aria-label="Counting hits per term"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <span className={styles.progressFill} style={{ width: `${percent}%` }} />
+          </div>
+          <p className={styles.progressNote}>
+            Purview counts each term on a separate search, which can take a few minutes. You can leave this screen: the count carries on and shows
+            here when it's done.
+          </p>
+        </>
+      )}
     </div>
   );
 }
