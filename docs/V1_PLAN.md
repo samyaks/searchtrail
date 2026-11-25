@@ -280,8 +280,9 @@ Start all seven when Phase 0 is merged. Each has an agent brief in `docs/agents/
 - **Builds:** each screen to match `docs/design/Main.dc.html`, `Define.dc.html` and
   `Scope.dc.html`. Scope calls `/kql/preview` as the user types (debounced) instead of building
   KQL in the browser, and shows the "query changed, estimate again" state.
-- **Done when:** each screen works against mocks and against the dry-run backend, with a
-  Playwright test per main action.
+- **Done when:** each screen works against mocks, with Vitest and Testing Library tests. In Phase 1
+  the dry-run backend check and a Playwright test per main action follow with the backend PRs and
+  the end-to-end suite (see `PHASE1_PLAN.md`).
 
 ### WS-F · Screens: Preview, Terms, Export, Log
 - **Owns:** `frontend/src/screens/preview/`, `…/terms/`, `…/export/`, `…/log/`

@@ -56,8 +56,11 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 4. Map `criteria_invalid` and the other error codes to the design's inline messages.
 
 ## Done when
-- Each screen works against the mocks and against the dry-run backend (`npm run dev:api`).
-- A Playwright test per main action (with WS-G's e2e setup), and Vitest tests for logic.
+- Each screen works against the mocks (`npm run dev`), including slow jobs, with Vitest and Testing
+  Library tests (with MSW) for logic and each main action.
+- The check against the dry-run backend (`npm run dev:api`) comes with backend PRs 6 and 8, and the
+  Playwright test per main action with PR 18 (see docs/PHASE1_PLAN.md). Fix what they find in a
+  follow-up `[E]` PR.
 - PR screenshots next to the matching design files.
 
 ## Contracts (shared; don't change them inside a feature PR)
