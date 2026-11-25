@@ -1,0 +1,232 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
+import { findMatter } from '@/mocks/db';
+import { setScenario } from '@/mocks/scenarios';
+import { server } from '@/mocks/server';
+import { barPercent, changeHeader, changeText, sizeText, whenText } from '@/screens/terms/format';
+import { expectNoA11yViolations } from '../a11y';
+import { FALCON, post, tick } from '../mocks/api';
+import { renderApp } from '../renderApp';
+
+// Poll jobs every 20 ms instead of every few seconds; the jobs themselves follow the mock clock, which tick() moves
+// (importing ../mocks/api freezes it for each test).
+vi.mock('@/api/jobs', async (importOriginal) => {
+  const jobs = await importOriginal<typeof import('@/api/jobs')>();
+  return {
+    ...jobs,
+    useTrackedJob: (...[matterId, kind, options]: Parameters<typeof jobs.useTrackedJob>) =>
+      jobs.useTrackedJob(matterId, kind, { pollMs: () => 20, ...options }),
+  };
+});
+
+const PATH = `/matters/${FALCON}/terms`;
+const reportTable = () => screen.findByRole('table', { name: /^Search term report/ });
+const bodyRows = (table: HTMLElement) => within(table.querySelector('tbody')!).getAllByRole('row');
+const recount = () => screen.getByRole('button', { name: 'Recount' });
+
+test('the latest term report shows hits per term, with bars, the change since the last version and sizes', async () => {
+  renderApp(PATH);
+  const table = await reportTable();
+  expect(screen.getByRole('heading', { level: 2, name: 'Terms' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 3, name: 'Search term report' })).toBeInTheDocument();
+  expect(screen.getByText(/^Counted .* for query v3\. Each term is counted inside every other filter/)).toBeInTheDocument();
+
+  expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Term', 'Hits within scope', 'Since v2', 'Size']);
+  const rows = bodyRows(table).map((row) => [...row.querySelectorAll('th, td')].map((cell) => cell.textContent));
+  expect(rows).toEqual([
+    ['"project falcon"', '105', '−83 from 188', '4.8 MB'],
+    ['invoic*', '440', '−362 from 802', '20.2 MB'],
+    ['kickback', '258', '−113 from 371', '11.9 MB'],
+    ['"side letter"', '316', 'New in v3', '14.5 MB'],
+  ]);
+  const total = within(table.querySelector('tfoot')!).getByRole('row');
+  expect(within(total).getByRole('rowheader')).toHaveTextContent('All terms combined');
+  expect(total).toHaveTextContent('630');
+  expect(total).toHaveTextContent('29.0 MB');
+
+  // Each bar is the term's share of all terms combined.
+  const fill = (row: HTMLElement) => row.querySelector<HTMLElement>('[aria-hidden="true"] > span')!.style.width;
+  expect(parseFloat(fill(bodyRows(table)[1]!))).toBeCloseTo((440 / 630) * 100, 2);
+  expect(fill(total)).toBe('100%');
+
+  expect(screen.queryByText('The query has changed since this count.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  // Out of scope for V1: unique hits and "Try without".
+  expect(screen.queryByText(/unique/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Try without/ })).not.toBeInTheDocument();
+  await expectNoA11yViolations(document.body);
+});
+
+test('Recount starts a term report, shows its progress, and then shows the new report', async () => {
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+
+  const bar = await screen.findByRole('progressbar', { name: 'Counting hits per term' });
+  expect(screen.getByText('Starting the count…')).toBeInTheDocument();
+  expect(recount()).toBeDisabled();
+  await expectNoA11yViolations(document.body);
+
+  tick(4.5); // half of the 9 seconds a mock job takes
+  await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '50'));
+  expect(screen.getByText('Counting hits per term…')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('50%');
+
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(new RegExp(`^Counted ${whenText('2026-11-05T12:00:14Z')} for query v3\\.`))).toBeInTheDocument());
+  expect(recount()).toBeEnabled();
+  expect(bodyRows(await reportTable())).toHaveLength(4);
+});
+
+test('opening the screen while a term report runs picks up its progress instead of offering to start another', async () => {
+  const job = (await post(`/matters/${FALCON}/term-reports`)).json as { id: string };
+  expect(job.id).toBeTruthy();
+  tick(3);
+  renderApp(PATH);
+
+  const bar = await screen.findByRole('progressbar', { name: 'Counting hits per term' });
+  await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '33'));
+  await waitFor(() => expect(recount()).toBeDisabled());
+
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  expect(recount()).toBeEnabled();
+});
+
+test('a term report started elsewhere while the screen is open is followed when Recount finds it running', async () => {
+  renderApp(PATH);
+  await reportTable();
+  await post(`/matters/${FALCON}/term-reports`); // another tab starts one
+  await userEvent.click(recount()); // the API answers 409 with that job's id
+
+  expect(await screen.findByRole('progressbar', { name: 'Counting hits per term' })).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+});
+
+test('a term report that fails says why, keeps the last report, and can be tried again', async () => {
+  setScenario({ failJobs: ['term_report'] });
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  tick(10);
+
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { level: 3, name: "Purview couldn't finish that" })).toBeInTheDocument();
+  expect(bodyRows(await reportTable())).toHaveLength(4); // the earlier report is still shown
+  await expectNoA11yViolations(document.body);
+
+  setScenario({ failJobs: [] });
+  await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('when the query changed since the report, the screen says the counts are out of date', async () => {
+  findMatter(FALCON)!.draft.criteria.keywords.push('bribe');
+  renderApp(PATH);
+  const table = await reportTable();
+  const notice = await screen.findByRole('status');
+  expect(notice).toHaveTextContent('The query has changed since this count.');
+  expect(notice).toHaveTextContent('These hits are for query v3.');
+  expect(table).toHaveAttribute('data-stale', 'true');
+  await expectNoA11yViolations(document.body);
+});
+
+test('a term report the API refuses to start says why in plain English', async () => {
+  findMatter(FALCON)!.draft.criteria.keywords = [];
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { name: "These search settings can't be turned into a query" })).toBeInTheDocument();
+  expect(alert).toHaveTextContent('There are no search terms to count. Add at least one term first.');
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+});
+
+test('before any term report, the screen offers to count, and then shows the first report', async () => {
+  renderApp('/matters/mat_travel/terms');
+  expect(await screen.findByText('No term report yet')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Recount' })).not.toBeInTheDocument();
+  await expectNoA11yViolations(document.body);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Count hits per term' }));
+  expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+  expect(screen.queryByText('No term report yet')).not.toBeInTheDocument();
+  tick(10);
+
+  const table = await reportTable();
+  expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toContain('Since last count');
+  expect(bodyRows(table)[0]).toHaveTextContent('No earlier count');
+  expect(screen.queryByText('No term report yet')).not.toBeInTheDocument();
+});
+
+test('a matter with no query yet is sent to Scope to estimate one first', async () => {
+  const created = (await post('/matters', { matter_number: 'M-2026-0300', name: 'New matter', type: 'investigation' })).json as { id: string };
+  renderApp(`/matters/${created.id}/terms`);
+  expect(await screen.findByText('No term report yet')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Go to Scope' })).toHaveAttribute('href', `/matters/${created.id}/scope`);
+  expect(screen.queryByRole('button', { name: 'Count hits per term' })).not.toBeInTheDocument();
+});
+
+test('a report that cannot be loaded says so, and can be asked for again', async () => {
+  let fail = true;
+  server.use(
+    http.get('/api/v1/matters/:matterId/term-reports/latest', () =>
+      fail ? HttpResponse.json({ code: 'internal_error', message: 'The database is busy.', details: {} }, { status: 500 }) : undefined,
+    ),
+  );
+  renderApp(PATH);
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('The database is busy.');
+  fail = false;
+  await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+  expect(await reportTable()).toBeInTheDocument();
+});
+
+describe('how the screen writes things', () => {
+  const row = (items: number, previous_items: number | null, previous_version: number | null = 2) => ({ term: 'x', items, size_bytes: 0, previous_items, previous_version });
+
+  test('the change since the previous version', () => {
+    expect(changeText(row(105, 188), 3)).toBe('−83 from 188');
+    expect(changeText(row(1_200, 900), 3)).toBe('+300 from 900');
+    expect(changeText(row(40, 40), 3)).toBe('No change from 40');
+    expect(changeText(row(316, null), 3)).toBe('New in v3');
+    expect(changeText(row(10, null, null), 1)).toBe('No earlier count');
+    expect(changeHeader([row(1, null), row(2, 5, 2)])).toBe('Since v2');
+    expect(changeHeader([row(1, null, null)])).toBe('Since last count');
+  });
+
+  test('sizes, bars and times', () => {
+    expect(sizeText(30_408_704)).toBe('29.0 MB');
+    expect(sizeText(5_033_164)).toBe('4.8 MB');
+    expect(sizeText(2_048)).toBe('2 KB');
+    expect(sizeText(512)).toBe('512 B');
+    expect(sizeText(3 * 1024 ** 3)).toBe('3.0 GB');
+    expect(barPercent(315, 630)).toBe(50);
+    expect(barPercent(700, 630)).toBe(100);
+    expect(barPercent(5, 0)).toBe(0);
+    const now = new Date(2026, 10, 5, 15, 0);
+    expect(whenText(new Date(2026, 10, 5, 10, 51).toISOString(), now)).toBe('at 10:51');
+    expect(whenText(new Date(2026, 10, 4, 16, 20).toISOString(), now)).toBe('yesterday at 16:20');
+    expect(whenText(new Date(2026, 9, 28, 9, 5).toISOString(), now)).toBe('on 28 Oct at 09:05');
+    expect(whenText(new Date(2025, 9, 28, 9, 5).toISOString(), now)).toBe('on 28 Oct 2025 at 09:05');
+  });
+});
+
+test("the screen's styles use the design tokens, not raw colours", () => {
+  const css = readFileSync(resolve(__dirname, '../../../src/screens/terms/TermsScreen.module.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
+  expect(css.match(/\brgba?\(/g) ?? []).toEqual([]);
+  const tokens = readFileSync(resolve(__dirname, '../../../src/styles/tokens.css'), 'utf8');
+  for (const [, name] of css.matchAll(/var\((--st-[a-z0-9-]+)/g)) expect(tokens).toContain(`${name}:`);
+});

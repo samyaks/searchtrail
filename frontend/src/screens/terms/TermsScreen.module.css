@@ -1,0 +1,212 @@
+/* The Terms screen, from docs/design/Terms.dc.html. Tokens only (src/styles/tokens.css). */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-5);
+}
+
+/* "Counted at 10:51 for query v3 ..." and Recount */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+.intro {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--st-muted);
+  font-size: 14px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
+.loading {
+  margin: 0;
+  color: var(--st-muted);
+}
+
+/* a count that is running */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.progressTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+  margin: 0;
+}
+.percent {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.progressTrack {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--st-bar-track);
+}
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--st-ink);
+  transition: width 0.3s ease;
+}
+.progressNote {
+  margin: 0;
+  color: var(--st-muted);
+  font-size: 14px;
+}
+
+.emptyPanel {
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+
+/* the report */
+.report {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.reportHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+  padding: var(--st-space-4) 20px;
+  border-bottom: 1px solid var(--st-rule);
+}
+.reportTitle {
+  margin: 0;
+  font-family: var(--st-font-body);
+  font-size: 17px;
+  font-weight: 700;
+}
+.reportNote {
+  color: var(--st-muted);
+  font-size: var(--st-text-sm);
+}
+.scroll {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  padding: 14px var(--st-space-2);
+  text-align: left;
+  vertical-align: middle;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: 20px;
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: 20px;
+}
+.table thead th {
+  padding-top: var(--st-space-3);
+  padding-bottom: var(--st-space-3);
+  border-bottom: 1px solid var(--st-rule);
+  color: var(--st-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+.table tbody tr {
+  border-bottom: 1px solid var(--st-rule-soft);
+}
+.table tfoot tr {
+  border-top: 2px solid var(--st-ink);
+}
+.table tfoot th,
+.table tfoot td {
+  padding-top: var(--st-space-4);
+  padding-bottom: var(--st-space-4);
+  font-weight: 700;
+}
+.termCol {
+  width: 190px;
+}
+.changeCol {
+  width: 170px;
+}
+.sizeCol {
+  width: 100px;
+}
+.table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.muted {
+  color: var(--st-muted);
+}
+.table tbody .term {
+  font-family: var(--st-font-mono);
+  font-size: 16px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.none {
+  color: var(--st-muted);
+}
+
+/* a term's hits: a bar as long as its share of all terms combined, then the count */
+.hits {
+  display: flex;
+  align-items: center;
+  gap: var(--st-space-3);
+}
+.track {
+  flex: 1;
+  display: flex;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--st-bar-track);
+}
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--st-highlighter);
+  box-shadow: inset 0 0 0 1px var(--st-notice-edge);
+}
+.fill[data-total] {
+  background: var(--st-ink);
+  box-shadow: none;
+}
+/* counts for an older query: grey bars, so they don't read as current */
+.table[data-stale] .fill {
+  background: var(--st-bar-quiet);
+  box-shadow: none;
+}
+.count {
+  flex: 0 0 5ch;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
