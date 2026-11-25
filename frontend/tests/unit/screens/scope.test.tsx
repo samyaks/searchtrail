@@ -23,7 +23,7 @@ import {
 import { timing } from '@/screens/scope/hooks';
 import { expectNoA11yViolations } from '../a11y';
 import { requestProblems } from '../contract';
-import { FALCON, post, put, tick } from '../mocks/api';
+import { FALCON, get, post, put, tick } from '../mocks/api';
 import { renderApp } from '../renderApp';
 
 type Criteria = Schemas['Criteria'];
@@ -607,13 +607,13 @@ describe('estimate', () => {
     }
   });
 
-  test('a save that failed before leaving the screen does not stop an estimate after coming back', async () => {
+  test('a save that failed before leaving the screen (and again as it left) does not stop an estimate after coming back', async () => {
     const sent = record();
     let puts = 0;
     server.use(
       http.put('/api/v1/matters/:matterId/draft', () => {
         puts += 1;
-        if (puts === 2) return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
+        if (puts >= 2) return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
       }),
     );
     await openScope();
@@ -623,6 +623,7 @@ describe('estimate', () => {
     expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
     await userEvent.click(tab('Define'));
     await screen.findByRole('heading', { name: 'Matter details' });
+    await waitFor(() => expect(puts).toBe(3)); // leaving tried the unsaved edit once more
     await userEvent.click(tab('Scope'));
     // Back on the draft as saved (with kickback), which is what an estimate is of.
     const terms = await screen.findByRole('list', { name: 'Search terms' });
@@ -630,7 +631,7 @@ describe('estimate', () => {
     await userEvent.click(await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' }));
     expect(await within(estimateRegion()).findByRole('progressbar')).toBeInTheDocument();
     await waitFor(() => expect(sent.calls).toContain('estimate'));
-    expect(puts).toBe(2);
+    expect(puts).toBe(3);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -876,5 +877,49 @@ describe('when the session ends', () => {
     } finally {
       setSignInHere(null);
     }
+  });
+
+  test('back from signing in, the edit that was not saved is said at the top, with focus, and leaving the screen saves it', async () => {
+    setSignInHere(() => setScenario({ sessionExpired: false }));
+    try {
+      await openScope();
+      const sent = record();
+      setScenario({ sessionExpired: true });
+      await addTerm('brightline');
+      await userEvent.click(await screen.findByRole('button', { name: 'Sign in' }));
+      const heading = await screen.findByRole('heading', { name: "That didn't go through" });
+      const notice = heading.closest<HTMLElement>('[role="alert"]')!;
+      // Focus moves to it (not to the page's heading), and it sits above the filters, not under the last one.
+      await waitFor(() => expect(notice).toHaveFocus());
+      expect(notice.compareDocumentPosition(region('Search terms')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(within(notice).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+      // The edit is still on screen, and the methodology doesn't pass it off as the saved query version.
+      expect(within(screen.getByRole('list', { name: 'Search terms' })).getByText('brightline')).toBeInTheDocument();
+      expect(screen.getByText(/Draft \(not saved\)/)).toBeInTheDocument();
+      expect(sent.saves).toHaveLength(1); // the one refused
+
+      // Leaving the screen sends it again, now that the session is live.
+      await userEvent.click(tab('Define'));
+      await screen.findByRole('heading', { name: 'Matter details' });
+      await waitFor(() => expect(sent.saves).toHaveLength(2));
+      expect(sent.saves[1]?.keywords).toEqual(['project falcon', 'invoic*', 'kickback', 'side letter', 'brightline']);
+      await waitFor(async () => expect(((await get(`/matters/${FALCON}/draft`)).json as Schemas['Draft']).criteria.keywords).toContain('brightline'));
+    } finally {
+      setSignInHere(null);
+    }
+  });
+
+  test('while an edit is known not to be saved, closing the page asks first', async () => {
+    server.use(http.put('/api/v1/matters/:matterId/draft', () => HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 })));
+    await openScope();
+    const unload = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(unload()).toBe(false);
+    await addTerm('brightline');
+    expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
+    expect(unload()).toBe(true);
   });
 });

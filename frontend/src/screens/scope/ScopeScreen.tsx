@@ -83,17 +83,23 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
 
   // Save the draft whenever the edits settle on something not saved yet. `requested` is the last criteria a save
   // was asked for and `lastSave` that save's promise; `latest` is what's on screen, so an edit made just before
-  // leaving the screen is still saved.
+  // leaving the screen is still saved. `lastFailed` says the last save asked for failed (the session had ended,
+  // say): leaving the screen then sends it again, so an edit shown as not saved isn't lost by moving on.
   const { mutateAsync: saveDraftNow } = save;
   const requested = useRef(stableKey(initial));
   const lastSave = useRef<Promise<unknown> | null>(null);
+  const lastFailed = useRef(false);
   const latest = useRef(initial);
   const requestSave = useCallback(
     (next: Criteria) => {
       requested.current = stableKey(next);
+      lastFailed.current = false;
       const saved = saveDraftNow(next);
-      saved.catch(() => {}); // a failure is shown by the save's own notice, with Try again
       lastSave.current = saved;
+      // A failure is shown by the save's own notice, with Try again.
+      saved.catch(() => {
+        if (lastSave.current === saved) lastFailed.current = true;
+      });
       return saved;
     },
     [saveDraftNow],
@@ -103,10 +109,18 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
   }, [settled, requestSave]);
   useEffect(
     () => () => {
-      if (stableKey(latest.current) !== requested.current) void requestSave(latest.current);
+      if (stableKey(latest.current) !== requested.current || lastFailed.current) void requestSave(latest.current);
     },
     [requestSave],
   );
+  // Closing or reloading the page can't save anything: while an edit is known not to be saved, the browser asks first.
+  const unsaved = save.isError;
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsaved]);
 
   const change = (next: Criteria) => {
     latest.current = next;
@@ -178,19 +192,20 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
     const counted = versions.data?.items.filter((v) => v.counts).sort((a, b) => b.version - a.version)[0];
     if (counted?.counts) shown = { version: counted.version, at: counted.created_at, counts: counted.counts };
   }
-  const versionLabel = current === null || changed ? `Query v${nextVersion} (draft)` : `Query v${current}`;
+  // While the last save failed, what's on screen isn't the saved draft: the methodology doesn't claim a version for it.
+  const versionLabel = save.isError ? 'Draft (not saved)' : current === null || changed ? `Query v${nextVersion} (draft)` : `Query v${current}`;
 
   return (
     <div className={styles.columns}>
       <div className={styles.filters}>
+        {/* A save that failed is said at the top, where the person is looking, not under the last filter. */}
+        {save.isError && <ErrorNotice error={save.error} onRetry={retrySave} headingLevel={3} change />}
         <WhoCard matter={matter} />
         <TermsSection criteria={criteria} onChange={change} problem={problemFor('terms')} />
         <WhenSection criteria={criteria} onChange={change} problem={problemFor('dates')} typesProblem={problemFor('types')} />
         <LabelsSection criteria={criteria} onChange={change} problem={problemFor('labels')} />
         <ExpertSection criteria={criteria} onChange={change} problem={problemFor('expert')} />
-        {save.isError ? (
-          <ErrorNotice error={save.error} onRetry={retrySave} headingLevel={3} />
-        ) : (
+        {!save.isError && (
           <p className={styles.hint}>
             {save.isPending
               ? 'Saving the draft…'

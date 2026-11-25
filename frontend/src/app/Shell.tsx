@@ -82,13 +82,15 @@ export function Shell() {
   const ended = useSessionEnded();
   const main = useRef<HTMLElement>(null);
   const wasEnded = useRef(false);
-  // Back from a sign-in in place: the notice that had focus is gone, so focus goes to the page's own heading (or,
+  // Back from a sign-in in place: the notice that had focus is gone, so focus goes to a change the page says wasn't
+  // made while signed out (ErrorNotice), if there is one, so it isn't missed; else to the page's own heading (or,
   // while the page has none, to the page itself).
   useEffect(() => {
     if (wasEnded.current && !ended) {
-      const heading = main.current?.querySelector<HTMLElement>('h1, h2');
+      const refused = main.current?.querySelector<HTMLElement>('[data-refused-change]');
+      const heading = refused ? null : main.current?.querySelector<HTMLElement>('h1, h2');
       if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
-      (heading ?? main.current)?.focus();
+      (refused ?? heading ?? main.current)?.focus();
     }
     wasEnded.current = ended;
   }, [ended]);

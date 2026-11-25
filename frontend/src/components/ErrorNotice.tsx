@@ -14,6 +14,12 @@ export type ErrorNoticeProps = {
   onRetry?: () => void;
   /** The heading level; use the one that follows the page's headings. */
   headingLevel?: 1 | 2 | 3;
+  /**
+   * The error is a change the person made that was refused (a save), not a load. If it was refused because the
+   * session had ended, then back from signing in again in place it's the news on the page: the Shell moves focus to
+   * it (data-refused-change) instead of to the page's heading.
+   */
+  change?: boolean;
 };
 
 /**
@@ -34,14 +40,14 @@ export function ErrorNotice(props: ErrorNoticeProps) {
 function RefusedBySession(props: ErrorNoticeProps) {
   const ended = useSessionEnded();
   if (ended) return null;
-  return <Notice {...props} description={REFUSED_BY_ENDED_SESSION} />;
+  return <Notice {...props} description={REFUSED_BY_ENDED_SESSION} takesFocus={Boolean(props.change)} />;
 }
 
-function Notice({ description, onRetry, headingLevel = 2 }: ErrorNoticeProps & { description: ErrorDescription }) {
+function Notice({ description, onRetry, headingLevel = 2, takesFocus = false }: ErrorNoticeProps & { description: ErrorDescription; takesFocus?: boolean }) {
   const { title, message, tone, action } = description;
   const Heading = `h${headingLevel}` as const;
   return (
-    <div role="alert" className={styles.notice} data-tone={tone}>
+    <div role="alert" className={styles.notice} data-tone={tone} {...(takesFocus ? { 'data-refused-change': '', tabIndex: -1 } : {})}>
       <Heading className={styles.title}>{title}</Heading>
       <p className={styles.message}>{message}</p>
       {action?.kind === 'retry' && onRetry && (
