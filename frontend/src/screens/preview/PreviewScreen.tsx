@@ -5,10 +5,9 @@ import { useState } from 'react';
 import { useParams } from 'react-router';
 import { ApiRequestError, type Schemas } from '@/api/client';
 import { useMatter } from '@/api/queries';
-import { dayAndTime } from '@/app/time';
 import { Banner, BarBreakdown, Button, ButtonLink, CountTile, EmptyState, ErrorNotice, MonthChart, TileGrid } from '@/components';
-import { barKey, monthSpan, sizeText, type BarFilter, type Dimension } from './format';
-import { csvUrl, useLatestPreview, usePreviewJob } from './hooks';
+import { barKey, madeWhen, monthSpan, sizeText, type BarFilter, type Dimension } from './format';
+import { useDownloadCsv, useLatestPreview, usePreviewJob } from './hooks';
 import { ItemTable } from './ItemTable';
 import { JobProgress } from './JobProgress';
 import styles from './PreviewScreen.module.css';
@@ -37,10 +36,15 @@ export function PreviewScreen() {
         />
       )}
       {job.startError !== null && <ErrorNotice error={job.startError} matterId={matterId} onRetry={job.start} />}
+      {/* Asking about the job was refused (the session ended, the job is gone): say so rather than go quiet. */}
+      {job.queryError !== null && !job.isRunning && !job.isFailed && (
+        <ErrorNotice error={job.queryError} matterId={matterId} onRetry={() => void job.refetch()} />
+      )}
 
-      {latest.isPending && <p className={styles.muted}>Loading the preview…</p>}
+      {(latest.isPending || (latest.isSuccess && matter.isPending)) && <p className={styles.muted}>Loading the preview…</p>}
       {latest.isError && <ErrorNotice error={latest.error} matterId={matterId} onRetry={() => void latest.refetch()} />}
-      {latest.data === null && !job.isRunning && <NothingPreviewed matterId={matterId} version={version} onStart={job.start} busy={busy} />}
+      {/* Wait for the matter too: without it, "no query yet" can't be told from "not loaded yet". */}
+      {latest.data === null && matter.data && !job.isRunning && <NothingPreviewed matterId={matterId} version={version} onStart={job.start} busy={busy} />}
       {latest.data && matter.data && (
         // Keyed by the preview, so a new preview starts with no filter, on page 1.
         <PreviewBody key={latest.data.id} preview={latest.data} matter={matter.data} onRefresh={job.start} busy={busy} />
@@ -83,6 +87,7 @@ const n = (value: number) => value.toLocaleString('en-US');
 function PreviewBody({ preview, matter, onRefresh, busy }: { preview: Preview; matter: Matter; onRefresh: () => void; busy: boolean }) {
   const [filter, setFilter] = useState<BarFilter | null>(null);
   const [page, setPage] = useState(1);
+  const download = useDownloadCsv(preview.id);
   const { counts, breakdowns } = preview;
   const partialIncluded = counts.partial_items > 0 && preview.report_items > counts.items;
 
@@ -101,19 +106,22 @@ function PreviewBody({ preview, matter, onRefresh, busy }: { preview: Preview; m
 
       <div className={styles.intro}>
         <p className={styles.source}>
-          Built from Purview's item report for <span className={styles.mono}>query v{preview.version}</span>, {dayAndTime(preview.created_at)}. It lists
-          metadata only; document contents stay in Purview until export.
+          Built from Purview's item report for search{' '}
+          <span className={styles.mono}>
+            {matter.matter_number} cull v{preview.version}
+          </span>{' '}
+          {madeWhen(preview.created_at)}. It lists metadata only; document contents stay in Purview until export.
         </p>
         <div className={styles.actions}>
           <Button onClick={onRefresh} disabled={busy}>
             Refresh preview
           </Button>
-          <a className={styles.download} href={csvUrl(preview.id)} download>
-            <DownloadIcon />
+          <Button icon={<DownloadIcon />} aria-disabled={download.isPending} onClick={download.isPending ? undefined : () => download.mutate()}>
             Download preview.csv
-          </a>
+          </Button>
         </div>
       </div>
+      {download.isError && <ErrorNotice error={download.error} matterId={matter.id} onRetry={() => download.mutate()} />}
 
       <TileGrid>
         <CountTile label="Items matching" value={counts.items} note={sizeText(counts.size_bytes)} />

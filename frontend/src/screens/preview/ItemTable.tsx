@@ -1,8 +1,9 @@
 // The item table: one page of the preview's items, filtered by the chosen bar, with paging and the full list as CSV.
+import { useRef } from 'react';
 import type { Schemas } from '@/api/client';
 import { dateText } from '@/app/time';
 import { Button, ButtonLink, DataTable, ErrorNotice, type Column } from '@/components';
-import { showingText, sizeText, toItemFilter, TYPE_LABELS, type BarFilter } from './format';
+import { captionText, showingText, sizeText, toItemFilter, TYPE_LABELS, type BarFilter } from './format';
 import { PAGE_SIZE, usePreviewItems } from './hooks';
 import styles from './PreviewScreen.module.css';
 
@@ -85,24 +86,42 @@ type Props = {
   onPage: (page: number) => void;
 };
 
+/** A pager button that stays focusable at the first or last page (a disabled button would drop the focus). */
+function PageButton({ onPress, unavailable, children }: { onPress: () => void; unavailable: boolean; children: string }) {
+  return (
+    <Button size="sm" aria-disabled={unavailable} onClick={unavailable ? undefined : onPress}>
+      {children}
+    </Button>
+  );
+}
+
 export function ItemTable({ preview, matterId, filter, onClearFilter, page, onPage }: Props) {
   const items = usePreviewItems(preview.id, toItemFilter(filter), page);
+  const heading = useRef<HTMLHeadingElement>(null);
+  // While another filter or page loads, the last page stays on screen: don't describe it as the new one.
+  const loading = !items.data || items.isPlaceholderData;
   const data = items.data;
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+
+  const clearFilter = () => {
+    onClearFilter();
+    // The chip goes away with the filter: keep the focus nearby, on the table's heading.
+    heading.current?.focus();
+  };
 
   return (
     <section aria-labelledby="preview-items" className={styles.itemsCard}>
       <div className={styles.itemsHead}>
         <div className={styles.itemsTitle}>
-          <h2 id="preview-items" className={styles.h2Small}>
+          <h2 id="preview-items" ref={heading} tabIndex={-1} className={styles.h2Small}>
             Items
           </h2>
           <span role="status" className={styles.muted}>
-            {data ? showingText(data, filter) : items.isError ? '' : 'Loading items…'}
+            {items.isError ? '' : loading ? 'Loading items…' : showingText(data!, filter)}
           </span>
         </div>
         {filter && (
-          <button type="button" className={styles.clearChip} onClick={onClearFilter} aria-label={`Clear filter: ${filter.name}`}>
+          <button type="button" className={styles.clearChip} onClick={clearFilter} aria-label={`Clear filter: ${filter.name}`}>
             {filter.name}
             <CloseIcon />
           </button>
@@ -116,11 +135,11 @@ export function ItemTable({ preview, matterId, filter, onClearFilter, page, onPa
       ) : (
         <div className={styles.tableWrap} aria-busy={items.isFetching}>
           <DataTable
-            caption={filter ? `Items where ${filter.dimension} is ${filter.name}` : 'Items'}
+            caption={loading ? 'Items' : captionText(filter)}
             columns={COLUMNS}
             rows={data?.items ?? []}
             rowKey={(item) => item.id}
-            emptyMessage={data ? 'None of the items match. Download preview.csv to see all of them.' : 'Loading items…'}
+            emptyMessage={data ? (filter ? 'None of the items match this filter.' : 'This preview found no items.') : 'Loading items…'}
           />
         </div>
       )}
@@ -128,15 +147,15 @@ export function ItemTable({ preview, matterId, filter, onClearFilter, page, onPa
       <div className={styles.itemsFoot}>
         {data && data.total > PAGE_SIZE && (
           <nav aria-label="Item pages" className={styles.pager}>
-            <Button size="sm" onClick={() => onPage(page - 1)} disabled={page <= 1}>
+            <PageButton onPress={() => onPage(page - 1)} unavailable={page <= 1}>
               Previous
-            </Button>
+            </PageButton>
             <span>
               Page {page} of {pages.toLocaleString('en-US')}
             </span>
-            <Button size="sm" onClick={() => onPage(page + 1)} disabled={page >= pages}>
+            <PageButton onPress={() => onPage(page + 1)} unavailable={page >= pages}>
               Next
-            </Button>
+            </PageButton>
           </nav>
         )}
         <span>The full list of {preview.report_items.toLocaleString('en-US')} items is in preview.csv.</span>

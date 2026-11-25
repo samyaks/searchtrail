@@ -1,7 +1,7 @@
 // The Preview screen's reads and its one action. Keys sit under ['previews'], so a finished job (src/api/jobs.ts,
 // invalidateAfterJob) refreshes the latest preview and its item table by itself.
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
-import { api, API_BASE, ApiRequestError, unwrap, type Schemas } from '@/api/client';
+import { api, ApiRequestError, unwrap, type Schemas } from '@/api/client';
 import { pollDelay, useTrackedJob } from '@/api/jobs';
 import { hasCode } from '@/api/errors';
 
@@ -9,7 +9,10 @@ export type ItemFilter = { location?: string; type?: Schemas['ItemType']; label?
 
 export const PAGE_SIZE = 10;
 
-/** How often the preview job is asked about. Tests make it short; the screen uses the API's default. */
+/**
+ * How often the preview job is asked about; the screen uses the API's default. A test seam: tests make it short.
+ * Don't mutate it in app code.
+ */
 export const jobPolling: { pollMs: (pollCount: number) => number } = { pollMs: pollDelay };
 
 export const previewKeys = {
@@ -48,8 +51,48 @@ export function usePreviewItems(previewId: string | undefined, filter: ItemFilte
   });
 }
 
-/** Where the whole item list downloads from: a plain link, so the browser saves the file the API names. */
-export const csvUrl = (previewId: string) => `${API_BASE}/previews/${encodeURIComponent(previewId)}/items.csv`;
+/** The file name a Content-Disposition header gives (`attachment; filename="M-2026-0142 preview v3.csv"`), if any. */
+export function fileNameOf(disposition: string | null, fallback = 'preview.csv'): string {
+  if (!disposition) return fallback;
+  const encoded = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(disposition);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]!.trim().replace(/^"|"$/g, '')) || fallback;
+    } catch {
+      // a malformed encoding: fall back to the plain filename
+    }
+  }
+  const plain = /filename\s*=\s*("([^"]*)"|[^;]+)/i.exec(disposition);
+  const name = (plain?.[2] ?? plain?.[1] ?? '').trim();
+  return name || fallback;
+}
+
+/**
+ * The whole item list as a file. Fetched through the API client (so the session, errors and the mocks work as for
+ * any other request), then saved with a temporary link to the downloaded blob, under the name the API gives it.
+ */
+export function useDownloadCsv(previewId: string) {
+  return useMutation({
+    mutationFn: async () => {
+      const result = await api.GET('/previews/{previewId}/items.csv', { params: { path: { previewId } }, parseAs: 'blob' });
+      const blob = unwrap(result);
+      saveFile(blob, fileNameOf(result.response.headers.get('Content-Disposition')));
+    },
+  });
+}
+
+function saveFile(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.style.display = 'none';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Some browsers start reading the file only after the click returns: let go of it a moment later.
+  setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
 
 /**
  * The preview job: start one, or follow the one already running (a reload, another tab). Starting while one runs

@@ -33,30 +33,6 @@
   flex-wrap: wrap;
   gap: var(--st-space-2);
 }
-/* a plain link, so the browser downloads the file; it looks like the design's outlined button */
-.download {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--st-space-2);
-  min-height: var(--st-target);
-  padding: 0 var(--st-space-4);
-  border: 1px solid var(--st-ink);
-  border-radius: var(--st-radius-md);
-  background: var(--st-sheet);
-  color: var(--st-ink);
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-}
-.download:hover {
-  background: var(--st-paper);
-  color: var(--st-ink);
-}
-.download:focus-visible {
-  outline: var(--st-focus);
-  outline-offset: 2px;
-}
-
 /* the breakdowns */
 .section {
   display: flex;

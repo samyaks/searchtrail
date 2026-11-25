@@ -1,5 +1,6 @@
 // How the Preview screen writes sizes, types and the item table's filters.
 import type { Schemas } from '@/api/client';
+import { dayAndTime } from '@/app/time';
 import type { ItemFilter } from './hooks';
 
 /** 49152 -> "48 KB", 1258291 -> "1.2 MB", 30408704 -> "29.0 MB" (powers of 1024, as Purview reports them). */
@@ -40,6 +41,19 @@ export function toItemFilter(filter: BarFilter | null): ItemFilter {
 const n = (value: number) => value.toLocaleString('en-US');
 
 const WHERE: Record<Dimension, string> = { location: 'the location is', type: 'the type is', label: 'the label is' };
+
+/** The item table's caption: "Items", or "Items where the type is Email" (the same words as the status line). */
+export function captionText(filter: BarFilter | null): string {
+  return filter ? `Items where ${WHERE[filter.dimension]} ${filter.name}` : 'Items';
+}
+
+/** When a preview was made, after "…cull v3": "at 10:42" today, "yesterday at 16:20", or "on 28 Oct". */
+export function madeWhen(iso: string, now: Date = new Date()): string {
+  const text = dayAndTime(iso, now);
+  if (text.startsWith('today ')) return `at ${text.slice('today '.length)}`;
+  if (text.startsWith('yesterday ')) return `yesterday at ${text.slice('yesterday '.length)}`;
+  return `on ${text}`;
+}
 
 /** "Showing 1–10 of 655", or "Showing 1–10 of the 223 where the type is Email". */
 export function showingText(page: Pick<Schemas['PreviewItemPage'], 'total' | 'page' | 'page_size' | 'items'>, filter: BarFilter | null): string {

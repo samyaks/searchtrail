@@ -6,10 +6,10 @@ import { pollDelay } from '@/api/jobs';
 import { example } from '@/mocks/examples';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
-import { jobPolling } from '@/screens/preview/hooks';
-import { monthSpan, showingText, sizeText, toItemFilter } from '@/screens/preview/format';
+import { fileNameOf, jobPolling } from '@/screens/preview/hooks';
+import { captionText, madeWhen, monthSpan, showingText, sizeText, toItemFilter } from '@/screens/preview/format';
 import { expectNoA11yViolations } from '../a11y';
-import { FALCON, FALCON_PREVIEW, post, tick } from '../mocks/api';
+import { FALCON, FALCON_PREVIEW, get, post, tick } from '../mocks/api';
 import { renderApp } from '../renderApp';
 
 const PATH = `/matters/${FALCON}/preview`;
@@ -20,14 +20,30 @@ const noPreviewYet = (options: { once?: boolean } = {}) =>
     http.get('/api/v1/matters/:matterId/previews/latest', () => HttpResponse.json({ code: 'not_found', message: 'No preview for this matter yet with that ID.', details: {} }, { status: 404 }), options),
   );
 
-/** The item requests the screen makes, as their query strings. */
-function watchItemRequests() {
-  const seen: URLSearchParams[] = [];
+/** The requests the screen makes whose path matches, as URLs. */
+function watchRequests(path: RegExp) {
+  const seen: URL[] = [];
   server.events.on('request:start', ({ request }) => {
     const url = new URL(request.url);
-    if (url.pathname.endsWith('/items')) seen.push(url.searchParams);
+    if (path.test(url.pathname)) seen.push(url);
   });
   return seen;
+}
+
+/** The item requests the screen makes: their query strings, and their paths. */
+function watchItemRequests() {
+  const urls = watchRequests(/\/items$/);
+  return {
+    at: (i: number) => urls.at(i)?.searchParams,
+    paths: () => urls.map((url) => url.pathname),
+  };
+}
+
+/** Hold the answers to requests until release() is called. */
+function gate() {
+  let release!: () => void;
+  const opened = new Promise<void>((resolve) => (release = resolve));
+  return { opened, release };
 }
 
 const loaded = async () => screen.findByText(/^Showing 1–10 of 655$/);
@@ -37,13 +53,17 @@ beforeEach(() => {
 });
 afterEach(() => {
   jobPolling.pollMs = pollDelay;
+  server.events.removeAllListeners();
+  vi.restoreAllMocks();
 });
 
 test('shows the latest preview: where it came from, the count tiles, breakdowns, months and the first page of items', async () => {
   renderApp(PATH);
   await loaded();
   expect(screen.getByRole('heading', { level: 2, name: 'Preview' })).toBeInTheDocument();
-  expect(screen.getByText(/Built from Purview's item report for/)).toHaveTextContent(/query v3, .* It lists metadata only/);
+  expect(screen.getByText(/Built from Purview's item report for/)).toHaveTextContent(
+    /^Built from Purview's item report for search M-2026-0142 cull v3 (at \d\d:\d\d|yesterday at \d\d:\d\d|on \d{1,2} \w{3}( \d{4})?)\. It lists metadata only; document contents stay in Purview until export\.$/,
+  );
 
   const tile = (label: string) => screen.getByText(label, { selector: 'dt' }).parentElement!;
   expect(tile('Items matching')).toHaveTextContent('63029.0 MB');
@@ -78,7 +98,7 @@ test('choosing a bar filters the item table, and choosing it again or the chip c
   expect(await screen.findByText('Showing 1–10 of the 223 where the type is Teams chat')).toBeInTheDocument();
   expect(requests.at(-1)?.get('type')).toBe('teams_chat');
   expect(screen.getByRole('button', { name: /^Teams chat\s*223$/ })).toHaveAttribute('aria-pressed', 'true');
-  const table = screen.getByRole('table', { name: 'Items where type is Teams chat' });
+  const table = screen.getByRole('table', { name: 'Items where the type is Teams chat' });
   expect(within(table).getAllByRole('cell', { name: 'Teams chat' })).toHaveLength(10);
 
   // Another bar replaces the filter: one at a time, as on the design.
@@ -91,6 +111,8 @@ test('choosing a bar filters the item table, and choosing it again or the chip c
   await userEvent.click(screen.getByRole('button', { name: 'Clear filter: No label' }));
   await loaded();
   expect(screen.queryByRole('button', { name: /^Clear filter/ })).not.toBeInTheDocument();
+  // The chip has gone: the focus moves to the table's heading, not to the page.
+  expect(screen.getByRole('heading', { level: 2, name: 'Items' })).toHaveFocus();
 
   await userEvent.click(screen.getByRole('button', { name: /^sites\/Finance\s*62$/ }));
   expect(await screen.findByText('Showing 1–10 of the 62 where the location is sites/Finance')).toBeInTheDocument();
@@ -104,13 +126,16 @@ test('the item table pages through the items, and a filter starts again on page 
   await loaded();
   const pages = screen.getByRole('navigation', { name: 'Item pages' });
   expect(within(pages).getByText('Page 1 of 66')).toBeInTheDocument();
-  expect(within(pages).getByRole('button', { name: 'Previous' })).toBeDisabled();
+  // Unavailable, but still focusable: a disabled button would drop the focus.
+  expect(within(pages).getByRole('button', { name: 'Previous' })).toHaveAttribute('aria-disabled', 'true');
+  await userEvent.click(within(pages).getByRole('button', { name: 'Previous' }));
+  expect(within(pages).getByText('Page 1 of 66')).toBeInTheDocument();
 
   await userEvent.click(within(pages).getByRole('button', { name: 'Next' }));
   expect(await screen.findByText('Showing 11–20 of 655')).toBeInTheDocument();
   expect(requests.at(-1)?.get('page')).toBe('2');
   expect(requests.at(-1)?.get('page_size')).toBe('10');
-  expect(within(pages).getByRole('button', { name: 'Previous' })).toBeEnabled();
+  expect(within(pages).getByRole('button', { name: 'Previous' })).toHaveAttribute('aria-disabled', 'false');
 
   await userEvent.click(screen.getByRole('button', { name: /^Email\s*223$/ }));
   expect(await screen.findByText('Showing 1–10 of the 223 where the type is Email')).toBeInTheDocument();
@@ -118,12 +143,95 @@ test('the item table pages through the items, and a filter starts again on page 
   expect(screen.getByText('Page 1 of 23')).toBeInTheDocument();
 });
 
-test('the whole list downloads as a plain link to items.csv', async () => {
+/** Catch the file the screen saves: the blob it links to and the name it gives it. */
+function catchDownloads() {
+  const saved: { blob: Blob; name: string }[] = [];
+  const blobs = new Map<string, Blob>();
+  const revoked: string[] = [];
+  let next = 0;
+  // jsdom has no object URLs, and a click on a link would try to navigate.
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    const url = `blob:test/${(next += 1)}`;
+    blobs.set(url, blob as Blob);
+    return url;
+  });
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => void revoked.push(url));
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    saved.push({ blob: blobs.get(this.href)!, name: this.download });
+  });
+  return { saved, revoked };
+}
+
+test('the whole list downloads through the API (so the mocks and the session work), under the name the API gives it', async () => {
+  const csv = watchRequests(/\/items\.csv$/);
+  const downloads = catchDownloads();
   renderApp(PATH);
   await loaded();
-  const link = screen.getByRole('link', { name: 'Download preview.csv' });
-  expect(link).toHaveAttribute('href', expect.stringMatching(new RegExp(`/api/v1/previews/${FALCON_PREVIEW}/items\\.csv$`)));
-  expect(link).toHaveAttribute('download');
+  await userEvent.click(screen.getByRole('button', { name: 'Download preview.csv' }));
+
+  await waitFor(() => expect(downloads.saved).toHaveLength(1));
+  expect(csv.map((url) => url.pathname)).toEqual([`/api/v1/previews/${FALCON_PREVIEW}/items.csv`]);
+  expect(downloads.saved[0]!.name).toBe('M-2026-0142-preview.csv');
+  expect(await downloads.saved[0]!.blob.text()).toMatch(/^item_id,location,item_type,subject/);
+  // The object URL is let go of a moment later, not before the browser has read it.
+  expect(downloads.revoked).toEqual([]);
+  await waitFor(() => expect(downloads.revoked).toEqual(['blob:test/1']), { timeout: 2_000 });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('a download the API refuses says why, and nothing is saved', async () => {
+  const downloads = catchDownloads();
+  server.use(http.get('/api/v1/previews/:previewId/items.csv', () => HttpResponse.json({ code: 'not_found', message: 'That preview has gone.', details: {} }, { status: 404 })));
+  renderApp(PATH);
+  await loaded();
+  await userEvent.click(screen.getByRole('button', { name: 'Download preview.csv' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('That preview has gone.');
+  expect(downloads.saved).toEqual([]);
+});
+
+test('while another filter loads, the table does not describe the old rows as the new filter', async () => {
+  const hold = gate();
+  server.use(
+    http.get('/api/v1/previews/:previewId/items', async ({ request }) => {
+      if (new URL(request.url).searchParams.has('type')) await hold.opened;
+      return undefined; // on to the stateful mock
+    }),
+  );
+  renderApp(PATH);
+  await loaded();
+  await userEvent.click(screen.getByRole('button', { name: /^Teams chat\s*223$/ }));
+
+  // The first page's rows are still on screen, but the status and the caption don't claim they are Teams chats.
+  expect(await screen.findByText('Loading items…', { selector: '[role="status"]' })).toBeInTheDocument();
+  expect(screen.queryByText(/^Showing/)).not.toBeInTheDocument();
+  expect(screen.getByRole('table', { name: 'Items' })).toBeInTheDocument();
+  expect(screen.queryByRole('table', { name: /where/ })).not.toBeInTheDocument();
+
+  hold.release();
+  expect(await screen.findByText('Showing 1–10 of the 223 where the type is Teams chat')).toBeInTheDocument();
+  expect(screen.getByRole('table', { name: 'Items where the type is Teams chat' })).toBeInTheDocument();
+});
+
+test('on the last page, Next stays focusable and does nothing', async () => {
+  const firstPage = example<Schemas['PreviewItemPage']>('listPreviewItems', '200');
+  server.use(
+    http.get('/api/v1/previews/:previewId/items', ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page') ?? '1');
+      const items = firstPage.items.map((item) => ({ ...item, id: `${item.id}-p${page}` }));
+      return HttpResponse.json({ ...firstPage, items, total: 20, page });
+    }),
+  );
+  renderApp(PATH);
+  await screen.findByText('Showing 1–10 of 20');
+  const pages = screen.getByRole('navigation', { name: 'Item pages' });
+  const next = within(pages).getByRole('button', { name: 'Next' });
+  await userEvent.click(next);
+  expect(await screen.findByText('Showing 11–20 of 20')).toBeInTheDocument();
+  expect(next).toHaveFocus();
+  expect(next).toHaveAttribute('aria-disabled', 'true');
+  await userEvent.click(next);
+  expect(within(pages).getByText('Page 2 of 2')).toBeInTheDocument();
+  expect(next).toHaveFocus();
 });
 
 test('refreshing starts a preview job: its progress shows while it runs, and the new preview replaces the old one', async () => {
@@ -142,8 +250,11 @@ test('refreshing starts a preview job: its progress shows while it runs, and the
 
   tick(10);
   await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
-  await waitFor(() => expect(requests.some((q, i) => i > 0 && q.get('page') === '1')).toBe(true));
-  await waitFor(() => expect(screen.getByRole('link', { name: 'Download preview.csv' }).getAttribute('href')).not.toContain(FALCON_PREVIEW));
+  const newest = (await get(`/matters/${FALCON}/previews/latest`)).json as Schemas['Preview'];
+  expect(newest.id).not.toBe(FALCON_PREVIEW);
+  // The table now shows the new preview's items, from page 1.
+  await waitFor(() => expect(requests.paths()).toContain(`/api/v1/previews/${newest.id}/items`));
+  expect(requests.at(-1)?.get('page')).toBe('1');
   expect(screen.getByRole('button', { name: 'Refresh preview' })).toBeEnabled();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
@@ -161,16 +272,30 @@ test('a preview job that is already running is picked up when the screen opens',
 
 test("starting while another preview runs follows that one instead of showing an error", async () => {
   const running = (await post(`/matters/${FALCON}/previews`)).json as Schemas['Job'];
+  expect(running.kind).toBe('preview');
   // The screen hasn't noticed it (as if it started a moment after the screen asked).
   server.use(http.get('/api/v1/matters/:matterId/jobs', () => HttpResponse.json({ items: [] })));
+  const jobRequests = watchRequests(/^\/api\/v1\/jobs\//);
   renderApp(PATH);
   await loaded();
   await userEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
   expect(await screen.findByRole('progressbar')).toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  // It is the running job (named by the API's 409) that the screen follows.
+  expect(jobRequests.map((url) => url.pathname)).toContain(`/api/v1/jobs/${running.id}`);
   tick(10);
   await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
-  expect(running.kind).toBe('preview');
+});
+
+test('when asking about the job is refused, the screen says so instead of going quiet', async () => {
+  await post(`/matters/${FALCON}/previews`);
+  server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'not_found', message: 'That job has gone.', details: {} }, { status: 404 })));
+  renderApp(PATH);
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('That job has gone.');
+  expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  // The last preview is still there.
+  await loaded();
 });
 
 test('a preview job that fails says why, keeps the last preview, and can be tried again', async () => {
@@ -205,6 +330,29 @@ test('with nothing previewed yet, the screen offers to preview the current query
   tick(10);
   await loaded();
   expect(screen.queryByText('Nothing previewed yet')).not.toBeInTheDocument();
+});
+
+test('with nothing previewed yet, the screen waits for the matter before it says what to do', async () => {
+  noPreviewYet();
+  const hold = gate();
+  const matter = falcon();
+  server.use(
+    http.get('/api/v1/matters/:matterId', async () => {
+      await hold.opened;
+      return HttpResponse.json(matter);
+    }),
+  );
+  const latest = watchRequests(/\/previews\/latest$/);
+  renderApp(PATH);
+  await waitFor(() => expect(latest).toHaveLength(1));
+  expect(await screen.findByText('Loading the preview…')).toBeInTheDocument();
+  // Without the matter, its query version is unknown: don't send the person to Scope meanwhile.
+  expect(screen.queryByText('Nothing previewed yet')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Go to Scope' })).not.toBeInTheDocument();
+
+  hold.release();
+  expect(await screen.findByRole('button', { name: 'Preview query v3' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Go to Scope' })).not.toBeInTheDocument();
 });
 
 test('with no query yet, the screen sends the person to Scope', async () => {
@@ -293,5 +441,23 @@ describe('formatting', () => {
     expect(showingText({ items: [], total: 0, page: 1, page_size: 10 }, null)).toBe('No items');
     expect(monthSpan([{ month: '2024-01' }, { month: '2025-06' }])).toBe('Jan 2024 to Jun 2025');
     expect(monthSpan([])).toBeUndefined();
+  });
+  test('the caption uses the same words as the status line', () => {
+    expect(captionText(null)).toBe('Items');
+    expect(captionText({ dimension: 'type', name: 'Email', count: 223 })).toBe('Items where the type is Email');
+    expect(captionText({ dimension: 'location', name: 'Alex Wilber', count: 312 })).toBe('Items where the location is Alex Wilber');
+  });
+  test('when the preview was made, after "cull v3"', () => {
+    const now = new Date(2026, 10, 5, 15, 0);
+    expect(madeWhen(new Date(2026, 10, 5, 10, 42).toISOString(), now)).toBe('at 10:42');
+    expect(madeWhen(new Date(2026, 10, 4, 16, 20).toISOString(), now)).toBe('yesterday at 16:20');
+    expect(madeWhen(new Date(2026, 9, 28, 9, 0).toISOString(), now)).toBe('on 28 Oct');
+  });
+  test("the download's file name comes from Content-Disposition, or is preview.csv", () => {
+    expect(fileNameOf('attachment; filename="M-2026-0142 preview v3.csv"')).toBe('M-2026-0142 preview v3.csv');
+    expect(fileNameOf('attachment; filename=plain.csv')).toBe('plain.csv');
+    expect(fileNameOf("attachment; filename=\"x.csv\"; filename*=UTF-8''M%C3%BCller%20v3.csv")).toBe('Müller v3.csv');
+    expect(fileNameOf('attachment')).toBe('preview.csv');
+    expect(fileNameOf(null)).toBe('preview.csv');
   });
 });
