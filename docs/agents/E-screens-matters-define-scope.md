@@ -14,8 +14,8 @@ Build each screen to match `docs/design/Main.dc.html`, `Define.dc.html` and `Sco
 `<script type="text/x-dc">` block; the files still say "culltool", the product is SearchTrail).
 
 The Matters screen already renders the list through the generated client; finish it (search box,
-counts on filter chips, New matter). Use WS-D's components and hooks; until they land, build
-against MSW mocks (`npm run dev`).
+counts on filter chips, New matter). Use WS-D's components and hooks, and build against the MSW mocks
+(`npm run dev`): in Phase 1 the screens come before the backend they run on.
 
 Important: Scope never builds KQL in the browser. It calls `POST /kql/preview` (debounced, about
 300 ms) as the user edits and shows the returned KQL, methodology lines and warnings. Criteria fields

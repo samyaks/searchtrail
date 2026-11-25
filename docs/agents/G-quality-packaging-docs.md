@@ -16,7 +16,7 @@ worker with health checks, dry run on), `deploy/.env.example`, and `.github/work
 (ADR 0010). Baseline API security headers are in `backend/app/main.py`.
 
 Order (see `docs/PHASE1_PLAN.md`): the `web` image and the Playwright harness come first (task 1 and
-the start of task 3), the full-flow e2e suite once the screens are done (that's M1), and security,
+the start of task 3), the full-flow e2e suite once the screens and backend PRs 6 to 8 are merged (that's M1), and security,
 the install guide and CI hygiene after M1. WS-C adds empty Entra entries to `deploy/.env.example`
 after M1, with a PR note.
 
@@ -58,7 +58,7 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 ## Done when
 - A fresh VM goes from nothing to a working dry-run install by following the guide (record it).
 - The e2e suite (the full flow and each screen's main actions) runs green in CI against the dry-run
-  stack. Screen bugs it finds are fixed in follow-up `[E]` or `[F]` PRs before this is called done.
+  stack. Screen bugs it finds are fixed in follow-up `[E]`, `[F]` or `[D]` PRs before this is called done.
 
 ## Contracts (shared; don't change them inside a feature PR)
 - `contracts/openapi.yaml`: the API. Generated from it (never edit): `backend/app/schemas/contract.py`,

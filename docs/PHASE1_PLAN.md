@@ -20,6 +20,8 @@ and [CONTRIBUTING.md](../CONTRIBUTING.md) still applies.
 - **No tenant until after M1.** WS-C's live sign-in and Graph calls, WS-G's install guide and WS-H's
   live validation come after M1, on the way to M2 and M3. WS-C's live code is unit-tested against
   recorded responses. WS-H starts when a Microsoft 365 E5 trial and a person to sign in are available.
+  The one exception: WS-H's CLI validation needs no web code, so it may run against a trial tenant as
+  soon as one exists, alongside the one stream of PRs (see the risks below).
 
 ## Changes to the briefs
 These are already applied to the briefs and to V1_PLAN.md section 6.
@@ -40,7 +42,8 @@ These are already applied to the briefs and to V1_PLAN.md section 6.
    against the mocks, with Vitest and Testing Library tests. The check against the dry-run backend
    moves to the backend PRs that serve each screen (6 and 8), and the Playwright test per main action
    moves to PR 18 (WS-G owns `frontend/tests/e2e/`). A screen bug those checks find is fixed in a
-   follow-up `[E]` or `[F]` PR, which merges before the PR that found it (6, 8 or 18) is called done.
+   follow-up `[E]` or `[F]` PR (`[D]` for the shared hooks and mocks), which merges before the PR that
+   found it (6, 8 or 18) is called done.
 
 ## Order of work
 One row is one PR, titled with its workstream (`[B1] ...`). A `[contract]` PR can be inserted

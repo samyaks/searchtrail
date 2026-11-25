@@ -82,7 +82,7 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 - The whole flow runs through the API in dry-run mode, in a test.
 - `alembic check` is clean; every schema change has a migration.
 - In Phase 1, the screens your PR serves work against it (`npm run dev:api`), per the PR's row in
-  docs/PHASE1_PLAN.md; screen bugs found there are fixed in a follow-up `[E]` or `[F]` PR first.
+  docs/PHASE1_PLAN.md; screen bugs found there are fixed in a follow-up `[E]`, `[F]` or `[D]` PR first.
 
 ## Contracts (shared; don't change them inside a feature PR)
 - `contracts/openapi.yaml`: the API. Generated from it (never edit): `backend/app/schemas/contract.py`,
