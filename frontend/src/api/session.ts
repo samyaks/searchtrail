@@ -58,18 +58,24 @@ export const signsInHere = () => signInHere !== null;
 
 /**
  * Sign in again. With the real API: go to its sign-in, which comes back to this page. With the mocks: start a new
- * mock session, then load again everything that failed, without leaving the page. What failed to load starts
- * afresh (loading, not the old "session ended" error); a change that was refused keeps its error, so the screen
+ * mock session, then load again everything that failed, without leaving the page. What failed to load with
+ * nothing to show starts afresh (loading, not the old "session ended" error); what still holds data keeps it; a change that was refused keeps its error, so the screen
  * can say it wasn't made (components/ErrorNotice.tsx).
  */
 export function signIn(client: QueryClient | undefined): void {
   if (signInHere && client) {
     signInHere();
     client.setQueryData(ENDED_KEY, false);
-    const failed = new Set(client.getQueryCache().findAll({ predicate: (query) => isSessionExpired(query.state.error) }));
-    void client.resetQueries({ predicate: (query) => failed.has(query) });
+    const failed = client.getQueryCache().findAll({ predicate: (query) => isSessionExpired(query.state.error) });
+    // A load that failed with nothing to show starts afresh. One that still holds data keeps it (a screen may be
+    // built on it, with edits in it), drops the old error and reads again in the background.
+    const fresh = new Set(failed.filter((query) => query.state.data === undefined));
+    for (const query of failed) {
+      if (!fresh.has(query)) query.setState({ status: 'success', error: null, fetchFailureReason: null, fetchFailureCount: 0 });
+    }
+    void client.resetQueries({ predicate: (query) => fresh.has(query) });
     // The ended-session flag itself is never fetched, so it stays false.
-    void client.invalidateQueries({ predicate: (query) => !failed.has(query) });
+    void client.invalidateQueries({ predicate: (query) => !fresh.has(query) });
     return;
   }
   sessionNavigation.assign(loginUrl());

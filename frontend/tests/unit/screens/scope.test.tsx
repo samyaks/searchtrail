@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
 import { pollDelay } from '@/api/jobs';
+import { setSignInHere } from '@/api/session';
 import { example } from '@/mocks/examples';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
@@ -844,5 +845,36 @@ describe('the screen\'s logic', () => {
     const matter = example<Schemas['Matter']>('getMatter', '200');
     expect(sourcesSummary({ ...matter, custodians: [], sites: [] }).title).toBe('Nothing to search yet');
     expect(sourcesSummary({ ...matter, sites: [] }).title).toBe('Searching 2 custodians and 1 site');
+  });
+});
+
+describe('when the session ends', () => {
+  test('an edit made while signed out stays on screen after signing in again in place, and says it was not saved', async () => {
+    setSignInHere(() => setScenario({ sessionExpired: false })); // as the mocks do in the browser
+    let draftReads = 0;
+    let slow = false;
+    server.use(
+      http.get('/api/v1/matters/:matterId/draft', async () => {
+        draftReads += 1;
+        if (slow) await new Promise((resolve) => setTimeout(resolve, 150)); // the read again lands after React renders
+      }),
+    );
+    try {
+      await openScope();
+      setScenario({ sessionExpired: true });
+      const before = draftReads;
+      await addTerm('brightline');
+      await screen.findByRole('button', { name: 'Sign in' });
+      await waitFor(() => expect(draftReads).toBeGreaterThan(before)); // the read after the refused save failed too
+      slow = true;
+      await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const terms = within(await screen.findByRole('list', { name: 'Search terms' })).getAllByRole('listitem');
+      expect(terms.map((t) => t.textContent)).toContain('brightline');
+      expect(screen.queryByText('Loading the search…')).not.toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: "That didn't go through" })).toBeInTheDocument();
+    } finally {
+      setSignInHere(null);
+    }
   });
 });
