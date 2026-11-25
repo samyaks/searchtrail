@@ -3,11 +3,11 @@ import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
 import { filterItems, generatePreviewItems, itemsToCsv } from '../items';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
-import { termHits } from '../counts';
+import { estimateCounts, termHits } from '../counts';
 import { appendLog, signedIn } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
 import { buildPreview } from '../previews';
-import { criteriaInvalid } from './criteria';
+import { criteriaInvalid, freezeDraft } from './criteria';
 import { route, withMatter } from '../route';
 import { db, type MockMatter } from '../db';
 import { clone, error, iso, nextId, notFound, pageParams, paginate } from '../util';
@@ -70,7 +70,6 @@ export const runHandlers = [
 
   route('post', '/matters/:matterId/term-reports', (context) =>
     withMatter(context, (m) => {
-      const version = currentVersion(m);
       try {
         buildMockKql(m.draft.criteria);
       } catch (e) {
@@ -79,15 +78,19 @@ export const runHandlers = [
         }
         throw e;
       }
-      if (!version) return error(409, 'conflict', 'Estimate the query first. A term report counts within it.');
+      if (!currentVersion(m)) return error(409, 'conflict', 'Estimate the query first. A term report counts within it.');
       const running = activeJob(m.matter.id, 'term_report');
       if (running) return alreadyRunning(running, 'term report');
+      // A recount counts the query as it is now: a changed draft becomes a new query version first, as it does for an
+      // estimate, so the report names the version it counted and isn't out of date the moment it lands.
+      const version = freezeDraft(m);
       return HttpResponse.json(
         createJob('term_report', m.matter.id, {
           finish: () => {
             const previous = m.termReport;
-            const total = version.counts?.items ?? 300;
-            const rows: S['TermRow'][] = m.draft.criteria.keywords.map((term) => {
+            // All terms together is the whole query: the version's estimate, or what one would find if it hasn't had one.
+            const total = (version.counts ?? estimateCounts(m, version.criteria)).items;
+            const rows: S['TermRow'][] = version.criteria.keywords.map((term) => {
               const before = previous?.rows.find((r) => r.term === term || r.term === `"${term}"`);
               const same = previous?.version === version.version;
               // Each term within the version's other filters (counts.ts): the same terms always get the same hits.

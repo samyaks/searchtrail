@@ -211,6 +211,32 @@ describe('previews', () => {
     expect(again.id).not.toBe(before.id);
     expect(again.rows.map((r) => r.items)).toEqual(before.rows.map((r) => r.items)); // same query, same counts
     expect(again.rows.map((r) => r.previous_items)).toEqual(before.rows.map((r) => r.previous_items));
+    expect(again).toMatchObject({ version: 3, stale: false });
+    expect((await get(`${M}/versions`)).json.items).toHaveLength(3); // an unchanged draft is counted as the version it is
+  });
+
+  test('a term report of a changed draft counts it as a new query version, compared with the report before', async () => {
+    await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords: ['project falcon', 'invoic*', 'kickback', 'side letter', 'bribe'] } });
+    const job = (await post(`${M}/term-reports`)).json;
+    // Another count while this one runs is refused, and makes no version of its own.
+    expect((await post(`${M}/term-reports`)).status).toBe(409);
+    expect((await get(M)).json).toMatchObject({ current_version: 4, draft_changed: false });
+    expect(((await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][]).map((v) => v.version).sort()).toEqual([1, 2, 3, 4]);
+
+    const report = (await runJob(job.id)).at(-1).result as Schemas['TermReport'];
+    expect(report).toMatchObject({ version: 4, stale: false });
+    expect(report.rows.map((r) => [r.term, r.previous_items, r.previous_version])).toEqual([
+      ['"project falcon"', 105, 3],
+      ['invoic*', 440, 3],
+      ['kickback', 258, 3],
+      ['"side letter"', 316, 3],
+      ['bribe', null, 3],
+    ]);
+    expect((await get(`${M}/term-reports/latest`)).json).toMatchObject({ id: report.id, version: 4, stale: false });
+    // All terms together is what an estimate of v4 finds.
+    const estimated = (await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result;
+    expect(estimated.version).toBe(4);
+    expect(report.combined.items).toBe(estimated.counts.items);
   });
 });
 

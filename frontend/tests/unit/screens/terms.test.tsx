@@ -11,7 +11,7 @@ import { server } from '@/mocks/server';
 import { barPercent, changeHeader, changeText, sizeText, whenText } from '@/screens/terms/format';
 import { isNewerReport } from '@/screens/terms/hooks';
 import { expectNoA11yViolations } from '../a11y';
-import { FALCON, get, post, tick } from '../mocks/api';
+import { FALCON, get, post, put, tick } from '../mocks/api';
 import { renderApp } from '../renderApp';
 
 // Poll jobs every 20 ms instead of every few seconds; the jobs themselves follow the mock clock, which tick() moves
@@ -383,6 +383,46 @@ test('when the query changed since the report, the screen says the counts are ou
   expect(progressBlock()).toHaveFocus();
   // The toolbar's Recount is back, waiting for the count.
   expect(screen.getByRole('button', { name: 'Recount' })).toBeDisabled();
+});
+
+test('a Recount after the query changed counts the changed query: the report names its new version, and is no longer out of date', async () => {
+  // A term added on Scope, saved but not estimated: Scope calls it "Query v4 (draft)".
+  const { criteria } = (await get(`/matters/${FALCON}/draft`)).json as { criteria: { keywords: string[] } };
+  expect((await put(`/matters/${FALCON}/draft`, { criteria: { ...criteria, keywords: [...criteria.keywords, 'bribe'] } })).status).toBe(200);
+  renderApp(PATH);
+  await reportTable();
+  const notice = (await screen.findByText('The query has changed since this count.')).closest<HTMLElement>('[role="status"]')!;
+  expect(screen.getByText('Query v4 · draft')).toBeInTheDocument();
+  await userEvent.click(within(notice).getByRole('button', { name: 'Recount' }));
+  await screen.findByRole('progressbar');
+  // The draft became query v4 as the count started, so the header says so at once.
+  expect(await screen.findByText('Query v4')).toBeInTheDocument();
+  expect(screen.queryByText('Query v4 · draft')).not.toBeInTheDocument();
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+
+  // The count is of query v4, compared with v3's: the new term is new in v4, the others are compared with v3's hits.
+  await waitFor(() => expect(screen.getByText(new RegExp(`^Counted ${whenText('2026-11-05T12:00:14Z')} for query v4\\.`))).toBeInTheDocument());
+  const table = await reportTable();
+  expect(table).toHaveAccessibleName('Search term report, query v4');
+  expect(table).not.toHaveAttribute('data-stale');
+  expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toContain('Since v3');
+  const rows = bodyRows(table).map((row) => [...row.querySelectorAll('th, td')].map((cell) => cell.textContent));
+  expect(rows.map(([term, , change]) => [term, change])).toEqual([
+    ['"project falcon"', 'No change from 105'],
+    ['invoic*', 'No change from 440'],
+    ['kickback', 'No change from 258'],
+    ['"side letter"', 'No change from 316'],
+    ['bribe', 'New in v4'],
+  ]);
+  // Counting the changed query made it query v4, so the report is up to date: no banner, and the toolbar's Recount is back.
+  expect(screen.queryByText('The query has changed since this count.')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Recount' })).toHaveLength(1);
+  await waitFor(() => expect(recount()).toBeEnabled());
+  expect((await get(`/matters/${FALCON}`)).json).toMatchObject({ current_version: 4, draft_changed: false });
+  // And so it stays when the report is fetched again.
+  expect((await get(`/matters/${FALCON}/term-reports/latest`)).json).toMatchObject({ version: 4, stale: false });
+  await expectNoA11yViolations(document.body);
 });
 
 test('a term report the API refuses to start says why in plain English', async () => {

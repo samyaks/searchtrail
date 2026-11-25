@@ -2,7 +2,7 @@
 import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
 import { estimateCounts } from '../counts';
-import { makeVersion } from '../db';
+import { makeVersion, type MockMatter } from '../db';
 import { deniedByPurview } from '../denied';
 import { appendLog } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
@@ -26,6 +26,26 @@ function shapeProblem(criteria: unknown): string | null {
   if (c.doc_date_property !== 'lastmodifiedtime' && c.doc_date_property !== 'created') return 'doc_date_property must be lastmodifiedtime or created.';
   for (const key of ['date_from', 'date_to'] as const) if (c[key] !== null && !(typeof c[key] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c[key] as string))) return `${key} must be a date (YYYY-MM-DD) or null.`;
   return null;
+}
+
+/**
+ * The query version that counts the draft: a changed draft (or changed sources) becomes a new query version first,
+ * which is then the matter's current one; an unchanged draft is the current version itself. Estimates and term
+ * reports both count the query as it is now, so both start here.
+ */
+export function freezeDraft(m: MockMatter): S['QueryVersion'] {
+  const current = currentVersion(m);
+  if (current && !draftChanged(m)) return current;
+  const number = Math.max(0, ...m.versions.map((v) => v.version)) + 1;
+  // The same display fingerprint as the version before, unless the sources changed since it was made.
+  const version = makeVersion(m.matter, number, m.draft.criteria, null, `Query v${number}`, current && !sourcesChanged(m, current.version) ? current.sources_fingerprint : undefined);
+  m.sourcesAt[number] = sourcesFingerprint(m.matter);
+  m.versions.push(version);
+  m.matter.current_version = number;
+  // A new query hasn't been previewed. (Not while an export is running: it carries on with its own version.)
+  if (m.matter.stage === 'previewed' || m.matter.stage === 'exported') m.matter.stage = 'scoping';
+  m.draft = { ...m.draft, based_on_version: number };
+  return version;
 }
 
 /** The contract's 422 for criteria the builder refuses, naming the field it is about when there is one. */
@@ -72,19 +92,7 @@ export const criteriaHandlers = [
       if (running) return alreadyRunning(running, 'estimate');
 
       // A changed draft (or changed sources) becomes a new query version; an unchanged one is estimated again.
-      let version = currentVersion(m);
-      if (!version || draftChanged(m)) {
-        const number = Math.max(0, ...m.versions.map((v) => v.version)) + 1;
-        // The same display fingerprint as the version before, unless the sources changed since it was made.
-        version = makeVersion(m.matter, number, m.draft.criteria, null, `Query v${number}`, version && !sourcesChanged(m, version.version) ? version.sources_fingerprint : undefined);
-        m.sourcesAt[number] = sourcesFingerprint(m.matter);
-        m.versions.push(version);
-        m.matter.current_version = number;
-        // A new query hasn't been previewed. (Not while an export is running: it carries on with its own version.)
-        if (m.matter.stage === 'previewed' || m.matter.stage === 'exported') m.matter.stage = 'scoping';
-        m.draft = { ...m.draft, based_on_version: number };
-      }
-      const target = version;
+      const target = freezeDraft(m);
       return HttpResponse.json(
         createJob('estimate', m.matter.id, {
           finish: () => {

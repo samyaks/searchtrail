@@ -1,5 +1,5 @@
 // The Terms screen's data: the latest term report, and starting a new one (a job, followed with useTrackedJob).
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiRequestError, unwrap, type Schemas } from '@/api/client';
 import { queryKeys } from '@/api/queries';
 
@@ -54,9 +54,17 @@ export function runningJobOf(error: unknown): string | null {
  * 409 with its id when a term report is running for the matter, started in another tab, say).
  */
 export function useStartTermReport(matterId: string, onJob: (jobId: string) => void) {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: async () => unwrap(await api.POST('/matters/{matterId}/term-reports', { params: { path: { matterId } } })),
-    onSuccess: (job) => onJob(job.id),
+    onSuccess: (job) => {
+      onJob(job.id);
+      // A changed draft became a new query version, the one being counted: the header, the draft and the versions
+      // move on now, as they do when an estimate starts, not only when the count is done.
+      for (const key of [queryKeys.matter(matterId), [...queryKeys.matter(matterId), 'draft'], [...queryKeys.matter(matterId), 'versions']]) {
+        void client.invalidateQueries({ queryKey: key, exact: true });
+      }
+    },
     onError: (error) => {
       const running = runningJobOf(error);
       if (running) onJob(running);
