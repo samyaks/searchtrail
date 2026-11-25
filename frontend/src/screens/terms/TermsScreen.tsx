@@ -209,7 +209,9 @@ function Progress({ counting, progress, queued, done, failed, focusAfter }: { co
   }, [counting]);
   useEffect(() => {
     const active = document.activeElement;
-    const lost = active === null || active === document.body;
+    // A button that went disabled as the count started (the toolbar's Recount) loses focus to the page in a browser,
+    // though only after this runs: count it as lost already.
+    const lost = active === null || active === document.body || (active instanceof HTMLButtonElement && active.disabled);
     // The button that started the count is gone (the stale banner's, the empty state's, Try again): rather than
     // leave focus on the page itself, bring it here. Focus that is still somewhere is left alone.
     if (counting && lost) block.current?.focus();

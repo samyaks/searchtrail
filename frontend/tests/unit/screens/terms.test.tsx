@@ -420,6 +420,17 @@ test('when focus is elsewhere as a count ends, it stays where it is', async () =
   expect(tab).toHaveFocus();
 });
 
+test("Recount on the toolbar: focus goes to the progress, then to the new report, though the button it was on is disabled", async () => {
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  expect(progressBlock()).toHaveFocus();
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByRole('heading', { level: 3, name: 'Search term report' })).toHaveFocus());
+});
+
 test('when a count fails, focus is not moved past the notice that says so', async () => {
   renderApp(PATH);
   await reportTable();

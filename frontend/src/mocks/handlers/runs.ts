@@ -3,7 +3,7 @@ import { HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
 import { filterItems, generatePreviewItems, itemsToCsv } from '../items';
 import { alreadyRunning, activeJob, createJob } from '../jobs';
-import { termHits } from '../counts';
+import { estimateCounts, termHits } from '../counts';
 import { jobDeniedByPurview } from '../denied';
 import { appendLog, signedIn } from '../log';
 import { buildMockKql, CriteriaInvalid } from '../kql';
@@ -98,8 +98,9 @@ export const runHandlers = [
         createJob('term_report', m.matter.id, {
           finish: () => {
             const previous = m.termReport;
-            // A version that was never estimated (seeded Harlow v1) is counted as it is, with no estimate made for it.
-            const total = version.counts?.items ?? 300;
+            // A version that was never estimated (seeded Harlow v1) is counted as it is: all terms together is what an
+            // estimate would find, but no estimate is stored or logged for it.
+            const total = version.counts?.items ?? estimateCounts(m, version.criteria).items;
             const rows: S['TermRow'][] = version.criteria.keywords.map((term) => {
               const before = previous?.rows.find((r) => r.term === term || r.term === `"${term}"`);
               const same = previous?.version === version.version;
