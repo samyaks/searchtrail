@@ -15,6 +15,7 @@ import { renderApp } from '../renderApp';
 
 const PATH = '/matters/mat_falcon/define';
 const ALEX = '3c1a7f5e-0000-4000-8000-0000000000a1';
+const MEGAN_ID = () => findMatter('mat_falcon')!.matter.custodians.find((c) => c.display_name === 'Megan Bowen')!.user_id;
 const HANNAH = '3c1a7f5e-0000-4000-8000-0000000000c3';
 const falcon = () => example<Schemas['Matter']>('getMatter', '200');
 
@@ -302,19 +303,24 @@ test('a custodian can be removed, but not while on hold', async () => {
   slowRemovals(); // the row has gone by the time the API answers, and comes back when refused
   const sent = recordWrites();
   await openWithHoldPlacedElsewhere();
-  await removeCustodian('Alex Wilber');
-  await waitFor(() => expect(screen.queryByText('alex.wilber@contoso.com · Procurement')).not.toBeInTheDocument());
-  // Focus goes to the next custodian's remove button.
-  expect(screen.getByRole('button', { name: 'Remove Megan Bowen' })).toHaveFocus();
-  await waitFor(() => expect(sent).toEqual([{ method: 'DELETE', path: `/matters/mat_falcon/custodians/${ALEX}`, body: null }]));
-
+  // Megan first, while the screen still shows her as not on hold: any read of the matter after a change would show
+  // the hold, and then the screen wouldn't offer to remove her at all.
   await removeCustodian('Megan Bowen');
-  // No one is left below or above, so focus goes to the section's heading.
-  await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Custodians' })).toHaveFocus());
+  // Alex is the one left, above her, so focus goes to his remove button.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Remove Alex Wilber' })).toHaveFocus());
   expect(await screen.findByText('Megan Bowen is on hold. Release the hold before removing them.')).toBeInTheDocument();
   expect(within(custodianRow('Megan Bowen')).getByRole('alert')).toHaveTextContent('Megan Bowen is on hold. Release the hold before removing them.');
   expect(screen.getByText('megan.bowen@contoso.com · Finance')).toBeInTheDocument();
   await expectNoA11yViolations(document.body);
+
+  await removeCustodian('Alex Wilber');
+  await waitFor(() => expect(screen.queryByText('alex.wilber@contoso.com · Procurement')).not.toBeInTheDocument());
+  // Focus goes to the next custodian's remove button.
+  expect(screen.getByRole('button', { name: 'Remove Megan Bowen' })).toHaveFocus();
+  await waitFor(() => expect(sent.filter((w) => w.method === 'DELETE').map((w) => w.path)).toEqual([
+    `/matters/mat_falcon/custodians/${MEGAN_ID()}`,
+    `/matters/mat_falcon/custodians/${ALEX}`,
+  ]));
 });
 
 test('removing a custodian asks first, says what it does, and Cancel or Escape changes nothing and puts focus back', async () => {
