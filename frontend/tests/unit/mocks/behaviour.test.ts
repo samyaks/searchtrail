@@ -73,6 +73,8 @@ describe('editing the draft and estimating it', () => {
     const versions = (await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][];
     expect(versions.map((v) => v.version)).toEqual([4, 3, 2, 1]);
     expect(versions[0]!.counts).toEqual(done.result.counts);
+    // Made when the estimate was asked for, on the mock clock, not dated with the matter (3 Nov).
+    expect(versions[0]!.created_at).toBe('2026-11-05T12:00:09Z');
     expect((await get('/matters')).json.items[0]).toMatchObject({ id: FALCON, current_version: 4, latest_counts: { items: done.result.counts.items } });
   });
 
@@ -223,8 +225,19 @@ describe('previews', () => {
     expect((await get(M)).json).toMatchObject({ current_version: 4, draft_changed: false });
     expect(((await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][]).map((v) => v.version).sort()).toEqual([1, 2, 3, 4]);
 
+    const v4 = async () => ((await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][]).find((v) => v.version === 4)!;
+    expect((await v4()).created_at).toBe('2026-11-05T12:00:00Z'); // made now, not dated with the matter (3 Nov)
     const report = (await runJob(job.id)).at(-1).result as Schemas['TermReport'];
     expect(report).toMatchObject({ version: 4, stale: false });
+    // The count estimated the version it made, as an estimate would: it has counts, and the log says so before the count.
+    expect((await v4()).counts?.items).toBe(report.combined.items);
+    const log = (await get(`${M}/log`, { size: 5 })).json.items as Schemas['LogEntry'][];
+    expect(log.slice(0, 2).map((e) => [e.action, e.version])).toEqual([
+      ['term_report', 4],
+      ['estimate', 4],
+    ]);
+    // So it can be previewed.
+    expect((await post(`${M}/previews`)).status).toBe(202);
     expect(report.rows.map((r) => [r.term, r.previous_items, r.previous_version])).toEqual([
       ['"project falcon"', 105, 3],
       ['invoic*', 440, 3],
@@ -237,6 +250,40 @@ describe('previews', () => {
     const estimated = (await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result;
     expect(estimated.version).toBe(4);
     expect(report.combined.items).toBe(estimated.counts.items);
+  });
+
+  test('a term report that is refused, or that Purview denies, makes no new query version', async () => {
+    const versions = async () => ((await get(`${M}/versions`)).json.items as unknown[]).length;
+    const criteria = (await draft()).criteria;
+    // Criteria that can't be searched (a From date after the To date): 422, nothing made.
+    await put(`${M}/draft`, { criteria: { ...criteria, keywords: [...criteria.keywords, 'bribe'], date_from: '2026-01-01', date_to: '2025-06-30' } });
+    expect((await post(`${M}/term-reports`)).status).toBe(422);
+    expect(await versions()).toBe(3);
+    expect((await get(M)).json).toMatchObject({ current_version: 3, draft_changed: true });
+
+    // Purview denies counting: the job is started and fails at once, and the draft isn't frozen for it (as an
+    // estimate is refused before it freezes the draft).
+    await put(`${M}/draft`, { criteria: { ...criteria, keywords: [...criteria.keywords, 'bribe'] } });
+    setScenario({ purviewDenied: 'purview_permission_missing' });
+    const denied = await post(`${M}/term-reports`);
+    expect(denied.status).toBe(202);
+    expect((await runJob(denied.json.id)).at(-1)).toMatchObject({ status: 'failed', error: { code: 'purview_permission_missing' } });
+    expect((await post(`${M}/estimates`)).status).toBe(403);
+    expect(await versions()).toBe(3);
+    expect((await get(M)).json).toMatchObject({ current_version: 3, draft_changed: true });
+    expect((await get(`${M}/term-reports/latest`)).json).toMatchObject({ version: 3 });
+  });
+
+  test('a term report of a changed draft that fails leaves the new version unestimated, as a failed estimate does', async () => {
+    const criteria = (await draft()).criteria;
+    await put(`${M}/draft`, { criteria: { ...criteria, keywords: [...criteria.keywords, 'bribe'] } });
+    setScenario({ failJobs: ['term_report'] });
+    expect((await runJob((await post(`${M}/term-reports`)).json.id)).at(-1).status).toBe('failed');
+    const v4 = ((await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][]).find((v) => v.version === 4)!;
+    expect(v4.counts).toBeNull();
+    // Estimating it then is the way on, as after a failed estimate.
+    setScenario({ failJobs: [] });
+    expect((await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result.version).toBe(4);
   });
 });
 

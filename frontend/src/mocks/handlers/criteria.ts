@@ -39,6 +39,8 @@ export function freezeDraft(m: MockMatter): S['QueryVersion'] {
   const number = Math.max(0, ...m.versions.map((v) => v.version)) + 1;
   // The same display fingerprint as the version before, unless the sources changed since it was made.
   const version = makeVersion(m.matter, number, m.draft.criteria, null, `Query v${number}`, current && !sourcesChanged(m, current.version) ? current.sources_fingerprint : undefined);
+  // Made now (makeVersion dates the seeded versions with the matter).
+  version.created_at = iso();
   m.sourcesAt[number] = sourcesFingerprint(m.matter);
   m.versions.push(version);
   m.matter.current_version = number;
@@ -46,6 +48,17 @@ export function freezeDraft(m: MockMatter): S['QueryVersion'] {
   if (m.matter.stage === 'previewed' || m.matter.stage === 'exported') m.matter.stage = 'scoping';
   m.draft = { ...m.draft, based_on_version: number };
   return version;
+}
+
+/**
+ * What an estimate does when it finishes: the version gets its counts, and the log says what it found. Estimating
+ * the same query again finds the same items, so a version keeps the counts it has. A term report of a changed draft
+ * does this too for the version it makes, so that version is estimated like any other (Preview builds on it).
+ */
+export function estimateVersion(m: MockMatter, target: S['QueryVersion']): S['Counts'] {
+  target.counts ??= estimateCounts(m, target.criteria);
+  appendLog(m, 'estimate', `Query v${target.version} · ${target.counts.items.toLocaleString('en-US')} items + ${target.counts.partial_items.toLocaleString('en-US')} partially indexed`, target.version, { kql: target.kql, counts: target.counts });
+  return target.counts;
 }
 
 /** The contract's 422 for criteria the builder refuses, naming the field it is about when there is one. */
@@ -95,12 +108,7 @@ export const criteriaHandlers = [
       const target = freezeDraft(m);
       return HttpResponse.json(
         createJob('estimate', m.matter.id, {
-          finish: () => {
-            // Estimating the same query again finds the same items, so a version keeps its counts.
-            target.counts ??= estimateCounts(m, target.criteria);
-            appendLog(m, 'estimate', `Query v${target.version} · ${target.counts.items.toLocaleString('en-US')} items + ${target.counts.partial_items.toLocaleString('en-US')} partially indexed`, target.version, { kql: target.kql, counts: target.counts });
-            return { version: target.version, estimated_at: iso(), counts: clone(target.counts) };
-          },
+          finish: () => ({ version: target.version, estimated_at: iso(), counts: clone(estimateVersion(m, target)) }),
         }),
         { status: 202 },
       );

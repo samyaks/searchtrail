@@ -3,7 +3,7 @@
 // Out of scope for V1 (docs/V1_PLAN.md): the unique-hits and "if removed" columns, "Try without" and its
 // "What if" panel, and the Excel export.
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { useParams } from 'react-router';
 import { ApiRequestError, type ApiError } from '@/api/client';
 import { useTrackedJob } from '@/api/jobs';
@@ -63,6 +63,11 @@ function MatterTerms({ matterId }: { matterId: string }) {
   // A finished count carries its report, so show it at once instead of the old one until the refetch lands.
   const fresh = job.isSucceeded && onThisMatter ? job.result : null;
   const shown = fresh && (!report.data || isNewerReport(fresh, report.data)) ? fresh : (report.data ?? null);
+  // Said in the status region once a count followed here is done (a report that was done before the screen opened
+  // isn't news). The count's progress said what it was doing; this says what came of it.
+  const [doneBefore] = useState(() => fresh?.id ?? null);
+  const done = fresh && fresh.id !== doneBefore && !counting ? `Counted hits per term for query v${fresh.version}.` : '';
+  const reportHeading = useRef<HTMLHeadingElement>(null);
   const seeded = useRef<string | null>(null);
   useEffect(() => {
     if (fresh && seeded.current !== fresh.id) {
@@ -97,7 +102,13 @@ function MatterTerms({ matterId }: { matterId: string }) {
       )}
 
       {/* While a new start is on its way the tracked job may still be the last, finished one: don't show its 100%. */}
-      <Progress counting={counting} progress={job.isRunning ? job.progress : 0} queued={!job.isRunning || !job.job || job.job.status === 'queued'} />
+      <Progress
+        counting={counting}
+        progress={job.isRunning ? job.progress : 0}
+        queued={!job.isRunning || !job.job || job.job.status === 'queued'}
+        done={done}
+        focusAfter={reportHeading}
+      />
 
       {jobFailure && <ErrorNotice error={new ApiRequestError(502, jobFailure)} matterId={matterId} onRetry={startCount} headingLevel={3} />}
 
@@ -112,7 +123,7 @@ function MatterTerms({ matterId }: { matterId: string }) {
             </Button>
           }
         >
-          These hits are for query v{shown.version}. The search terms or filters are different now, so choose Recount to count them again.
+          These hits are for query v{shown.version}. {staleText(matter.data, shown.version)}
           {reason}
         </Banner>
       )}
@@ -125,7 +136,7 @@ function MatterTerms({ matterId }: { matterId: string }) {
 
       {report.isError && <ErrorNotice error={report.error} matterId={matterId} onRetry={() => void report.refetch()} headingLevel={3} />}
 
-      {shown && <ReportTable report={shown} />}
+      {shown && <ReportTable report={shown} headingRef={reportHeading} />}
 
       {/* Which empty state depends on the matter (is there a query yet?), so wait for it. */}
       {!shown && report.data === null && !counting && matter.data && (
@@ -162,24 +173,44 @@ function MatterTerms({ matterId }: { matterId: string }) {
 }
 
 /**
+ * What the out-of-date banner says Recount will do. A changed draft is saved as the next query version, which the
+ * count estimates and then counts (the header calls that version "Query v4 · draft" already); a query that moved on
+ * without the draft changing (estimated as v4 on Scope, say) is simply counted.
+ */
+function staleText(matter: { current_version: number | null; draft_changed: boolean } | undefined, counted: number): string {
+  const current = matter?.current_version ?? null;
+  if (matter?.draft_changed && current !== null) {
+    return `The search terms or filters are different now. Recount saves your changes as query v${current + 1}, estimates it, and counts its terms.`;
+  }
+  if (current !== null && current !== counted) return `The query is v${current} now. Choose Recount to count its terms.`;
+  return 'The search terms or filters are different now, so choose Recount to count them again.';
+}
+
+/**
  * A running count: how far along it is. It carries on if the person leaves the screen. The block stays in the
  * page, hidden, while nothing is counting, so its live region is already there when the first text goes in and
  * that is read out. Only the phase is live: the percent is left to the progress bar, not read out on every poll.
+ * Once the count is done, the same region says so (`done`).
  */
-function Progress({ counting, progress, queued }: { counting: boolean; progress: number; queued: boolean }) {
+function Progress({ counting, progress, queued, done, focusAfter }: { counting: boolean; progress: number; queued: boolean; done: string; focusAfter: RefObject<HTMLElement> }) {
   const block = useRef<HTMLDivElement>(null);
+  const wasCounting = useRef(false);
   useEffect(() => {
+    const active = document.activeElement;
+    const lost = active === null || active === document.body;
     // The button that started the count is gone (the stale banner's, the empty state's, Try again): rather than
     // leave focus on the page itself, bring it here. Focus that is still somewhere is left alone.
-    const active = document.activeElement;
-    if (counting && (active === null || active === document.body)) block.current?.focus();
-  }, [counting]);
+    if (counting && lost) block.current?.focus();
+    // When the count ends this block goes away: focus that was in it (or that it dropped) goes on to the report.
+    if (!counting && wasCounting.current && (lost || block.current?.contains(active))) focusAfter.current?.focus();
+    wasCounting.current = counting;
+  }, [counting, focusAfter]);
   const percent = Math.round(progress * 100);
   return (
     <div ref={block} className={counting ? styles.progress : 'st-visually-hidden'} tabIndex={counting ? -1 : undefined}>
       <div className={styles.progressTitle}>
         <p className={styles.phase} role="status">
-          {counting && <strong>{queued ? 'Starting the count…' : 'Counting hits per term…'}</strong>}
+          {counting ? <strong>{queued ? 'Starting the count…' : 'Counting hits per term…'}</strong> : done}
         </p>
         {counting && <span className={styles.percent}>{percent}%</span>}
       </div>
@@ -205,13 +236,14 @@ function Progress({ counting, progress, queued }: { counting: boolean; progress:
   );
 }
 
-function ReportTable({ report }: { report: TermReport }) {
+function ReportTable({ report, headingRef }: { report: TermReport; headingRef: RefObject<HTMLHeadingElement> }) {
   const combined = report.combined.items;
   const previousVersion = previousVersionOf(report.rows);
   return (
     <section aria-labelledby="report-title" className={styles.report}>
       <div className={styles.reportHeader}>
-        <h3 id="report-title" className={styles.reportTitle}>
+        {/* Focusable from code only: focus comes here when a count it was following is done. */}
+        <h3 id="report-title" ref={headingRef} tabIndex={-1} className={styles.reportTitle}>
           Search term report
         </h3>
         <span className={styles.reportNote}>Hits are the items each term finds. An item that matches more than one term is counted under each.</span>
