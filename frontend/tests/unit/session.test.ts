@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiRequestError, type ApiError } from '@/api/client';
-import { loginUrl, redirectToLogin, resetRedirect, sessionNavigation } from '@/api/session';
+import { loginUrl, redirectToLogin, resetRedirect, sessionNavigation, SIGN_IN_GRACE_MS } from '@/api/session';
 import { makeQueryClient, retryOnce } from '@/app/queryClient';
 import { setScenario } from '@/mocks/scenarios';
 import { renderApp } from './renderApp';
@@ -51,6 +51,24 @@ test('other errors do not sign anyone out', async () => {
   }
   await client.fetchQuery({ queryKey: ['network'], queryFn: () => Promise.reject(new TypeError('Failed to fetch')) }).catch(() => {});
   expect(assign).not.toHaveBeenCalled();
+});
+
+test('a sign-in that did not take is not started again on the next page load, so nothing loops', () => {
+  const t0 = 1_000_000;
+  redirectToLogin(t0);
+  expect(assign).toHaveBeenCalledTimes(1);
+  resetRedirect({ pageOnly: true }); // the person comes back from sign-in, still without a session
+  redirectToLogin(t0 + 5_000);
+  expect(assign).toHaveBeenCalledTimes(1);
+  resetRedirect({ pageOnly: true }); // much later, a session that has really ended goes to sign in again
+  redirectToLogin(t0 + SIGN_IN_GRACE_MS + 1);
+  expect(assign).toHaveBeenCalledTimes(2);
+});
+
+test('the page to come back to is always a path on this site', () => {
+  window.history.pushState({}, '', `${window.location.origin}//elsewhere.example/x`);
+  redirectToLogin();
+  expect(assign).toHaveBeenCalledExactlyOnceWith('/api/v1/auth/login?return_to=%2Felsewhere.example%2Fx');
 });
 
 test('a page that is part of the sign-in does not redirect again', () => {

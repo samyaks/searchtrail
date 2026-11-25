@@ -103,6 +103,38 @@ test('a failed request for the job is a query error, not a failed job', async ()
   expect(result.current.isRunning).toBe(false);
 });
 
+test('once the server says no about a job, it is no longer asked about', async () => {
+  let asked = 0;
+  server.use(
+    http.get('/api/v1/jobs/:jobId', () => {
+      asked += 1;
+      return HttpResponse.json({ code: 'not_found', message: 'No job.', details: {} }, { status: 404 });
+    }),
+  );
+  const { wrapper } = setup();
+  const { result } = renderHook(() => useJob('job_gone', fast), { wrapper });
+  await waitFor(() => expect(result.current.queryError).toBeTruthy());
+  await new Promise((resolve) => setTimeout(resolve, 30)); // let any request already on its way finish
+  const askedBefore = asked;
+  await new Promise((resolve) => setTimeout(resolve, 100)); // ten polls' worth
+  expect(asked).toBe(askedBefore);
+  expect(result.current.isRunning).toBe(false);
+});
+
+test('a passing server error keeps the job running and asked about', async () => {
+  let asked = 0;
+  server.use(
+    http.get('/api/v1/jobs/:jobId', () => {
+      asked += 1;
+      return HttpResponse.json({ code: 'internal_error', message: 'Down.', details: {} }, { status: 500 });
+    }),
+  );
+  const { wrapper } = setup();
+  const { result } = renderHook(() => useJob('job_busy', fast), { wrapper });
+  await waitFor(() => expect(asked).toBeGreaterThan(2));
+  expect(result.current.isRunning).toBe(true);
+});
+
 test("jobs already running are found when a screen opens, with the matter's other jobs left out", async () => {
   const { wrapper } = setup();
   const running = await startPreview();
