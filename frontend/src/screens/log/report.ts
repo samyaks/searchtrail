@@ -15,12 +15,24 @@ export type ReportInput = {
   at?: Date;
 };
 
-const stamp = (iso: string) => `${iso.replace('T', ' ').replace(/(:\d\d)?(\.\d+)?Z$/, '')} UTC`;
-const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+/** "2026-11-05 10:41 UTC", whatever offset the time was written with. */
+export const stamp = (iso: string) => `${new Date(iso).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+/** Sizes in mebibytes (1,048,576 bytes), labelled as such. */
+const mebibytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+const plural = (count: number, one: string, many: string) => `${n(count)} ${count === 1 ? one : many}`;
 
 function countsLine(counts: S['Counts'] | null): string {
   if (!counts) return 'not estimated';
-  return `${n(counts.items)} items (${megabytes(counts.size_bytes)}), plus ${n(counts.partial_items)} partially indexed items (${megabytes(counts.partial_size_bytes)}) that could not be keyword-searched; ${counts.mailboxes} mailboxes and ${counts.sites} sites`;
+  return `${plural(counts.items, 'item', 'items')} (${mebibytes(counts.size_bytes)}), plus ${plural(counts.partial_items, 'partially indexed item', 'partially indexed items')} (${mebibytes(counts.partial_size_bytes)}) that could not be keyword-searched; ${plural(counts.mailboxes, 'mailbox', 'mailboxes')} and ${plural(counts.sites, 'site', 'sites')}`;
+}
+
+/** The chain check's outcome, stated from its fields rather than left to its message. */
+function chainLine(verification: S['LogVerification'] | undefined): string {
+  if (!verification) return 'Hash chain: not checked';
+  const checked = `checked ${stamp(verification.verified_at)}`;
+  if (verification.ok) return `Hash chain: intact, ${plural(verification.entries, 'entry', 'entries')} verified (${checked})`;
+  const where = verification.first_bad_seq !== null ? ` at entry ${verification.first_bad_seq}` : '';
+  return `Hash chain: BROKEN${where} — ${verification.message.trim().replace(/\.$/, '')} (${checked})`;
 }
 
 export function methodologyReport({ matter, versions, verification, head, at = new Date() }: ReportInput): string {
@@ -55,7 +67,7 @@ export function methodologyReport({ matter, versions, verification, head, at = n
     for (const v of versions) lines.push(`v${v.version}: ${v.counts ? `${n(v.counts.items)} items` : 'not estimated'} · ${v.summary}`);
   }
   lines.push('', 'Log');
-  if (verification) lines.push(`Hash chain: ${verification.message} (checked ${stamp(verification.verified_at)})`);
+  lines.push(chainLine(verification));
   if (head) lines.push(`Newest entry: ${head.seq}, hash ${head.hash}`);
   return `${lines.join('\n')}\n`;
 }
@@ -69,5 +81,6 @@ export function saveText(fileName: string, text: string) {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Some browsers start the download only after the click returns, so the URL is let go a moment later.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

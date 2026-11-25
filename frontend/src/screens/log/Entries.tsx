@@ -1,5 +1,6 @@
 // The log itself, newest first and paged, each entry with the hash before it and its own.
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { describeError } from '@/api/errors';
 import type { Schemas } from '@/api/client';
 import { Button, Card, EmptyState, ErrorNotice } from '@/components';
 import { ACTION_LABELS, actionTone, n, shortHash, whenText } from './format';
@@ -9,6 +10,7 @@ import { RunningJobs } from './RunningJobs';
 
 type Props = {
   matterId: string;
+  /** The page to show: the one asked for, or the last one read if it can't be read. */
   data: Schemas['LogEntryPage'] | undefined;
   loading: boolean;
   error: unknown;
@@ -23,6 +25,7 @@ type Props = {
 
 function Entry({ entry, bad, focus, onFocused }: { entry: Schemas['LogEntry']; bad: boolean; focus: boolean; onFocused: () => void }) {
   const ref = useRef<HTMLLIElement>(null);
+  const id = useId();
   useEffect(() => {
     if (!focus || !ref.current) return;
     ref.current.scrollIntoView?.({ block: 'center' });
@@ -30,8 +33,14 @@ function Entry({ entry, bad, focus, onFocused }: { entry: Schemas['LogEntry']; b
     onFocused();
   }, [focus, onFocused]);
   return (
-    <li ref={ref} tabIndex={bad ? -1 : undefined} className={styles.entry} data-bad={bad ? '' : undefined} aria-label={`Entry ${entry.seq}`}>
-      <span className={styles.seq}>{entry.seq}</span>
+    <li ref={ref} tabIndex={bad ? -1 : undefined} className={styles.entry} data-bad={bad ? '' : undefined} aria-labelledby={`${id}-word ${id}-seq`}>
+      {/* Named "Entry 8" from its own text, so the entry's content is still read with it. */}
+      <span className={styles.seq}>
+        <span id={`${id}-word`} className="st-visually-hidden">
+          Entry{' '}
+        </span>
+        <span id={`${id}-seq`}>{entry.seq}</span>
+      </span>
       <span className={styles.entryBody}>
         <span className={styles.entryHead}>
           <span className={styles.badge} data-tone={actionTone(entry.action)}>
@@ -52,26 +61,58 @@ function Entry({ entry, bad, focus, onFocused }: { entry: Schemas['LogEntry']; b
 }
 
 export function Entries({ matterId, data, loading, error, onRetry, onPage, badSeq, focusSeq, onFocused }: Props) {
-  const pages = data ? Math.max(1, Math.ceil(data.total / LOG_PAGE_SIZE)) : 1;
-  const first = data ? (data.page - 1) * LOG_PAGE_SIZE + 1 : 0;
+  const failed = error !== null && error !== undefined;
+  const pageSize = data?.page_size || LOG_PAGE_SIZE;
+  const pages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+  const first = data ? (data.page - 1) * pageSize + 1 : 0;
   const last = data ? first + data.items.length - 1 : 0;
+
+  // After Newer or Older, focus moves to the new page's list, so it is read from its top (the button pressed may
+  // now be unusable). The buttons are aria-disabled rather than disabled, so focus is never dropped while a page loads.
+  const list = useRef<HTMLOListElement>(null);
+  const focusPage = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusPage.current === null || data?.page !== focusPage.current || loading) return;
+    focusPage.current = null;
+    list.current?.focus();
+  }, [data?.page, loading]);
+  const go = (page: number, allowed: boolean) => {
+    if (!allowed || loading) return;
+    focusPage.current = page;
+    onPage(page);
+  };
+  const canNewer = data !== undefined && data.page > 1;
+  const canOlder = data !== undefined && data.page < pages;
+
   return (
     <Card title="Entries" padding="none">
       <div className={styles.entriesBody} aria-busy={loading}>
         <RunningJobs matterId={matterId} />
-        {error !== null && error !== undefined && !data && (
+        {failed && !data && (
           <div className={styles.pad}>
             <ErrorNotice error={error} matterId={matterId} onRetry={onRetry} headingLevel={3} />
           </div>
         )}
-        {!data && !error && <p className={styles.pad}>Loading the log…</p>}
+        {failed && data && (
+          // The entries read last stay on screen; this says they could not be read just now.
+          <div role="alert" className={styles.inlineError}>
+            <span>
+              The log couldn&apos;t be read just now: {describeError(error, { matterId }).message.trim().replace(/\.$/, '')}. The
+              entries below are the last ones read.
+            </span>
+            <Button size="sm" variant="neutral" aria-disabled={loading} onClick={() => !loading && onRetry()}>
+              Try again
+            </Button>
+          </div>
+        )}
+        {!data && !failed && <p className={styles.pad}>Loading the log…</p>}
         {data && data.total === 0 && (
           <div className={styles.pad}>
             <EmptyState>Nothing has been logged on this matter yet.</EmptyState>
           </div>
         )}
         {data && data.items.length > 0 && (
-          <ol className={styles.entries} aria-label="Log entries, newest first">
+          <ol ref={list} tabIndex={-1} className={styles.entries} aria-label="Log entries, newest first">
             {data.items.map((entry) => (
               <Entry key={entry.seq} entry={entry} bad={entry.seq === badSeq} focus={entry.seq === focusSeq} onFocused={onFocused} />
             ))}
@@ -83,10 +124,10 @@ export function Entries({ matterId, data, loading, error, onRetry, onPage, badSe
               Entries {n(first)}–{n(last)} of {n(data.total)}
             </span>
             <span className={styles.actions}>
-              <Button size="sm" variant="neutral" disabled={data.page <= 1 || loading} onClick={() => onPage(data.page - 1)}>
+              <Button size="sm" variant="neutral" aria-disabled={!canNewer || loading} onClick={() => go(data.page - 1, canNewer)}>
                 Newer
               </Button>
-              <Button size="sm" variant="neutral" disabled={data.page >= pages || loading} onClick={() => onPage(data.page + 1)}>
+              <Button size="sm" variant="neutral" aria-disabled={!canOlder || loading} onClick={() => go(data.page + 1, canOlder)}>
                 Older
               </Button>
             </span>

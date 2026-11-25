@@ -1,12 +1,13 @@
 // Log (docs/design/Log.dc.html): how the set narrowed across query versions, the hash-chained log with its
 // check, and what changed between two versions.
 import { useCallback, useState } from 'react';
+import type { Schemas } from '@/api/client';
 import { useParams } from 'react-router';
 import { useMatter } from '@/api/queries';
 import { ErrorNotice } from '@/components';
 import { CompareVersions } from './CompareVersions';
 import { Entries } from './Entries';
-import { LOG_PAGE_SIZE, useLogPage, useVerification, useVersions } from './hooks';
+import { LOG_PAGE_SIZE, useLogHead, useLogPage, useVerification, useVersions } from './hooks';
 import styles from './LogScreen.module.css';
 import { Narrowing } from './Narrowing';
 import { methodologyReport, saveText } from './report';
@@ -21,11 +22,21 @@ export function LogScreen() {
   const [focusSeq, setFocusSeq] = useState<number | null>(null);
   const focused = useCallback(() => setFocusSeq(null), []);
   const log = useLogPage(matterId, page);
+  // The chain's head (the newest entry), which the report records, whichever page is shown.
+  const head = useLogHead(matterId).data;
+
+  // The last page read, kept on screen (with its pager) when the next one, or a fresh read of it, fails.
+  const [lastGood, setLastGood] = useState<{ matterId: string; data: Schemas['LogEntryPage'] } | null>(null);
+  if (log.data && !log.isPlaceholderData && log.data !== lastGood?.data) setLastGood({ matterId, data: log.data });
+  const shown = log.data ?? (lastGood?.matterId === matterId ? lastGood.data : undefined);
+
+  // An entry asked for ("Show entry 5") that isn't on the page it should be on is let go, so it can't take focus later.
+  // (Setting state while rendering, guarded like this, is React's way to derive state from a change.)
+  const settled = log.data && !log.isPlaceholderData && !log.isFetching ? log.data : undefined;
+  if (focusSeq !== null && settled && !settled.items.some((entry) => entry.seq === focusSeq)) setFocusSeq(null);
 
   const verified = verification.data;
   const badSeq = verified && !verified.ok ? verified.first_bad_seq : null;
-  // On page 1 the newest entry is the chain's head, which the report records.
-  const head = log.data?.page === 1 ? log.data.items[0] : undefined;
 
   const report =
     matter.data && versions.data
@@ -39,10 +50,14 @@ export function LogScreen() {
 
   /** Open the page that holds entry `seq` (newest first) and bring the entry into view. */
   const showEntry = (seq: number) => {
-    const total = log.data?.total ?? seq;
-    setPage(Math.max(1, Math.ceil((total - seq + 1) / LOG_PAGE_SIZE)));
+    const total = shown?.total ?? seq;
+    const pageSize = shown?.page_size || LOG_PAGE_SIZE;
+    setPage(Math.max(1, Math.ceil((total - seq + 1) / pageSize)));
     setFocusSeq(seq);
   };
+
+  /** Show a page; asking for the one already asked for (an older page is shown because it failed) reads it again. */
+  const goTo = (next: number) => (next === page ? void log.refetch() : setPage(next));
 
   return (
     <div className={styles.screen}>
@@ -70,11 +85,11 @@ export function LogScreen() {
         <div className={styles.entriesColumn}>
           <Entries
             matterId={matterId}
-            data={log.data}
+            data={shown}
             loading={log.isFetching}
             error={log.isError ? log.error : null}
             onRetry={() => void log.refetch()}
-            onPage={setPage}
+            onPage={goTo}
             badSeq={badSeq}
             focusSeq={focusSeq}
             onFocused={focused}

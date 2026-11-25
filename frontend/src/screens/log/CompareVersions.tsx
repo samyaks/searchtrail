@@ -38,13 +38,25 @@ function PairPicker({ pairs, value, onChange }: { pairs: Pair[]; value: Pair; on
   );
 }
 
+/** A key for each change from what it says, numbered only when the same change is listed twice. */
+function changeKeys(changes: Schemas['VersionComparison']['changes']): string[] {
+  const seen = new Map<string, number>();
+  return changes.map((c) => {
+    const base = `${c.change}:${c.text}`;
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return count === 0 ? base : `${base}#${count}`;
+  });
+}
+
 function Comparison({ comparison }: { comparison: Schemas['VersionComparison'] }) {
+  const keys = changeKeys(comparison.changes);
   return (
     <>
       {comparison.changes.length > 0 ? (
         <ul className={styles.diff} aria-label="Changes">
           {comparison.changes.map((c, i) => (
-            <li key={i} className={styles.diffLine} data-change={c.change}>
+            <li key={keys[i]} className={styles.diffLine} data-change={c.change}>
               <span aria-hidden="true" className={styles.mark}>
                 {c.change === 'added' ? '+' : '−'}
               </span>

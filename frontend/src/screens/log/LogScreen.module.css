@@ -314,3 +314,15 @@
   font-size: 22px;
   font-weight: 700;
 }
+/* the entries shown could not be read again: said above them, small */
+.inlineError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-2) var(--st-space-3);
+  padding: var(--st-space-2) 20px;
+  border-bottom: 1px solid var(--st-rule);
+  font-size: var(--st-text-sm);
+  color: var(--st-margin-red);
+}

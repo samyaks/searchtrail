@@ -3,13 +3,17 @@
 // a new version, new entries, and a fresh check of the chain that now includes them.
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
-import { pollDelay } from '@/api/jobs';
+import { isFinished, pollDelay, serverSaidNo } from '@/api/jobs';
+import { queryKeys } from '@/api/queries';
 
 /** Entries per page. */
 export const LOG_PAGE_SIZE = 20;
 
-/** How often running jobs are asked about. Tests make it short. */
-export const logPolling = { pollMs: pollDelay };
+/**
+ * How often jobs are asked about: `pollMs` while one runs, `idleMs` while none does (so a job started on another
+ * tab is still noticed). Tests make them short.
+ */
+export const logPolling = { pollMs: pollDelay, idleMs: 10_000 };
 
 export const logKeys = {
   versions: (matterId: string) => ['matters', matterId, 'versions'] as const,
@@ -36,13 +40,44 @@ export function useComparison(matterId: string, pair: { from: number; to: number
   });
 }
 
+const logPage = async (matterId: string, page: number, signal?: AbortSignal) =>
+  unwrap(await api.GET('/matters/{matterId}/log', { params: { path: { matterId }, query: { page, page_size: LOG_PAGE_SIZE } }, signal }));
+
 /** One page of the log, newest first. The page shown stays on screen while the next one loads. */
 export function useLogPage(matterId: string, page: number) {
   return useQuery({
     queryKey: logKeys.log(matterId, page),
-    queryFn: async () =>
-      unwrap(await api.GET('/matters/{matterId}/log', { params: { path: { matterId }, query: { page, page_size: LOG_PAGE_SIZE } } })),
+    queryFn: ({ signal }) => logPage(matterId, page, signal),
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * Page 1 of the log, whichever page is shown: its first entry is the chain's head, which the methodology report
+ * records. It shares page 1's cache entry, so on page 1 it costs nothing extra.
+ */
+export function useLogHead(matterId: string) {
+  return useQuery({
+    queryKey: logKeys.log(matterId, 1),
+    queryFn: ({ signal }) => logPage(matterId, 1, signal),
+    select: (data) => data.items[0],
+  });
+}
+
+/**
+ * The matter's queued and running jobs. While one runs it is asked about often; while none does, every
+ * `logPolling.idleMs`, so a job started elsewhere (another tab, another person) still shows up here.
+ */
+export function useRunningJobs(matterId: string) {
+  return useQuery({
+    queryKey: queryKeys.matterJobs(matterId, { active: true }),
+    queryFn: async ({ signal }) =>
+      unwrap(await api.GET('/matters/{matterId}/jobs', { params: { path: { matterId }, query: { active: true } }, signal })),
+    refetchInterval: (q) => {
+      if (serverSaidNo(q.state.error)) return false;
+      const active = q.state.data?.items.some((job) => !isFinished(job)) ?? false;
+      return active ? logPolling.pollMs(q.state.dataUpdateCount + q.state.errorUpdateCount) : logPolling.idleMs;
+    },
   });
 }
 

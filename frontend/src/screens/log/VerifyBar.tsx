@@ -65,7 +65,8 @@ export function VerifyBar({ matterId, verification, checking, error, onVerify, o
           </span>
         </div>
         <div className={styles.actions}>
-          <Button variant="neutral" onClick={onVerify} disabled={checking}>
+          {/* aria-disabled, not disabled, so the button keeps focus while the check runs; a press then does nothing. */}
+          <Button variant="neutral" aria-disabled={checking} onClick={() => !checking && onVerify()}>
             {checking ? 'Verifying…' : verification ? 'Verify again' : 'Verify'}
           </Button>
           <Button icon={<Download />} onClick={onReport} disabled={!onReport}>
@@ -85,7 +86,7 @@ export function VerifyBar({ matterId, verification, checking, error, onVerify, o
             ) : undefined
           }
         >
-          {verification.message}. Something changed the log after it was written, so it can&apos;t be relied on as it
+          {verification.message.trim().replace(/\.$/, '')}. Something changed the log after it was written, so it can&apos;t be relied on as it
           stands. Tell your SearchTrail administrator.
         </Banner>
       )}
