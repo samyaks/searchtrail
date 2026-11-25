@@ -8,10 +8,13 @@ test('/ redirects to the Matters screen', async () => {
   expect(router.state.location.pathname).toBe('/matters');
 });
 
+// A built screen's first heading; a placeholder's is the tab's name.
+const FIRST_HEADING: Partial<Record<string, string>> = { define: 'Matter details' };
+
 test.each(MATTER_TABS)('the $label tab has a screen', async ({ path, label }) => {
   renderApp(`/matters/mat_falcon/${path}`);
   expect(await screen.findByRole('heading', { level: 1, name: 'Project Falcon investigation' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { level: 2, name: label })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { level: 2, name: FIRST_HEADING[path] ?? label })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: label })).toHaveAttribute('aria-current', 'page');
 });
 
