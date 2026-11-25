@@ -635,6 +635,9 @@ describe('estimate', () => {
     expect(sent.calls).not.toContain('estimate');
     expect(within(estimateRegion()).queryByRole('progressbar')).not.toBeInTheDocument();
     expect(await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' })).toBeEnabled();
+    // The newer save went through, so its notice is gone; the estimate panel says why nothing happened.
+    expect(within(estimateRegion()).getByText('Saving failed.')).toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 
   test('after a save failed, Estimate with no new edit saves again, then estimates', async () => {

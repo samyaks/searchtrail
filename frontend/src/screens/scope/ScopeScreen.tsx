@@ -122,12 +122,14 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
     try {
       // The estimate is of the saved draft, so it waits for the save of what's on screen now: the last save asked
       // for, or a new one if none was asked for this yet (or the last one failed). If that save fails, its own
-      // notice says why, with Try again, and nothing is sent to Purview. A later edit doesn't change this.
+      // notice says why, with Try again, and nothing is sent to Purview. If a later edit's save has taken over that
+      // notice by then, the failure is shown here instead, so Estimate never fails without a word.
       const key = stableKey(criteria);
       const before = key !== requested.current || save.isError ? requestSave(criteria) : lastSave.current;
       try {
         await before;
-      } catch {
+      } catch (saveError) {
+        if (lastSave.current !== before) setStartError(saveError);
         return;
       }
       const job = await startEstimate.mutateAsync();
