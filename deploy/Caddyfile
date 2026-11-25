@@ -1,0 +1,86 @@
+# The web service: the built frontend, and /api passed to the api service on the same origin.
+{
+	# No admin endpoint and no saved copy of the config: it only changes with the image.
+	admin off
+	persist_config off
+	# Plain HTTP inside the compose network. TLS and HSTS come with the install guide (PR 21).
+	auto_https off
+}
+
+# Headers on the app's own responses (not on /api, which sets its own). The CSP is a first version
+# that PR 21 hardens and tests; scripts, styles and fonts are all self-hosted, so 'self' is enough.
+(app_headers) {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+}
+
+:8080 {
+	# The API, unchanged: path, method, body and the API's own headers (it sets its own security
+	# headers, so none are added here). Responses stream through, so large downloads aren't buffered.
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	# The app.
+	handle {
+		root * /srv
+		encode zstd gzip
+		import app_headers
+		# Checked again on every load, except the hashed files below.
+		header Cache-Control no-cache
+
+		# Hashed file names never change, so an existing file is cached for a year. A missing one is a
+		# 404, and handle_errors below makes sure that isn't cached.
+		handle /assets/* {
+			@found file
+			header @found Cache-Control "public, max-age=31536000, immutable"
+			file_server
+		}
+
+		# A path that looks like a file (favicon.svg, robots.txt, mockServiceWorker.js) is that file,
+		# or a 404. Only the app's own routes fall back to index.html: they have no dot in their last
+		# part (the IDs in them are like mat_3f9c0a1b2c4d5e6f).
+		@file_like path_regexp \.[A-Za-z0-9]+$
+		handle @file_like {
+			file_server
+		}
+
+		handle {
+			rewrite * /index.html
+			file_server
+		}
+	}
+
+	# Errors Caddy itself produces: a 404 from the file server, or a 502 or 504 when the API doesn't
+	# answer (the API's own error responses pass through the proxy untouched).
+	handle_errors {
+		# The contract's Error body, with the API's own headers (backend app/main.py), so the app shows
+		# its usual message instead of an empty page.
+		@api_down path /api /api/*
+		handle @api_down {
+			header {
+				Content-Type application/json
+				X-Content-Type-Options nosniff
+				X-Frame-Options DENY
+				Referrer-Policy no-referrer
+				Cache-Control no-store
+				Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+				-Server
+			}
+			respond `{"code":"internal_error","message":"SearchTrail's server isn't answering. Try again in a moment.","details":{}}` {err.status_code}
+		}
+
+		# Never cache a miss: the file may be there after the next deploy.
+		handle {
+			import app_headers
+			header Cache-Control no-store
+			respond "{err.status_code} {err.status_text}" {err.status_code}
+		}
+	}
+}
