@@ -5,7 +5,7 @@
 // query, its methodology and any warnings, or with criteria_invalid. Edits are saved to the draft as they
 // settle; Estimate saves anything not yet saved, then starts an estimate job and follows it.
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import { ApiRequestError, type Schemas } from '@/api/client';
 import { hasCode } from '@/api/errors';
@@ -15,7 +15,7 @@ import { dayAndTime } from '@/app/time';
 import { ErrorNotice } from '@/components';
 import { markForms, SECTION_NAMES, sectionOf, stableKey, type Criteria, type Section } from './criteria';
 import { ExpertSection, LabelsSection, TermsSection, WhenSection, WhoCard } from './FilterSections';
-import { SaveFailedFirst, scopeKeys, timing, useDebounced, useDraft, useKqlPreview, useSaveDraft, useStartEstimate, useVersions } from './hooks';
+import { scopeKeys, timing, useDebounced, useDraft, useKqlPreview, useSaveDraft, useStartEstimate, useVersions } from './hooks';
 import styles from './ScopeScreen.module.css';
 import { EstimatePanel, KqlPanel, MethodologyPanel, type ShownEstimate } from './SummaryPanels';
 
@@ -26,10 +26,11 @@ export function ScopeScreen() {
   const saving = useIsMutating({ mutationKey: scopeKeys.saves(matterId) }) > 0;
 
   // The editor starts from the saved draft once, then keeps the person's edits. So it waits for the draft as it
-  // is now: read since the screen opened (not an old copy in the cache), with no save of it still on its way
-  // (one sent as the person left the screen, say). Once shown, it stays.
+  // is now: read well since the screen opened (not an old copy in the cache, and not one left there by a read
+  // that failed), with no save of it still on its way (one sent as the person left the screen, say). Once
+  // shown, it stays.
   const [readyFor, setReadyFor] = useState<string | null>(null);
-  if (readyFor !== matterId && draft.data && draft.isFetchedAfterMount && !draft.isFetching && !saving) setReadyFor(matterId);
+  if (readyFor !== matterId && draft.isSuccess && draft.isFetchedAfterMount && !draft.isFetching && !saving) setReadyFor(matterId);
 
   let body;
   if (draft.isError && readyFor !== matterId) {
@@ -81,23 +82,30 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
   }
 
   // Save the draft whenever the edits settle on something not saved yet. `requested` is the last criteria a save
-  // was asked for; `latest` is what's on screen, so an edit made just before leaving the screen is still saved.
-  const { mutate: saveDraft, mutateAsync: saveDraftNow } = save;
+  // was asked for and `lastSave` that save's promise; `latest` is what's on screen, so an edit made just before
+  // leaving the screen is still saved.
+  const { mutateAsync: saveDraftNow } = save;
   const requested = useRef(stableKey(initial));
+  const lastSave = useRef<Promise<unknown> | null>(null);
   const latest = useRef(initial);
+  const requestSave = useCallback(
+    (next: Criteria) => {
+      requested.current = stableKey(next);
+      const saved = saveDraftNow(next);
+      saved.catch(() => {}); // a failure is shown by the save's own notice, with Try again
+      lastSave.current = saved;
+      return saved;
+    },
+    [saveDraftNow],
+  );
   useEffect(() => {
-    const key = stableKey(settled);
-    if (key === requested.current) return;
-    requested.current = key;
-    saveDraft(settled);
-  }, [settled, saveDraft]);
+    if (stableKey(settled) !== requested.current) void requestSave(settled);
+  }, [settled, requestSave]);
   useEffect(
     () => () => {
-      if (stableKey(latest.current) === requested.current) return;
-      requested.current = stableKey(latest.current);
-      saveDraft(latest.current);
+      if (stableKey(latest.current) !== requested.current) void requestSave(latest.current);
     },
-    [saveDraft],
+    [requestSave],
   );
 
   const change = (next: Criteria) => {
@@ -106,32 +114,28 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
     setStartError(null);
   };
 
-  const retrySave = () => {
-    requested.current = stableKey(criteria);
-    saveDraft(criteria);
-  };
+  const retrySave = () => void requestSave(criteria);
 
   const runEstimate = async () => {
     setStartError(null);
     setStarting(true);
     try {
-      // The estimate is of the saved draft, so save what's on screen first unless a save of it was already asked
-      // for (and didn't fail). The estimate waits behind any save still on its way (they share a mutation scope).
+      // The estimate is of the saved draft, so it waits for the save of what's on screen now: the last save asked
+      // for, or a new one if none was asked for this yet (or the last one failed). If that save fails, its own
+      // notice says why, with Try again, and nothing is sent to Purview. A later edit doesn't change this.
       const key = stableKey(criteria);
-      if (key !== requested.current || save.isError) {
-        requested.current = key;
-        try {
-          await saveDraftNow(criteria);
-        } catch {
-          return; // the save's own notice says why, with Try again; nothing was sent to Purview
-        }
+      const before = key !== requested.current || save.isError ? requestSave(criteria) : lastSave.current;
+      try {
+        await before;
+      } catch {
+        return;
       }
       const job = await startEstimate.mutateAsync();
       estimate.track(job.id);
     } catch (error) {
       const running = runningJobId(error);
       if (running) estimate.track(running);
-      else if (!(error instanceof SaveFailedFirst)) setStartError(error);
+      else setStartError(error);
     } finally {
       setStarting(false);
       // A changed draft became a new query version: the draft, the versions and the header move on.

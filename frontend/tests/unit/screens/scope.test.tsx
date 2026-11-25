@@ -365,6 +365,27 @@ describe('editing', () => {
     expect(within(terms).getAllByRole('listitem').map((t) => t.textContent)).toEqual(['elsewhere']);
   });
 
+  test('coming back when the draft cannot be read again says why, instead of starting from the old copy', async () => {
+    await openScope();
+    await userEvent.click(tab('Define'));
+    await screen.findByRole('heading', { name: 'Define' });
+    let fail = true;
+    server.use(
+      http.get('/api/v1/matters/:matterId/draft', () =>
+        fail ? HttpResponse.json({ code: 'internal_error', message: 'The database is busy.', details: {} }, { status: 500 }) : undefined,
+      ),
+    );
+    await userEvent.click(tab('Scope'));
+    const scope = within(screen.getByRole('region', { name: 'Scope' }));
+    const alert = await scope.findByRole('alert');
+    expect(alert).toHaveTextContent('The database is busy.');
+    expect(screen.queryByLabelText('Add a term or phrase')).not.toBeInTheDocument();
+    fail = false;
+    await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByLabelText('Add a term or phrase')).toBeInTheDocument();
+    expect(scope.queryByText('The database is busy.')).not.toBeInTheDocument();
+  });
+
   test('an edit made just before leaving the screen is still saved, and coming back shows it', async () => {
     timing.debounceMs = 300;
     const sent = record();
@@ -415,7 +436,10 @@ describe('criteria_invalid', () => {
     server.use(
       http.post('/api/v1/kql/preview', async ({ request }) => {
         const { criteria } = (await request.clone().json()) as { criteria: Criteria };
-        if (criteria.raw_kql) return HttpResponse.json({ code: 'criteria_invalid', message: 'raw_kql opens a parenthesis it never closes.', details: { field: 'raw_kql' } }, { status: 422 });
+        if (criteria.raw_kql) {
+          const message = criteria.keywords.length > 4 ? 'raw_kql and the terms together are too long.' : 'raw_kql opens a parenthesis it never closes.';
+          return HttpResponse.json({ code: 'criteria_invalid', message, details: { field: 'raw_kql' } }, { status: 422 });
+        }
       }),
     );
     await openScope();
@@ -429,6 +453,10 @@ describe('criteria_invalid', () => {
     // The person can still close it.
     await userEvent.click(screen.getByText('Expert KQL'));
     expect(expert).not.toHaveAttribute('open');
+    // A different problem opens it again.
+    await addTerm('brightline');
+    expect(await within(expert).findByText('raw_kql and the terms together are too long.')).toBeInTheDocument();
+    expect(expert).toHaveAttribute('open');
   });
 
   test('an estimate refused as criteria_invalid sends nothing to Purview and points at the field', async () => {
@@ -464,6 +492,9 @@ describe('estimate', () => {
     expect(await screen.findByText('Query v4')).toBeInTheDocument();
     expect(within(estimateRegion()).getByText('630').closest('[data-stale]')).not.toBeNull();
     expect(within(estimateRegion()).getByText(/^Estimated .* · v3$/)).toBeInTheDocument();
+    // Those counts are v3's, so nothing offers to go on from them meanwhile.
+    expect(within(estimateRegion()).queryByRole('link', { name: 'Preview this query' })).not.toBeInTheDocument();
+    expect(within(estimateRegion()).queryByRole('link', { name: 'Test terms' })).not.toBeInTheDocument();
     tick(4.5);
     await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '50'));
     expect(within(estimateRegion()).getByText(/^Estimating · 50%/)).toBeInTheDocument();
@@ -472,6 +503,7 @@ describe('estimate', () => {
     expect(within(estimateRegion()).queryByRole('progressbar')).not.toBeInTheDocument();
     expect(within(estimateRegion()).queryByText('You changed the query.')).not.toBeInTheDocument();
     expect(within(estimateRegion()).getByRole('link', { name: 'Preview this query' })).toBeInTheDocument(); // v4 isn't previewed
+    expect(within(estimateRegion()).getByRole('link', { name: 'Test terms' })).toBeInTheDocument();
     expect(await screen.findByText('Query v4')).toBeInTheDocument(); // the header
     expect(within(region('Culling methodology')).getByText('Matter M-2026-0142 · Query v4')).toBeInTheDocument();
   });
@@ -546,6 +578,85 @@ describe('estimate', () => {
       await waitFor(() => expect(sent.calls.filter((c) => c !== 'kql')).toEqual(['save', 'save', 'estimate']));
       expect(sent.saves[1]?.keywords).toEqual(['project falcon', 'invoic*', 'side letter', 'brightline']);
     }
+  });
+
+  test('a save that failed before leaving the screen does not stop an estimate after coming back', async () => {
+    const sent = record();
+    let puts = 0;
+    server.use(
+      http.put('/api/v1/matters/:matterId/draft', () => {
+        puts += 1;
+        if (puts === 2) return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
+      }),
+    );
+    await openScope();
+    await addTerm('brightline'); // saved
+    await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' })); // not saved
+    expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
+    await userEvent.click(tab('Define'));
+    await screen.findByRole('heading', { name: 'Define' });
+    await userEvent.click(tab('Scope'));
+    // Back on the draft as saved (with kickback), which is what an estimate is of.
+    const terms = await screen.findByRole('list', { name: 'Search terms' });
+    expect(within(terms).getByText('kickback')).toBeInTheDocument();
+    await userEvent.click(await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' }));
+    expect(await within(estimateRegion()).findByRole('progressbar')).toBeInTheDocument();
+    await waitFor(() => expect(sent.calls).toContain('estimate'));
+    expect(puts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('an edit made while Estimate waits for a save that then fails does not let the estimate go ahead', async () => {
+    const sent = record();
+    const hold = gate();
+    let puts = 0;
+    server.use(
+      http.put('/api/v1/matters/:matterId/draft', async () => {
+        puts += 1;
+        if (puts !== 2) return;
+        await hold.shut;
+        return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
+      }),
+    );
+    await openScope();
+    await addTerm('brightline');
+    const button = await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' }));
+    await waitFor(() => expect(puts).toBe(2)); // that edit's save is on its way
+    await userEvent.click(button);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove side letter' })); // saved after it
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    hold.open();
+    await waitFor(() => expect(puts).toBe(3)); // the newer edit is saved
+    await waitFor(() => expect(sent.saves.at(-1)?.keywords).toEqual(['project falcon', 'invoic*', 'brightline']));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The save Estimate waited for failed, so nothing was sent to Purview.
+    expect(sent.calls).not.toContain('estimate');
+    expect(within(estimateRegion()).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' })).toBeEnabled();
+  });
+
+  test('after a save failed, Estimate with no new edit saves again, then estimates', async () => {
+    const sent = record();
+    let puts = 0;
+    server.use(
+      http.put('/api/v1/matters/:matterId/draft', () => {
+        puts += 1;
+        sent.calls.push(`put ${puts}`);
+        if (puts === 2) return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
+      }),
+    );
+    await openScope();
+    await addTerm('brightline');
+    await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' }));
+    expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
+    await userEvent.click(within(estimateRegion()).getByRole('button', { name: 'Estimate v4' }));
+    expect(await within(estimateRegion()).findByRole('progressbar')).toBeInTheDocument();
+    expect(sent.calls.filter((c) => c.startsWith('put') || c === 'estimate')).toEqual(['put 1', 'put 2', 'put 3', 'estimate']);
+    expect(sent.saves.at(-1)?.keywords).toEqual(['project falcon', 'invoic*', 'side letter', 'brightline']);
+    expect(screen.queryByText('Saving failed.')).not.toBeInTheDocument();
   });
 
   test('a draft read that answers late, from before a save, does not undo the save', async () => {

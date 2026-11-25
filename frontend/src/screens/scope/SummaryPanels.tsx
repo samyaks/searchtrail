@@ -103,12 +103,15 @@ export function EstimatePanel({ matter, shown, changed, nextVersion, busy, progr
               </div>
             </dl>
           </div>
-          <div className={styles.row8}>
-            <ButtonLink variant="primary" to={`/matters/${encodeURIComponent(matter.id)}/preview`}>
-              {previewed ? 'Open preview' : 'Preview this query'}
-            </ButtonLink>
-            <ButtonLink to={`/matters/${encodeURIComponent(matter.id)}/terms`}>Test terms</ButtonLink>
-          </div>
+          {/* While an estimate runs, the counts on screen are an older version's, so nothing here offers to go on from them. */}
+          {!busy && (
+            <div className={styles.row8}>
+              <ButtonLink variant="primary" to={`/matters/${encodeURIComponent(matter.id)}/preview`}>
+                {previewed ? 'Open preview' : 'Preview this query'}
+              </ButtonLink>
+              <ButtonLink to={`/matters/${encodeURIComponent(matter.id)}/terms`}>Test terms</ButtonLink>
+            </div>
+          )}
         </>
       )}
     </section>

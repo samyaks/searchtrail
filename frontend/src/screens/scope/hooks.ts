@@ -96,24 +96,14 @@ export function useSaveDraft(matterId: string) {
   });
 }
 
-/** Thrown instead of starting an estimate when the save queued before it failed: the draft isn't what's on screen. */
-export class SaveFailedFirst extends Error {
-  constructor() {
-    super('The draft could not be saved, so the estimate was not started.');
-  }
-}
-
-/** Start an estimate of the saved draft. It waits behind any save still on its way, and isn't sent if that save failed. */
+/**
+ * Start an estimate of the saved draft. It shares the draft's mutation scope, so it waits behind any save asked
+ * for before it. (The screen waits for the save of what was on screen first, and doesn't start it if that failed.)
+ */
 export function useStartEstimate(matterId: string) {
-  const client = useQueryClient();
   return useMutation({
     scope: draftScope(matterId),
-    mutationFn: async () => {
-      const saves = client.getMutationCache().findAll({ mutationKey: scopeKeys.saves(matterId) });
-      const lastSave = saves.reduce<(typeof saves)[number] | undefined>((a, b) => (a && a.mutationId > b.mutationId ? a : b), undefined);
-      if (lastSave?.state.status === 'error') throw new SaveFailedFirst();
-      return unwrap(await api.POST('/matters/{matterId}/estimates', { params: { path: { matterId } } }));
-    },
+    mutationFn: async () => unwrap(await api.POST('/matters/{matterId}/estimates', { params: { path: { matterId } } })),
   });
 }
 
