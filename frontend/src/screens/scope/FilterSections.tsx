@@ -355,9 +355,15 @@ export function LabelsSection({ criteria, onChange, problem }: SectionProps) {
 
 export function ExpertSection({ criteria, onChange, problem }: SectionProps) {
   const [text, setText] = useState(criteria.raw_kql ?? '');
-  const [open, setOpen] = useState(Boolean(criteria.raw_kql));
+  const [open, setOpen] = useState(Boolean(criteria.raw_kql || problem));
+  // A problem with the extra query opens the section once, when it appears; after that the person may close it.
+  const [hadProblem, setHadProblem] = useState(Boolean(problem));
+  if (Boolean(problem) !== hadProblem) {
+    setHadProblem(Boolean(problem));
+    if (problem) setOpen(true);
+  }
   return (
-    <details className={styles.expert} open={open || Boolean(problem)} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details className={styles.expert} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className={styles.expertSummary}>Expert KQL</summary>
       <div className={styles.expertBody}>
         <label htmlFor="raw-kql" className={styles.fieldLabel}>

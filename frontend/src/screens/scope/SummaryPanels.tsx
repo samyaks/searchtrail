@@ -152,17 +152,19 @@ type KqlProps = {
 };
 
 export function KqlPanel({ preview, problem, problemAt, error, onRetry }: KqlProps) {
-  const [copied, setCopied] = useState<string | null>(null);
+  // What Copy said, and for which query: once the query changes, the button offers to copy again.
+  const [copiedNote, setCopiedNote] = useState<{ kql: string; note: string } | null>(null);
   const kql = preview?.kql ?? null;
+  const copied = copiedNote && copiedNote.kql === kql ? copiedNote.note : null;
   const copy = () => {
     if (kql === null) return;
     try {
       navigator.clipboard.writeText(kql).then(
-        () => setCopied('Copied'),
-        () => setCopied('Select the text to copy'),
+        () => setCopiedNote({ kql, note: 'Copied' }),
+        () => setCopiedNote({ kql, note: 'Select the text to copy' }),
       );
     } catch {
-      setCopied('Select the text to copy');
+      setCopiedNote({ kql, note: 'Select the text to copy' });
     }
   };
   return (

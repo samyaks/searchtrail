@@ -22,7 +22,7 @@ import {
 import { timing } from '@/screens/scope/hooks';
 import { expectNoA11yViolations } from '../a11y';
 import { requestProblems } from '../contract';
-import { FALCON, post, tick } from '../mocks/api';
+import { FALCON, post, put, tick } from '../mocks/api';
 import { renderApp } from '../renderApp';
 
 type Criteria = Schemas['Criteria'];
@@ -71,6 +71,16 @@ async function openScope() {
 
 const region = (name: string) => screen.getByRole('region', { name });
 const estimateRegion = () => region('Estimate');
+
+/** A promise to hold a mock answer back until the test lets it go. */
+function gate() {
+  let open = () => {};
+  const shut = new Promise<void>((resolve) => (open = resolve));
+  return { shut, open: () => open() };
+}
+
+const tab = (name: string) => within(screen.getByRole('navigation', { name: 'Matter sections' })).getByRole('link', { name });
+const STALE_DRAFT = example<Schemas['Draft']>('getDraft', '200');
 
 async function addTerm(term: string) {
   await userEvent.type(screen.getByLabelText('Add a term or phrase'), term);
@@ -144,7 +154,7 @@ describe('loading', () => {
     server.use(http.get('/api/v1/matters/:matterId/draft', () => HttpResponse.json({ code: 'internal_error', message: 'The database is busy.', details: {} }, { status: 500 })));
     renderApp(PATH);
     const alert = await screen.findByRole('alert');
-    expect(within(alert).getByRole('heading', { name: 'Something went wrong on our side' })).toBeInTheDocument();
+    expect(within(alert).getByRole('heading', { level: 3, name: 'Something went wrong on our side' })).toBeInTheDocument();
     expect(within(alert).getByText('The database is busy.')).toBeInTheDocument();
     expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
@@ -299,6 +309,10 @@ describe('editing', () => {
     await user.click(screen.getByRole('button', { name: 'Copy KQL' }));
     expect(await navigator.clipboard.readText()).toBe(FALCON_KQL);
     expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    // A new query can be copied again.
+    await addTerm('brightline');
+    expect(await screen.findByText(/OR brightline\) AND/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy KQL' })).toBeInTheDocument();
   });
 
   test('a draft that could not be saved says so, and saves on Try again', async () => {
@@ -314,7 +328,64 @@ describe('editing', () => {
     expect(alert.closest('[role="alert"]')).toHaveTextContent('Something went wrong on our side');
     fail = false;
     await userEvent.click(within(alert.closest('[role="alert"]') as HTMLElement).getByRole('button', { name: 'Try again' }));
-    expect(await screen.findByText(/^Changes are saved as you go\. Draft saved /)).toBeInTheDocument();
+    const hint = await screen.findByText(/^Changes are saved as you go\. Draft saved /);
+    // Saving as you go is not announced; saving again after a failure is.
+    expect(hint.closest('[role="status"]')).toBeNull();
+    expect(screen.getByText('The draft is saved.').closest('[role="status"]')).not.toBeNull();
+  });
+
+  test('ordinary saves are not announced', async () => {
+    const sent = record();
+    await openScope();
+    await addTerm('brightline');
+    await waitFor(() => expect(sent.saves).toHaveLength(1));
+    const hint = await screen.findByText(/^Changes are saved as you go\. Draft saved /);
+    expect(hint.closest('[role="status"]')).toBeNull();
+    expect(screen.queryByText('The draft is saved.')).not.toBeInTheDocument();
+  });
+
+  test('coming back after the draft changed elsewhere starts from the draft as it is now, not an old copy', async () => {
+    await openScope();
+    await userEvent.click(tab('Define'));
+    await screen.findByRole('heading', { name: 'Define' });
+    // Another tab saves the draft meanwhile.
+    const saved = (await put(`/matters/${FALCON}/draft`, { criteria: { ...STALE_DRAFT.criteria, keywords: ['elsewhere'] } })).json as Schemas['Draft'];
+    expect(saved.criteria.keywords).toEqual(['elsewhere']);
+    const hold = gate();
+    server.use(
+      http.get('/api/v1/matters/:matterId/draft', async () => {
+        await hold.shut;
+      }),
+    );
+    await userEvent.click(tab('Scope'));
+    expect(await screen.findByText('Loading the search…')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a term or phrase')).not.toBeInTheDocument();
+    hold.open();
+    const terms = await screen.findByRole('list', { name: 'Search terms' });
+    expect(within(terms).getAllByRole('listitem').map((t) => t.textContent)).toEqual(['elsewhere']);
+  });
+
+  test('an edit made just before leaving the screen is still saved, and coming back shows it', async () => {
+    timing.debounceMs = 300;
+    const sent = record();
+    const hold = gate();
+    server.use(
+      http.put('/api/v1/matters/:matterId/draft', async () => {
+        await hold.shut; // then the recorder and the mock answer
+      }),
+    );
+    await openScope();
+    await addTerm('brightline');
+    await userEvent.click(tab('Define')); // well within the 300 ms the screen waits before saving
+    await screen.findByRole('heading', { name: 'Define' });
+    // Back while the save is still on its way: the screen waits for it instead of showing the draft from before.
+    await userEvent.click(tab('Scope'));
+    expect(await screen.findByText('Loading the search…')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a term or phrase')).not.toBeInTheDocument();
+    hold.open();
+    await waitFor(() => expect(sent.saves).toHaveLength(1));
+    expect(sent.saves[0]?.keywords).toEqual(['project falcon', 'invoic*', 'kickback', 'side letter', 'brightline']);
+    expect(await within(await screen.findByRole('list', { name: 'Search terms' })).findByText('brightline')).toBeInTheDocument();
   });
 });
 
@@ -355,6 +426,9 @@ describe('criteria_invalid', () => {
     expect(expert).toHaveAttribute('open');
     expect(screen.getByLabelText('Extra query, added with AND')).toHaveAttribute('aria-invalid', 'true');
     expect(within(region('Purview query (KQL)')).getByText(/See the message under Expert KQL\./)).toBeInTheDocument();
+    // The person can still close it.
+    await userEvent.click(screen.getByText('Expert KQL'));
+    expect(expert).not.toHaveAttribute('open');
   });
 
   test('an estimate refused as criteria_invalid sends nothing to Purview and points at the field', async () => {
@@ -375,17 +449,21 @@ describe('criteria_invalid', () => {
 });
 
 describe('estimate', () => {
-  test('Estimate saves the draft first, then runs the estimate, shows its progress and the new counts', async () => {
+  test('Estimate runs the estimate, shows its progress with the last counts dimmed, then the new counts', async () => {
     const sent = record();
     await openScope();
     await addTerm('brightline');
     await userEvent.click(await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' }));
-    expect(sent.calls.filter((c) => c !== 'kql')).toEqual(['save', 'estimate']);
+    await waitFor(() => expect(sent.calls.filter((c) => c !== 'kql')).toEqual(['save', 'estimate']));
 
     const bar = await within(estimateRegion()).findByRole('progressbar', { name: 'Estimate progress' });
     expect(bar).toHaveAttribute('aria-valuenow', '0');
     expect(within(estimateRegion()).getByText(/Purview is counting the items/)).toBeInTheDocument();
     expect(within(estimateRegion()).queryByText('You changed the query.')).not.toBeInTheDocument();
+    // v4 has no counts until it is estimated: v3's stay on screen, dimmed, once the header has moved on to v4.
+    expect(await screen.findByText('Query v4')).toBeInTheDocument();
+    expect(within(estimateRegion()).getByText('630').closest('[data-stale]')).not.toBeNull();
+    expect(within(estimateRegion()).getByText(/^Estimated .* · v3$/)).toBeInTheDocument();
     tick(4.5);
     await waitFor(() => expect(bar).toHaveAttribute('aria-valuenow', '50'));
     expect(within(estimateRegion()).getByText(/^Estimating · 50%/)).toBeInTheDocument();
@@ -396,6 +474,111 @@ describe('estimate', () => {
     expect(within(estimateRegion()).getByRole('link', { name: 'Preview this query' })).toBeInTheDocument(); // v4 isn't previewed
     expect(await screen.findByText('Query v4')).toBeInTheDocument(); // the header
     expect(within(region('Culling methodology')).getByText('Matter M-2026-0142 · Query v4')).toBeInTheDocument();
+  });
+
+  test('Estimate saves an edit not saved yet first, and the estimate is of that edit', async () => {
+    const sent = record();
+    await openScope();
+    await addTerm('brightline');
+    const button = await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' }); // the first edit is saved
+    timing.debounceMs = 60_000; // the next edit isn't saved by itself in time
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' }));
+    await userEvent.click(button);
+    await waitFor(() => expect(sent.calls.filter((c) => c !== 'kql')).toEqual(['save', 'save', 'estimate']));
+    expect(sent.saves[1]?.keywords).toEqual(['project falcon', 'invoic*', 'side letter', 'brightline']);
+    expect(await within(estimateRegion()).findByRole('progressbar')).toBeInTheDocument();
+  });
+
+  test('when that save fails, no estimate is started and the save\'s notice is the only one', async () => {
+    const sent = record();
+    let puts = 0;
+    server.use(
+      http.put('/api/v1/matters/:matterId/draft', () => {
+        puts += 1;
+        if (puts > 1) return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
+      }),
+    );
+    await openScope();
+    await addTerm('brightline');
+    const button = await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    timing.debounceMs = 60_000;
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' }));
+    await userEvent.click(button);
+    expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(puts).toBe(2);
+    expect(sent.calls).not.toContain('estimate');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(within(estimateRegion()).getByRole('button', { name: 'Estimate v4' })).toBeEnabled();
+  });
+
+  test.each([
+    ['lands', false],
+    ['fails', true],
+  ])('Estimate waits for a save still on its way, and starts only if it %s well', async (_, fails) => {
+    const sent = record();
+    let hold: ReturnType<typeof gate> | null = null;
+    let held = false;
+    server.use(
+      http.put('/api/v1/matters/:matterId/draft', async () => {
+        if (!hold) return;
+        held = true;
+        await hold.shut;
+        if (fails) return HttpResponse.json({ code: 'internal_error', message: 'Saving failed.', details: {} }, { status: 500 });
+      }),
+    );
+    await openScope();
+    await addTerm('brightline');
+    const button = await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    hold = gate();
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' }));
+    await waitFor(() => expect(held).toBe(true)); // that edit's save has been sent and not answered
+    await userEvent.click(button);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sent.calls).not.toContain('estimate');
+    hold.open();
+    if (fails) {
+      expect(await screen.findByText('Saving failed.')).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(sent.calls).not.toContain('estimate');
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+    } else {
+      await waitFor(() => expect(sent.calls.filter((c) => c !== 'kql')).toEqual(['save', 'save', 'estimate']));
+      expect(sent.saves[1]?.keywords).toEqual(['project falcon', 'invoic*', 'side letter', 'brightline']);
+    }
+  });
+
+  test('a draft read that answers late, from before a save, does not undo the save', async () => {
+    const sent = record();
+    const hold = gate();
+    let staleAsked = false;
+    let staleAnswered = false;
+    let armed = false;
+    server.use(
+      http.get('/api/v1/matters/:matterId/draft', async () => {
+        if (!armed) return;
+        armed = false;
+        staleAsked = true;
+        await hold.shut;
+        staleAnswered = true;
+        return HttpResponse.json(STALE_DRAFT); // the draft as it was before any edit
+      }),
+    );
+    await openScope();
+    await addTerm('brightline');
+    const button = await within(estimateRegion()).findByRole('button', { name: 'Estimate v4' });
+    armed = true; // the draft is read again once the estimate has started
+    await userEvent.click(button);
+    await waitFor(() => expect(staleAsked).toBe(true));
+    await within(estimateRegion()).findByRole('progressbar');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove kickback' })); // saved while that read is on its way
+    await waitFor(() => expect(sent.saves).toHaveLength(2));
+    expect(await screen.findByText(/^Changes are saved as you go\. Draft saved /)).toBeInTheDocument(); // that save has landed
+    expect(await within(region('Culling methodology')).findByText('Matter M-2026-0142 · Query v5 (draft)')).toBeInTheDocument();
+    hold.open();
+    await waitFor(() => expect(staleAnswered).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(within(region('Culling methodology')).getByText('Matter M-2026-0142 · Query v5 (draft)')).toBeInTheDocument();
   });
 
   test('a slow estimate keeps showing its progress, and reopening the screen while it runs picks it up', async () => {
