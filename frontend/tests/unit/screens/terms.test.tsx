@@ -8,7 +8,7 @@ import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
 import { barPercent, changeHeader, changeText, sizeText, whenText } from '@/screens/terms/format';
 import { expectNoA11yViolations } from '../a11y';
-import { FALCON, post, tick } from '../mocks/api';
+import { FALCON, get, post, tick } from '../mocks/api';
 import { renderApp } from '../renderApp';
 
 // Poll jobs every 20 ms instead of every few seconds; the jobs themselves follow the mock clock, which tick() moves
@@ -25,7 +25,24 @@ vi.mock('@/api/jobs', async (importOriginal) => {
 const PATH = `/matters/${FALCON}/terms`;
 const reportTable = () => screen.findByRole('table', { name: /^Search term report/ });
 const bodyRows = (table: HTMLElement) => within(table.querySelector('tbody')!).getAllByRole('row');
-const recount = () => screen.getByRole('button', { name: 'Recount' });
+// The toolbar's Recount (a stale report's banner has one too, further down).
+const recount = () => screen.getAllByRole('button', { name: 'Recount' })[0]!;
+
+/** A promise a test opens when it chooses, to hold a request back. */
+function gate() {
+  let open!: () => void;
+  const wait = new Promise<void>((resolve) => (open = resolve));
+  return { wait, open };
+}
+
+/** Run one count to the end on the Falcon matter, from the screen. */
+async function countOnce() {
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  await waitFor(() => expect(recount()).toBeEnabled());
+}
 
 test('the latest term report shows hits per term, with bars, the change since the last version and sizes', async () => {
   renderApp(PATH);
@@ -68,6 +85,9 @@ test('Recount starts a term report, shows its progress, and then shows the new r
   const bar = await screen.findByRole('progressbar', { name: 'Counting hits per term' });
   expect(screen.getByText('Starting the count…')).toBeInTheDocument();
   expect(recount()).toBeDisabled();
+  // Only the title line is a live region, so the long note isn't read out again with every percent.
+  expect(screen.getByRole('status')).toHaveTextContent('Starting the count…');
+  expect(screen.getByRole('status')).not.toHaveTextContent('You can leave this screen');
   await expectNoA11yViolations(document.body);
 
   tick(4.5); // half of the 9 seconds a mock job takes
@@ -80,6 +100,68 @@ test('Recount starts a term report, shows its progress, and then shows the new r
   await waitFor(() => expect(screen.getByText(new RegExp(`^Counted ${whenText('2026-11-05T12:00:14Z')} for query v3\\.`))).toBeInTheDocument());
   expect(recount()).toBeEnabled();
   expect(bodyRows(await reportTable())).toHaveLength(4);
+});
+
+test('while a new count is being started after one finished, the progress starts from nothing, not the last 100%', async () => {
+  renderApp(PATH);
+  await reportTable();
+  await countOnce();
+
+  const held = gate();
+  server.use(
+    http.post('/api/v1/matters/:matterId/term-reports', async () => {
+      await held.wait;
+      return undefined; // then on to the mock
+    }),
+  );
+  await userEvent.click(recount());
+  const bar = await screen.findByRole('progressbar', { name: 'Counting hits per term' });
+  expect(bar).toHaveAttribute('aria-valuenow', '0');
+  expect(screen.getByRole('status')).toHaveTextContent('Starting the count…0%');
+  expect(screen.queryByText('Counting hits per term…')).not.toBeInTheDocument();
+
+  held.open();
+  await waitFor(async () => expect((await get(`/matters/${FALCON}/jobs`, { active: true, kind: 'term_report' })).json.items).toHaveLength(1));
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+});
+
+test('when a count finishes, its report shows at once, without waiting for the report to be fetched again', async () => {
+  renderApp(PATH);
+  await reportTable();
+  const held = gate();
+  server.use(
+    http.get('/api/v1/matters/:matterId/term-reports/latest', async () => {
+      await held.wait;
+      return undefined;
+    }),
+  );
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  // The same render that drops the progress shows the new report, though the refetch is still held.
+  expect(screen.getByText(new RegExp(`^Counted ${whenText('2026-11-05T12:00:14Z')} for query v3\\.`))).toBeInTheDocument();
+  held.open();
+  await waitFor(() => expect(recount()).toBeEnabled());
+});
+
+test('the first count of a matter shows its report at once, with no flash of the empty state', async () => {
+  renderApp('/matters/mat_travel/terms');
+  await userEvent.click(await screen.findByRole('button', { name: 'Count hits per term' }));
+  const held = gate();
+  server.use(
+    http.get('/api/v1/matters/:matterId/term-reports/latest', async () => {
+      await held.wait;
+      return undefined;
+    }),
+  );
+  await screen.findByRole('progressbar');
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  expect(screen.queryByText('No term report yet')).not.toBeInTheDocument();
+  expect(screen.getByRole('table', { name: /^Search term report/ })).toBeInTheDocument();
+  held.open();
 });
 
 test('opening the screen while a term report runs picks up its progress instead of offering to start another', async () => {
@@ -109,6 +191,19 @@ test('a term report started elsewhere while the screen is open is followed when 
   await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
 });
 
+test('a running count that Recount was handed (409) and that then fails still says it failed', async () => {
+  setScenario({ failJobs: ['term_report'] });
+  renderApp(PATH);
+  await reportTable();
+  await post(`/matters/${FALCON}/term-reports`); // another tab starts one, which will fail
+  await userEvent.click(recount()); // the API answers 409 with that job's id
+  await screen.findByRole('progressbar');
+  tick(10);
+
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { level: 3, name: "Purview couldn't finish that" })).toBeInTheDocument();
+});
+
 test('a term report that fails says why, keeps the last report, and can be tried again', async () => {
   setScenario({ failJobs: ['term_report'] });
   renderApp(PATH);
@@ -131,6 +226,48 @@ test('a term report that fails says why, keeps the last report, and can be tried
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
+test('after a failed count, a Recount the API refuses shows only why it was refused', async () => {
+  setScenario({ failJobs: ['term_report'] });
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  tick(10);
+  await screen.findByRole('heading', { level: 3, name: "Purview couldn't finish that" });
+
+  setScenario({ failJobs: [] });
+  findMatter(FALCON)!.draft.criteria.keywords = [];
+  await userEvent.click(recount());
+  await screen.findByRole('heading', { name: "These search settings can't be turned into a query" });
+  expect(screen.getAllByRole('alert')).toHaveLength(1);
+  expect(screen.queryByRole('heading', { name: "Purview couldn't finish that" })).not.toBeInTheDocument();
+});
+
+test('a count that fails without saying why still says it failed', async () => {
+  server.use(
+    http.get('/api/v1/jobs/:jobId', ({ params }) =>
+      HttpResponse.json({
+        id: params.jobId,
+        kind: 'term_report',
+        status: 'failed',
+        progress: 0.4,
+        matter_id: FALCON,
+        created_at: '2026-11-05T12:00:00Z',
+        updated_at: '2026-11-05T12:00:04Z',
+        result: null,
+        error: null,
+      }),
+    ),
+  );
+  renderApp(PATH);
+  await reportTable();
+  await userEvent.click(recount());
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { level: 3, name: "Purview couldn't finish that" })).toBeInTheDocument();
+  expect(alert).toHaveTextContent('Try again. If it keeps failing, check the case in the Purview portal.');
+  expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+});
+
 test('when the query changed since the report, the screen says the counts are out of date', async () => {
   findMatter(FALCON)!.draft.criteria.keywords.push('bribe');
   renderApp(PATH);
@@ -140,6 +277,11 @@ test('when the query changed since the report, the screen says the counts are ou
   expect(notice).toHaveTextContent('These hits are for query v3.');
   expect(table).toHaveAttribute('data-stale', 'true');
   await expectNoA11yViolations(document.body);
+
+  // The banner says to choose Recount, and has the button.
+  await userEvent.click(within(notice).getByRole('button', { name: 'Recount' }));
+  expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+  expect(screen.queryByText('The query has changed since this count.')).not.toBeInTheDocument();
 });
 
 test('a term report the API refuses to start says why in plain English', async () => {
@@ -197,11 +339,13 @@ describe('how the screen writes things', () => {
   const row = (items: number, previous_items: number | null, previous_version: number | null = 2) => ({ term: 'x', items, size_bytes: 0, previous_items, previous_version });
 
   test('the change since the previous version', () => {
-    expect(changeText(row(105, 188), 3)).toBe('−83 from 188');
-    expect(changeText(row(1_200, 900), 3)).toBe('+300 from 900');
-    expect(changeText(row(40, 40), 3)).toBe('No change from 40');
-    expect(changeText(row(316, null), 3)).toBe('New in v3');
-    expect(changeText(row(10, null, null), 1)).toBe('No earlier count');
+    expect(changeText(row(105, 188), 3, 2)).toBe('−83 from 188');
+    expect(changeText(row(1_200, 900), 3, 2)).toBe('+300 from 900');
+    expect(changeText(row(40, 40), 3, 2)).toBe('No change from 40');
+    expect(changeText(row(316, null), 3, 2)).toBe('New in v3');
+    // A new term is new whenever the report had an earlier count, whatever its own row says.
+    expect(changeText(row(316, null, null), 3, 2)).toBe('New in v3');
+    expect(changeText(row(10, null, null), 1, null)).toBe('No earlier count');
     expect(changeHeader([row(1, null), row(2, 5, 2)])).toBe('Since v2');
     expect(changeHeader([row(1, null, null)])).toBe('Since last count');
   });

@@ -27,9 +27,12 @@ export function changeHeader(rows: readonly TermRow[]): string {
   return previous === null ? 'Since last count' : `Since v${previous}`;
 }
 
-/** "−83 from 188", "+12 from 40", "No change from 188", "New in v3", or "No earlier count". */
-export function changeText(row: TermRow, version: number): string {
-  if (row.previous_items === null) return row.previous_version === null ? 'No earlier count' : `New in v${version}`;
+/**
+ * "−83 from 188", "+12 from 40", "No change from 188", "New in v3", or "No earlier count". `previousVersion` is the
+ * report's (previousVersionOf its rows), so a new term reads "New in v3" whenever there was an earlier count.
+ */
+export function changeText(row: TermRow, version: number, previousVersion: number | null): string {
+  if (row.previous_items === null) return previousVersion === null ? 'No earlier count' : `New in v${version}`;
   const diff = row.items - row.previous_items;
   if (diff === 0) return `No change from ${n(row.previous_items)}`;
   return `${diff < 0 ? '−' : '+'}${n(Math.abs(diff))} from ${n(row.previous_items)}`;

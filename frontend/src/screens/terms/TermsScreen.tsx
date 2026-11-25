@@ -2,14 +2,19 @@
 // A term report is a job: starting one shows its progress, and opening the screen while one runs picks it up.
 // Out of scope for V1 (docs/V1_PLAN.md): the unique-hits and "if removed" columns, "Try without" and its
 // "What if" panel, and the Excel export.
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router';
-import { ApiRequestError } from '@/api/client';
+import { ApiRequestError, type ApiError } from '@/api/client';
 import { useTrackedJob } from '@/api/jobs';
 import { useMatter } from '@/api/queries';
 import { Banner, Button, ButtonLink, EmptyState, ErrorNotice } from '@/components';
-import { barPercent, changeHeader, changeText, countText, sizeText, whenText } from './format';
-import { runningJobOf, useLatestTermReport, useStartTermReport, type TermReport } from './hooks';
+import { barPercent, changeHeader, changeText, countText, previousVersionOf, sizeText, whenText } from './format';
+import { runningJobOf, termReportKey, useLatestTermReport, useStartTermReport, type TermReport } from './hooks';
 import styles from './TermsScreen.module.css';
+
+/** What a failed count says when the job didn't say why. */
+const JOB_FAILED: ApiError = { code: 'purview_operation_failed', message: '', details: {} };
 
 export function TermsScreen() {
   const { matterId = '' } = useParams();
@@ -18,11 +23,27 @@ export function TermsScreen() {
   const job = useTrackedJob(matterId, 'term_report');
   const start = useStartTermReport(matterId, job.track);
 
+  const queryClient = useQueryClient();
+
   const counting = job.isRunning || start.isPending;
   const startCount = () => start.mutate();
   // A 409 that names the running job isn't a problem: the screen follows that job instead.
   const startError = start.isError && !runningJobOf(start.error) ? start.error : null;
-  const shown = report.data ?? null;
+  // The last job's failure, unless something newer replaced it: a count under way, or a start that was refused.
+  // (A 409 that handed over the running job isn't a refusal: if that job fails, say so.)
+  const jobFailure = job.isFailed && !counting && !startError ? (job.failure ?? JOB_FAILED) : null;
+
+  // A finished count carries its report, so show it at once instead of the old one until the refetch lands.
+  const fresh = job.isSucceeded ? job.result : null;
+  const shown = fresh && (!report.data || fresh.created_at > report.data.created_at) ? fresh : (report.data ?? null);
+  const seeded = useRef<string | null>(null);
+  useEffect(() => {
+    if (fresh && seeded.current !== fresh.id) {
+      seeded.current = fresh.id;
+      const cached = queryClient.getQueryData<TermReport | null>(termReportKey(matterId));
+      if (!cached || fresh.created_at > cached.created_at) queryClient.setQueryData(termReportKey(matterId), fresh);
+    }
+  }, [fresh, matterId, queryClient]);
 
   return (
     <section aria-labelledby="terms-title" className={styles.screen}>
@@ -44,16 +65,24 @@ export function TermsScreen() {
         </div>
       )}
 
-      {counting && <Progress progress={job.progress} queued={!job.job || job.job.status === 'queued'} />}
-
-      {job.isFailed && job.failure && !counting && (
-        <ErrorNotice error={new ApiRequestError(502, job.failure)} matterId={matterId} onRetry={startCount} headingLevel={3} />
+      {/* While a new start is on its way the tracked job may still be the last, finished one: don't show its 100%. */}
+      {counting && (
+        <Progress progress={job.isRunning ? job.progress : 0} queued={!job.isRunning || !job.job || job.job.status === 'queued'} />
       )}
+
+      {jobFailure && <ErrorNotice error={new ApiRequestError(502, jobFailure)} matterId={matterId} onRetry={startCount} headingLevel={3} />}
 
       {startError && <ErrorNotice error={startError} matterId={matterId} onRetry={startCount} headingLevel={3} />}
 
       {shown?.stale && !counting && (
-        <Banner title="The query has changed since this count.">
+        <Banner
+          title="The query has changed since this count."
+          actions={
+            <Button variant="neutral" onClick={startCount}>
+              Recount
+            </Button>
+          }
+        >
           These hits are for query v{shown.version}. The search terms or filters are different now, so choose Recount to count them again.
         </Banner>
       )}
@@ -68,9 +97,10 @@ export function TermsScreen() {
 
       {shown && <ReportTable report={shown} />}
 
-      {report.data === null && !counting && (
+      {/* Which empty state depends on the matter (is there a query yet?), so wait for it. */}
+      {!shown && report.data === null && !counting && matter.data && (
         <div className={styles.emptyPanel}>
-          {matter.data && matter.data.current_version === null ? (
+          {matter.data.current_version === null ? (
             <EmptyState
               title="No term report yet"
               action={
@@ -104,8 +134,8 @@ export function TermsScreen() {
 function Progress({ progress, queued }: { progress: number; queued: boolean }) {
   const percent = Math.round(progress * 100);
   return (
-    <div className={styles.progress} role="status">
-      <p className={styles.progressTitle}>
+    <div className={styles.progress}>
+      <p className={styles.progressTitle} role="status">
         <strong>{queued ? 'Starting the count…' : 'Counting hits per term…'}</strong>
         <span className={styles.percent}>{percent}%</span>
       </p>
@@ -129,6 +159,7 @@ function Progress({ progress, queued }: { progress: number; queued: boolean }) {
 
 function ReportTable({ report }: { report: TermReport }) {
   const combined = report.combined.items;
+  const previousVersion = previousVersionOf(report.rows);
   return (
     <section aria-labelledby="report-title" className={styles.report}>
       <div className={styles.reportHeader}>
@@ -162,15 +193,15 @@ function ReportTable({ report }: { report: TermReport }) {
                 </td>
               </tr>
             )}
-            {report.rows.map((row) => (
-              <tr key={row.term}>
+            {report.rows.map((row, index) => (
+              <tr key={`${index}:${row.term}`}>
                 <th scope="row" className={styles.term}>
                   {row.term}
                 </th>
                 <td>
                   <HitsBar items={row.items} percent={barPercent(row.items, combined)} />
                 </td>
-                <td className={`${styles.numeric} ${styles.muted}`}>{changeText(row, report.version)}</td>
+                <td className={`${styles.numeric} ${styles.muted}`}>{changeText(row, report.version, previousVersion)}</td>
                 <td className={`${styles.numeric} ${styles.muted}`}>{sizeText(row.size_bytes)}</td>
               </tr>
             ))}
