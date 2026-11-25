@@ -72,7 +72,7 @@ test('nothing is asked while there is no job yet', async () => {
   expect(result.current.job).toBeUndefined();
 });
 
-test("when a job ends, what it may have changed is refreshed once: the matter, the Matters list, previews, exports", async () => {
+test("when a job ends, what it may have changed is refreshed once: the matter, the Matters list, the latest preview, exports", async () => {
   const { client, wrapper } = setup();
   const invalidated = vi.spyOn(client, 'invalidateQueries');
   const job = await startPreview();
@@ -82,7 +82,7 @@ test("when a job ends, what it may have changed is refreshed once: the matter, t
 
   tick(10);
   await waitFor(() => expect(result.current.isSucceeded).toBe(true));
-  expect(invalidated.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([['matters'], ['previews'], ['exports']]);
+  expect(invalidated.mock.calls.map(([filters]) => filters?.queryKey)).toEqual([['matters'], ['previews', 'latest'], ['exports']]);
 
   // The finished job is asked about again, and its data has changed (a later timestamp): still only once.
   const finished = result.current.job!;

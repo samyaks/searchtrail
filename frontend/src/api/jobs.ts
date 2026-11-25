@@ -40,10 +40,14 @@ export function pollDelay(pollCount: number): number {
   return 10_000;
 }
 
-/** What a finished job may have changed: counts and stage on the matter and the Matters list, the log, previews, exports. */
+/**
+ * What a finished job may have changed: counts and stage on the matter and the Matters list, the log, the latest
+ * preview, exports. A preview's items never change once it is made, so they aren't asked for again: a new preview
+ * has a new id, and the item table of the one it replaced would only get a 404.
+ */
 export function invalidateAfterJob(client: QueryClient) {
   void client.invalidateQueries({ queryKey: ['matters'] });
-  void client.invalidateQueries({ queryKey: ['previews'] });
+  void client.invalidateQueries({ queryKey: ['previews', 'latest'] });
   void client.invalidateQueries({ queryKey: ['exports'] });
 }
 

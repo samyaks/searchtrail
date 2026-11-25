@@ -7,7 +7,7 @@ import { ApiRequestError, type Schemas } from '@/api/client';
 import { hasCode } from '@/api/errors';
 import { useMatter } from '@/api/queries';
 import { Banner, BarBreakdown, Button, ButtonLink, CountTile, EmptyState, ErrorNotice, MonthChart, TileGrid } from '@/components';
-import { barKey, madeWhen, monthSpan, sizeText, type BarFilter, type Dimension } from './format';
+import { barKey, madeWhen, monthSpan, pointToButton, sizeText, type BarFilter, type Dimension } from './format';
 import { useDownloadCsv, useLatestPreview, usePreviewJob } from './hooks';
 import { ItemTable } from './ItemTable';
 import { JobProgress } from './JobProgress';
@@ -23,6 +23,14 @@ export function PreviewScreen() {
   const job = usePreviewJob(matterId);
   const version = matter.data?.current_version ?? null;
   const busy = job.isRunning || job.isStarting;
+  // One button to start a preview at a time. The preview shown, or the "nothing previewed yet" card, always has one,
+  // named for what it does ("Preview query v4"): a failure notice offers its own "Try again" only when they don't.
+  const pageStarts = Boolean(matter.data) && (Boolean(latest.data) || (latest.data === null && version !== null && !job.isRunning));
+  const retry = pageStarts ? undefined : job.start;
+  // A failure's message ends "…then try again"; when the button for that is the page's own, it says that button's name.
+  const failure = job.failure ?? { code: 'purview_operation_failed' as const, message: '', details: {} };
+  const label = pageStarts && matter.data ? pageStartLabel(matter.data, latest.data ?? null) : null;
+  const failed = new ApiRequestError(502, label ? { ...failure, message: pointToButton(failure.message, label) } : failure);
 
   return (
     <div className={styles.screen}>
@@ -30,17 +38,17 @@ export function PreviewScreen() {
 
       {job.isRunning && <JobProgress progress={job.progress} version={version} />}
       {job.isFailed && (
-        <ErrorNotice
-          error={new ApiRequestError(502, job.failure ?? { code: 'purview_operation_failed', message: '', details: {} })}
-          matterId={matterId}
-          onRetry={job.start}
-        />
+        <ErrorNotice error={failed} matterId={matterId} onRetry={retry} />
       )}
-      {job.startError !== null && <ErrorNotice error={job.startError} matterId={matterId} onRetry={job.start} />}
+      {job.startError !== null && <ErrorNotice error={job.startError} matterId={matterId} onRetry={retry} />}
       {/* Asking about the job was refused (the session ended, the job is gone): say so rather than go quiet. A job that
           already ended has said what it had to: a later failed refetch of it isn't news. */}
       {job.queryError !== null && !job.isRunning && !job.isSucceeded && !job.isFailed && (
-        <JobQueryError error={job.queryError} matterId={matterId} onRetry={() => void job.refetch()} onStart={job.start} busy={busy} />
+        <JobQueryError error={job.queryError} matterId={matterId} onRetry={() => void job.refetch()}
+          // Not while the page is still loading: it may well offer its own button in a moment.
+          onStart={latest.isPending || matter.isPending ? undefined : retry}
+          busy={busy}
+        />
       )}
 
       {(latest.isPending || (latest.isSuccess && matter.isPending)) && <p className={styles.muted}>Loading the preview…</p>}
@@ -55,11 +63,19 @@ export function PreviewScreen() {
   );
 }
 
+/** The name of the button the page itself offers to start a preview (in the banner, the toolbar or the empty card). */
+function pageStartLabel(matter: Matter, preview: Preview | null): string {
+  const current = matter.current_version;
+  if (!preview || (current !== null && current !== preview.version)) return `Preview query v${current ?? ''}`;
+  return preview.stale && !matter.draft_changed ? 'Preview again' : 'Refresh preview';
+}
+
 /**
  * Why the screen can't follow the job. A job that can't be found (it ended and was cleared away, say) gets its own
- * words: the shared "not found" notice sends the person back to Matters, away from a screen that still works.
+ * words: the shared "not found" notice sends the person back to Matters, away from a screen that still works. It
+ * offers to preview again only when the page doesn't already (one button to start a preview at a time).
  */
-function JobQueryError({ error, matterId, onRetry, onStart, busy }: { error: unknown; matterId: string; onRetry: () => void; onStart: () => void; busy: boolean }) {
+function JobQueryError({ error, matterId, onRetry, onStart, busy }: { error: unknown; matterId: string; onRetry: () => void; onStart?: () => void; busy: boolean }) {
   if (!hasCode(error, 'not_found')) return <ErrorNotice error={error} matterId={matterId} onRetry={onRetry} />;
   const message = error instanceof ApiRequestError ? error.body.message?.trim() : '';
   return (
@@ -67,9 +83,11 @@ function JobQueryError({ error, matterId, onRetry, onStart, busy }: { error: unk
       role="alert"
       title="We can't find the preview job."
       actions={
-        <Button size="sm" variant="highlight" onClick={onStart} disabled={busy}>
-          Preview again
-        </Button>
+        onStart && (
+          <Button size="sm" variant="highlight" onClick={onStart} disabled={busy}>
+            Preview again
+          </Button>
+        )
       }
     >
       {message || 'It may have ended and been cleared away.'}

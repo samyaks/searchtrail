@@ -193,7 +193,7 @@ describe('previews', () => {
   });
 
   test('a preview of a re-estimated matter breaks down the new counts exactly', async () => {
-    const criteria = { ...(await draft()).criteria, keywords: ['alpha'] };
+    const criteria = { ...(await draft()).criteria, keywords: ['payment'] };
     await put(`${M}/draft`, { criteria });
     await runJob((await post(`${M}/estimates`)).json.id);
     await runJob((await post(`${M}/previews`)).json.id);
@@ -547,6 +547,45 @@ describe('counts that behave like a real search', () => {
     // Back to v3's own terms: the same 630 as the contract's example, every time.
     expect(await estimate(FALCON_TERMS)).toBe(630);
     expect(await estimate([...FALCON_TERMS, 'brightline'])).toBe(more);
+  });
+
+  test('a term the seeded items do not contain finds nothing, so adding it changes nothing', async () => {
+    expect(await estimate([...FALCON_TERMS, 'zzznomatch'])).toBe(630);
+    const rows = Object.fromEntries((await report()).rows.map((row) => [row.term, row.items]));
+    expect(rows).toMatchObject({ '"project falcon"': 105, 'invoic*': 440, kickback: 258, '"side letter"': 316, zzznomatch: 0 });
+    expect(await estimate(['zzznomatch'])).toBe(0);
+    // Known words find items: alone, as a stem with *, in a phrase (its small words aside), and the matter's own name.
+    for (const term of ['payment', 'paym*', 'wire transfer', 'the steering committee', 'investigation']) {
+      expect(await estimate([term]), term).toBeGreaterThan(0);
+    }
+    // A phrase with an unknown word, or a stem no known word starts with, finds nothing.
+    for (const term of ['wire zzznomatch', 'zzz*']) expect(await estimate([term]), term).toBe(0);
+    // The same every time.
+    expect(await estimate([...FALCON_TERMS, 'brightline', 'zzznomatch'])).toBe(await estimate([...FALCON_TERMS, 'brightline']));
+  });
+
+  test('what the demo shows can be searched for: words of the items\' titles, the custodians and sites, and investigation words', async () => {
+    // From the seeded items' titles ("RE: Side letter, please do not forward", "Invoice INV-20931 Brightline.pdf"), the
+    // custodians and their departments, the sites, and a few words an investigation looks for.
+    const found = ['forward', 'do not forward', 'Megan Bowen', 'Alex Wilber', 'procurement', 'ProjectFalcon', 'finance', 'fraud', 'bribe*', 'cash', 'email', 'INV-20931', 'hotline'];
+    for (const term of found) expect(await estimate([term]), term).toBeGreaterThan(0);
+    // Adding any of them to v3's terms never lowers its 630, and the seeded terms keep their hits.
+    for (const term of ['forward', 'Megan Bowen', 'fraud']) expect(await estimate([...FALCON_TERMS, term]), term).toBeGreaterThanOrEqual(630);
+    expect(await estimate(FALCON_TERMS)).toBe(630);
+  });
+
+  test('hits do not depend on case, as in Purview', async () => {
+    const lower = await estimate(['brightline']);
+    expect(await estimate(['BRIGHTLINE'])).toBe(lower);
+    expect(await estimate(['Brightline'])).toBe(lower);
+    expect(await estimate(['Project Falcon', 'INVOIC*', 'Kickback', 'Side Letter'])).toBe(630);
+  });
+
+  test("every seeded matter's own query still estimates to its seeded count", async () => {
+    for (const [id, items] of [['mat_falcon', 630], ['mat_brightwell', 1206], ['mat_q3trading', 9842], ['mat_travel', 311]] as const) {
+      const job = (await post(`/matters/${id}/estimates`)).json;
+      expect((await runJob(job.id)).at(-1).result.counts.items, id).toBe(items);
+    }
   });
 
   test('with ALL terms, adding one never raises the total', async () => {

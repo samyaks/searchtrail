@@ -1,5 +1,6 @@
-// The Preview screen's reads and its one action. Keys sit under ['previews'], so a finished job (src/api/jobs.ts,
-// invalidateAfterJob) refreshes the latest preview and its item table by itself.
+// The Preview screen's reads and its one action. The latest preview's key sits under ['previews', 'latest'], so a
+// finished job (src/api/jobs.ts, invalidateAfterJob) refreshes it by itself; a new preview has a new id, so its item
+// table is a new query. An old preview's items are never asked for again.
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import { api, ApiRequestError, unwrap, type Schemas } from '@/api/client';
 import { pollDelay, useTrackedJob } from '@/api/jobs';

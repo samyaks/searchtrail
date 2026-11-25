@@ -32,6 +32,9 @@ function Scope({ children }: { children: string }) {
   return <span className={styles.scopeTag}>{children}</span>;
 }
 
+/** The id of the field that adds a search term: where focus goes when a notice it was in goes away. */
+export const ADD_TERM_ID = 'scope-add-term';
+
 /** Whose data is searched, from Define. */
 export function WhoCard({ matter }: { matter: Schemas['Matter'] }) {
   const { title, detail } = sourcesSummary(matter);
@@ -85,6 +88,7 @@ export function TermsSection({ criteria, onChange, problem }: SectionProps) {
       )}
       <AddForm
         label="Add a term or phrase"
+        inputId={ADD_TERM_ID}
         button="Add term"
         placeholder="brightline"
         mono
