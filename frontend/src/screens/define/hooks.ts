@@ -27,10 +27,16 @@ const getMatter = async (matterId: string) => unwrap(await api.GET('/matters/{ma
  * screen while a hold settles carries on asking.
  */
 export function useDefineMatter(matterId: string) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: queryKeys.matter(matterId),
     queryFn: () => getMatter(matterId),
-    refetchInterval: (query) => (query.state.data?.custodians.some((c) => holdSettling(c.hold)) ? timing.holdPollMs : false),
+    // Not while changes to who is searched wait to be sent: a read would show the API's copy without them. The read
+    // once they have settled starts the polling again if a hold is still settling.
+    refetchInterval: (query) =>
+      query.state.data?.custodians.some((c) => holdSettling(c.hold)) && client.isMutating({ mutationKey: sourcesKey(matterId) }) === 0
+        ? timing.holdPollMs
+        : false,
   });
 }
 
@@ -69,21 +75,33 @@ const replaceCustodian = (m: Matter, custodian: Custodian): Matter => ({
     : [...m.custodians, custodian],
 });
 
-export function useUpdateMatter(matterId: string) {
+const sourcesKey = (matterId: string) => ['define', matterId, 'sources'];
+
+type MatterUpdate = Schemas['MatterUpdate'];
+
+/**
+ * Save matter details. `onError` is kept with each change itself, so it is still told of a refusal that comes back
+ * after another detail has been saved.
+ */
+export function useUpdateMatter(matterId: string, callbacks: { onError?: (error: unknown, body: MatterUpdate) => void } = {}) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (body: Schemas['MatterUpdate']) => unwrap(await api.PATCH('/matters/{matterId}', { params: { path: { matterId } }, body })),
+    mutationFn: async (body: MatterUpdate) => unwrap(await api.PATCH('/matters/{matterId}', { params: { path: { matterId } }, body })),
     onSuccess: async (matter) => {
       // A read of the matter that started before this change would otherwise land after it and undo it.
       await client.cancelQueries({ queryKey: queryKeys.matter(matterId), exact: true });
-      client.setQueryData(queryKeys.matter(matterId), matter);
+      // While changes to who is searched wait to be sent, what is shown already includes them and the API's copy
+      // doesn't: take only the details then, and the read once those changes settle brings the rest.
+      const sourcesWaiting = client.isMutating({ mutationKey: sourcesKey(matterId) }) > 0;
+      client.setQueryData<Matter>(queryKeys.matter(matterId), (m) =>
+        m && sourcesWaiting ? { ...m, name: matter.name, type: matter.type, description: matter.description } : matter,
+      );
       // The Matters list shows the name too.
       void client.invalidateQueries({ queryKey: ['matters', {}], exact: false, refetchType: 'none' });
     },
+    onError: (error, body) => callbacks.onError?.(error, body),
   });
 }
-
-const sourcesKey = (matterId: string) => ['define', matterId, 'sources'];
 
 /** What a caller wants to hear about each change, even after the part of the screen that asked has gone. */
 type SourcesCallbacks<V> = { onSuccess?: (v: V) => void; onError?: (error: unknown, v: V) => void; onMutate?: (v: V) => void };
@@ -120,7 +138,8 @@ function useSourcesMutation<V, R>(
     },
     onError: (error, v, context) => {
       // Put the matter back as it was, unless later changes are still waiting their turn: they were shown on top
-      // of this one, and the read of the matter once they have settled shows what the API kept.
+      // of this one, so putting it back would drop them too. The refused change stays shown until the read of the
+      // matter once they have all settled, which corrects it to what the API kept.
       if (context?.before && client.isMutating({ mutationKey }) <= 1) client.setQueryData(queryKeys.matter(matterId), context.before);
       callbacks.onError?.(error, v);
     },
@@ -187,7 +206,11 @@ export function useSetHold(matterId: string, userId: string) {
     onSuccess: async (custodian) => {
       // A read of the matter that started before the answer would otherwise put the old hold back.
       await client.cancelQueries({ queryKey: queryKeys.matter(matterId), exact: true });
-      editMatter(client, matterId, (m) => replaceCustodian(m, custodian));
+      // Only the hold: their sources as shown may include changes still waiting to be sent.
+      editMatter(client, matterId, (m) => ({
+        ...m,
+        custodians: m.custodians.map((c) => (c.user_id === custodian.user_id ? { ...c, hold: custodian.hold } : c)),
+      }));
     },
   });
 }

@@ -74,6 +74,7 @@ export function CustodiansSection({ matter, tenantName, unsaved, setUnsaved, exi
             existingSites={existingSites}
             onRemove={() => removeCustodian(c.user_id)}
             removeError={removeErrors[c.user_id]}
+            onHoldChanged={() => setRemoveError(c.user_id, null)}
           />
         ))}
       </ul>
@@ -168,9 +169,11 @@ type RowProps = {
   existingSites: string[];
   onRemove: () => void;
   removeError: unknown;
+  /** A hold change went through, so a refusal to remove them while on hold is out of date. */
+  onHoldChanged: () => void;
 };
 
-function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites, onRemove, removeError }: RowProps) {
+function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites, onRemove, removeError, onHoldChanged }: RowProps) {
   const upsert = useUpsertCustodian(matterId);
   const hold = useSetHold(matterId, c.user_id);
   const [linking, setLinking] = useState(false);
@@ -233,7 +236,7 @@ function CustodianRow({ matterId, custodian: c, shown, setUnsaved, existingSites
             hideLabel
             checked={holdOn}
             disabled={settling || hold.isPending}
-            onChange={(on) => hold.mutate(on)}
+            onChange={(on) => hold.mutate(on, { onSuccess: onHoldChanged })}
           />
         </div>
       </div>

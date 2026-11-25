@@ -12,17 +12,17 @@ type Matter = Schemas['Matter'];
 type Field = 'name' | 'type' | 'description';
 
 export function DetailsSection({ matter }: { matter: Matter }) {
-  const update = useUpdateMatter(matter.id);
-  const [name, setName] = useState(matter.name);
   const [type, setType] = useState(matter.type);
+  // A refused type change goes back to the saved type; a name or description stays as typed, to be fixed.
+  const update = useUpdateMatter(matter.id, { onError: (_error, body) => body.type !== undefined && setType(matter.type) });
+  const [name, setName] = useState(matter.name);
   const [description, setDescription] = useState(matter.description);
   const [nameMissing, setNameMissing] = useState(false);
   const [lastField, setLastField] = useState<Field | null>(null);
 
   const save = (field: Field, body: Schemas['MatterUpdate']) => {
     setLastField(field);
-    // A refused type change goes back to the saved type; a name or description stays as typed, to be fixed.
-    update.mutate(body, { onError: () => field === 'type' && setType(matter.type) });
+    update.mutate(body);
   };
   /** A new edit makes the last "Saved" out of date. */
   const editing = () => {

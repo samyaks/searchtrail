@@ -44,7 +44,10 @@ beforeEach(() => {
   timing.holdPollMs = 30;
   timing.searchDebounceMs = 20;
 });
+/** Requests a test is holding back, let go after each test so a failed one can't leave them waiting. */
+const heldRequests: (() => void)[] = [];
 afterEach(() => {
+  heldRequests.splice(0).forEach((release) => release());
   timing.holdPollMs = 3000;
   timing.searchDebounceMs = 300;
 });
@@ -129,6 +132,29 @@ test('a refused type change goes back to the saved type', async () => {
   expect(type).toHaveValue('investigation');
   expect(type).toHaveAttribute('aria-invalid', 'true');
   expect(type).toHaveAccessibleDescription("That isn't valid. type is not allowed.");
+});
+
+test('a type change refused after another detail was saved still goes back to the saved type', async () => {
+  let answerType = () => {};
+  const typeAnswered = new Promise<void>((resolve) => (answerType = resolve));
+  heldRequests.push(() => answerType());
+  server.use(
+    http.patch('/api/v1/matters/:matterId', async ({ request }) => {
+      const body = (await request.clone().json()) as Schemas['MatterUpdate'];
+      if (body.type === undefined) return undefined; // the mock's own handler
+      await typeAnswered; // refused only once the description has been saved
+      return HttpResponse.json({ code: 'validation_failed', message: 'type is not allowed.', details: {} }, { status: 400 });
+    }),
+  );
+  await openDefine();
+  const type = screen.getByLabelText('Matter type');
+  await userEvent.selectOptions(type, 'Litigation');
+  await userEvent.type(screen.getByLabelText('Description'), ' More.');
+  await userEvent.tab();
+  expect(await screen.findByText('Saved')).toBeInTheDocument();
+  expect(type).toHaveValue('litigation');
+  answerType();
+  await waitFor(() => expect(type).toHaveValue('investigation'));
 });
 
 test('"Saved" goes once the details are edited again', async () => {
@@ -266,6 +292,18 @@ test('a custodian can be removed, but not while on hold', async () => {
   await expectNoA11yViolations(document.body);
 });
 
+test('a refusal to remove someone on hold goes once their hold is released', async () => {
+  const purview = slowPurview();
+  await openDefine();
+  await userEvent.click(screen.getByRole('button', { name: 'Remove Megan Bowen' }));
+  const refusal = 'Megan Bowen is on hold. Release the hold before removing them.';
+  expect(await within(custodianRow('Megan Bowen')).findByText(refusal)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('switch', { name: 'Legal hold for Megan Bowen' }));
+  expect(await within(custodianRow('Megan Bowen')).findByText('Release requested')).toBeInTheDocument();
+  expect(within(custodianRow('Megan Bowen')).queryByText(refusal)).not.toBeInTheDocument();
+  purview.purviewDone = true;
+});
+
 test('sources held back for a removed custodian are not brought back when they are added again', async () => {
   slowRemovals();
   await openDefine();
@@ -368,6 +406,58 @@ function slowPurview() {
   );
   return hold;
 }
+
+/** Changes to a custodian's sources wait until `answer()` is called, so other answers can come back meanwhile. */
+function heldSourceChanges() {
+  let answer = () => {};
+  const answered = new Promise<void>((resolve) => (answer = resolve));
+  heldRequests.push(() => answer());
+  server.use(
+    http.put('/api/v1/matters/:matterId/custodians/:userId', async () => {
+      await answered;
+      return undefined; // the mock's own handler
+    }),
+  );
+  return { answer: () => answer() };
+}
+
+test("a detail's answer doesn't undo a change to who is searched that is still waiting", async () => {
+  const sources = heldSourceChanges();
+  await openDefine();
+  const oneDrive = () => within(custodianRow('Alex Wilber')).getByRole('button', { name: 'OneDrive' });
+  await userEvent.click(oneDrive());
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'false');
+  const name = screen.getByLabelText('Name');
+  await userEvent.clear(name);
+  await userEvent.type(name, 'Falcon');
+  await userEvent.tab();
+  expect(await screen.findByRole('heading', { level: 1, name: 'Falcon' })).toBeInTheDocument();
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'false');
+  expect(countOf('OneDrive accounts')).toBe('1');
+  sources.answer();
+  await waitFor(() => expect(findMatter('mat_falcon')!.matter.custodians.find((c) => c.user_id === ALEX)!.onedrive).toBe(false));
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('heading', { level: 1, name: 'Falcon' })).toBeInTheDocument();
+});
+
+test("a hold's answer doesn't undo a change to that person's sources that is still waiting", async () => {
+  const sources = heldSourceChanges();
+  const purview = slowPurview();
+  await openDefine();
+  const oneDrive = () => within(custodianRow('Alex Wilber')).getByRole('button', { name: 'OneDrive' });
+  await userEvent.click(oneDrive());
+  await userEvent.click(screen.getByRole('switch', { name: 'Legal hold for Alex Wilber' }));
+  expect(await within(custodianRow('Alex Wilber')).findByText('Hold requested')).toBeInTheDocument();
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'false');
+  // Reads while the hold settles don't bring the old sources back either.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'false');
+  sources.answer();
+  await waitFor(() => expect(findMatter('mat_falcon')!.matter.custodians.find((c) => c.user_id === ALEX)!.onedrive).toBe(false));
+  purview.purviewDone = true;
+  expect(await within(custodianRow('Alex Wilber')).findByText(/^On hold since /)).toBeInTheDocument();
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'false');
+});
 
 test('a hold shows as requested until Purview reports it on', async () => {
   const sent = recordWrites();
