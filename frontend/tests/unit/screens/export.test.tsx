@@ -120,9 +120,17 @@ test('the export starts only once the matter number is typed exactly, then shows
   expect(startButton()).toBeDisabled();
   await userEvent.type(confirmField(), '2 '); // a stray space is forgiven
   expect(startButton()).toBeEnabled();
+  // Everything the live region says, as it changes.
+  const said: string[] = [];
+  const region = within(startCard()).getByRole('status');
+  const observer = new MutationObserver(() => said.push(region.textContent ?? ''));
+  observer.observe(region, { childList: true, subtree: true, characterData: true });
   await userEvent.click(startButton());
 
   const started = await within(startCard()).findByText(/^Export started at \d\d:\d\d/);
+  // It says that the export started once, with its time: not "Export started" first and then again.
+  observer.disconnect();
+  expect(said.filter(Boolean).every((text) => /^Export started at \d\d:\d\d$/.test(text))).toBe(true);
   // The live region holds the sentence alone, so the percentage isn't read out on every poll.
   const status = within(startCard()).getByRole('status');
   expect(status).toHaveTextContent(/^Export started at \d\d:\d\d$/);
@@ -239,6 +247,8 @@ test('blocked: counts that change after a passing check are refused, and the acc
   expect(within(checkCard()).getByText('Blocked')).toBeInTheDocument();
   expect(startButton()).toBeDisabled();
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  // Start is off now, so focus goes to the card's heading, above what it says.
+  expect(screen.getByRole('heading', { level: 2, name: 'Start the export' })).toHaveFocus();
 });
 
 test('blocked: a matter number the API does not accept is shown at the field', async () => {
@@ -251,6 +261,8 @@ test('blocked: a matter number the API does not accept is shown at the field', a
   await userEvent.type(confirmField(), NUMBER);
   await userEvent.click(startButton());
   expect(await within(startCard()).findByRole('alert')).toHaveTextContent('Type the matter number M-2026-0142 exactly to confirm the export.');
+  // Start was off while it was asked: focus goes to the field the problem is about.
+  await waitFor(() => expect(confirmField()).toHaveFocus());
   expect(confirmField()).toHaveAttribute('aria-invalid', 'true');
   expect(confirmField()).toHaveAccessibleDescription('Type the matter number M-2026-0142 exactly to confirm the export.');
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
@@ -265,9 +277,12 @@ test('an export Purview fails is explained, and can be set up again', async () =
   await userEvent.type(confirmField(), NUMBER);
   await userEvent.click(startButton());
   await screen.findByRole('progressbar', { name: 'Export progress' });
+  await waitFor(() => expect(within(startCard()).getByText(/^Export started at/)).toHaveFocus());
   tick(10);
   const alert = await within(startCard()).findByRole('alert');
   expect(within(alert).getByRole('heading', { name: "Purview couldn't finish that" })).toBeInTheDocument();
+  // The sentence that had focus is gone: focus is on the card's heading, not lost.
+  await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Start the export' })).toHaveFocus());
   await waitFor(() => expect(historyRows()[0]).toHaveTextContent('Failed in Purview'));
   await userEvent.click(screen.getByRole('button', { name: 'Set up the export again' }));
   expect(confirmField()).toHaveValue('');
@@ -363,6 +378,7 @@ test('if the server will not say how a started export is doing, the card says so
   await userEvent.click(startButton());
   expect(await within(startCard()).findByRole('alert')).toBeInTheDocument();
   expect(within(startCard()).queryByRole('progressbar')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Start the export' })).toHaveFocus());
   await userEvent.click(within(startCard()).getByRole('button', { name: 'Set up the export again' }));
   expect(confirmField()).toHaveValue('');
   await waitFor(() => expect(confirmField()).toHaveFocus());
@@ -542,6 +558,97 @@ test("the export's name can be copied for Everlaw", async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Copy name' }));
   expect(writeText).toHaveBeenCalledWith('M-2026-0142 EVERLAW 20261105T1058Z');
   expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+});
+
+/** The export check as the mock gives it, changed by `change` (a server whose answers the mock doesn't make). */
+function checkAnswers(change: (check: Schemas['ExportCheck']) => Schemas['ExportCheck']) {
+  server.use(http.post('/api/v1/matters/:matterId/exports/check', () => HttpResponse.json(change(exportCheck(findMatter(FALCON)!)))));
+}
+const acceptBox = () => screen.getByRole('checkbox', { name: /Export with the new counts anyway/ });
+
+test('an accept is for the numbers it was shown: the same version previewed again, with the same counts now, needs a new accept', async () => {
+  setScenario({ exportCheck: 'countsChanged' });
+  renderApp(PATH);
+  await screen.findByText(/^Counts changed since the preview: 630 → 647 items/);
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(acceptBox());
+  expect(startButton()).toBeEnabled();
+
+  // The same version is previewed again elsewhere and had 640 items then; the counts now are the same 647.
+  checkAnswers((check) => ({
+    ...check,
+    checks: check.checks.map((item) => (item.key === 'counts_unchanged' ? { ...item, message: item.message.replace('630 →', '640 →') } : item)),
+  }));
+  await userEvent.click(within(checkCard()).getByRole('button', { name: 'Check again' }));
+  expect(await screen.findByText(/^Counts changed since the preview: 640 → 647 items/)).toBeInTheDocument();
+  expect(acceptBox()).not.toBeChecked();
+  expect(startButton()).toBeDisabled();
+
+  // Accepted again; then only when the preview was made changes.
+  await userEvent.click(acceptBox());
+  expect(startButton()).toBeEnabled();
+  checkAnswers((check) => ({
+    ...check,
+    previewed_at: '2026-11-05T12:00:00Z',
+    checks: check.checks.map((item) => (item.key === 'counts_unchanged' ? { ...item, message: item.message.replace('630 →', '640 →') } : item)),
+  }));
+  await userEvent.click(within(checkCard()).getByRole('button', { name: 'Check again' }));
+  await waitFor(() => expect(acceptBox()).not.toBeChecked());
+  expect(startButton()).toBeDisabled();
+});
+
+test('counts that were not re-checked can still be accepted, for that check only', async () => {
+  setScenario({ exportCheck: 'countsChanged' });
+  checkAnswers((check) => ({ ...check, counts: null }));
+  renderApp(PATH);
+  await screen.findByText(/^Counts changed since the preview/);
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(acceptBox());
+  expect(acceptBox()).toBeChecked();
+  expect(startButton()).toBeEnabled();
+
+  // A later check (it runs at another time) needs a new accept.
+  tick(60);
+  await userEvent.click(within(checkCard()).getByRole('button', { name: 'Check again' }));
+  await waitFor(() => expect(acceptBox()).not.toBeChecked());
+  expect(startButton()).toBeDisabled();
+});
+
+test('after setting aside an export the server would not say about, a start refused because it still runs shows it again', async () => {
+  server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'not_found', message: 'No such job.', details: {} }, { status: 404 })));
+  await openReady();
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(startButton());
+  await within(startCard()).findByRole('alert');
+  await userEvent.click(within(startCard()).getByRole('button', { name: 'Set up the export again' }));
+
+  // It is still running in Purview, so the next start is refused with its id: the card shows it, not a blank form.
+  const bodies = postedTo(`/matters/${FALCON}/exports`);
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(startButton());
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(await within(startCard()).findByRole('button', { name: 'Set up the export again' })).toBeInTheDocument();
+  expect(screen.queryByLabelText(/to confirm$/)).not.toBeInTheDocument();
+});
+
+test("a download found running for one export doesn't show under another whose own download failed earlier", async () => {
+  const newest = findMatter(FALCON)!.exports[0]!;
+  Object.assign(newest, {
+    status: 'ready', progress: 1, finished_at: '2026-11-05T11:30:00Z',
+    download: { status: 'failed', progress: null, stored_path: null, finished_at: null },
+  });
+  await post('/exports/exp_falcon_v2/download'); // the older export's download, started elsewhere
+  tick(3);
+  await openReady();
+  await waitFor(() => expect(historyRows()).toHaveLength(2));
+  const others = () => within(screen.getByRole('heading', { name: 'Other ways to hand off' }).closest('section')!);
+  expect(others().getByText(newest.name)).toBeInTheDocument();
+  expect(await others().findByText('A download of another export is running. This one can start when it ends.')).toBeInTheDocument();
+  expect(others().queryByRole('progressbar')).not.toBeInTheDocument();
+
+  // Under its own export, it shows.
+  await userEvent.click(screen.getByRole('button', { name: `Details of ${V2}` }));
+  expect(await others().findByRole('progressbar', { name: 'Downloading the package from Purview' })).toBeInTheDocument();
 });
 
 test('formatting: totals, sizes, history items and statuses', () => {

@@ -115,13 +115,15 @@ type StartedFor = { jobId: string; exportId: string } | null;
 /**
  * Whether the job a hand-off follows belongs to the export shown: the one it was started for here, or the export
  * its result names. A job found running (on reopening the screen, or from another tab) carries no export, so the
- * export's own hand-off state says whether it is this one.
+ * export's own hand-off state says whether it is this one, and it has to be the same state: a failed job is this
+ * export's only if its hand-off failed, and any other (running, or not saying how it is doing) only if its hand-off
+ * is running. An earlier failure of this export's says nothing about another export's running hand-off.
  */
 function jobIsFor(job: HandoffJob, startedFor: StartedFor, exp: Export | undefined, handoff: Schemas['HandoffStatus'] | undefined): boolean {
   if (!job.jobId || !exp) return false;
   if (startedFor?.jobId === job.jobId) return startedFor.exportId === exp.id;
   if (job.result) return job.result.id === exp.id;
-  return handoff === 'running' || handoff === 'failed';
+  return job.isFailed ? handoff === 'failed' : handoff === 'running';
 }
 
 function JobState({ job, running, done, matterId }: { job: HandoffJob; running: string; done: (result: Export) => string; matterId: string }) {

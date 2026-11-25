@@ -23,12 +23,26 @@ type Props = {
 };
 
 /**
- * What an accept of changed counts was given for: the version and the counts the check showed then. A later
- * check (Check again, a refetch after a refused start, any job finishing) with other counts needs a new accept.
+ * What an accept of changed counts was given for: everything the check showed then, the preview it compared
+ * against and the sentences that say "before → now". A later check (Check again, a refetch after a refused start,
+ * any job finishing, a new preview of the same version) that shows anything else needs a new accept. When the
+ * counts weren't re-checked (null), the check itself, by when it ran, is what was accepted.
  */
 function acceptKey(check: Schemas['ExportCheck'] | undefined): string | null {
-  if (!check || check.blocked_code !== 'export_counts_changed' || !check.counts) return null;
-  return JSON.stringify([check.version, check.counts]);
+  if (!check || check.blocked_code !== 'export_counts_changed') return null;
+  return JSON.stringify([
+    check.version,
+    check.previewed_version,
+    check.previewed_at,
+    check.counts ?? check.checked_at,
+    check.checks.map((item) => [item.key, item.status, item.message]),
+  ]);
+}
+
+/** Whether focus went nowhere (a removed or disabled control) or stayed in this card, so moving it takes nothing away. */
+function focusLostOrIn(section: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  return !active || active === document.body || Boolean(section?.contains(active));
 }
 
 export function StartCard({ matterId, matterNumber, check, options, exportJob }: Props) {
@@ -80,9 +94,7 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
     if (shownBefore.current === shownId) return;
     shownBefore.current = shownId;
     if (!focusInCard.current) return;
-    const active = document.activeElement;
-    const lost = !active || active === document.body || Boolean(sectionRef.current?.contains(active));
-    if (!lost) return;
+    if (!focusLostOrIn(sectionRef.current)) return;
     (shownId ? (statusRef.current ?? titleRef.current) : fieldRef.current)?.focus();
   }, [shownId]);
 
@@ -100,14 +112,22 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
         onError: (error) => {
           // The checks a real export ran found something the last check didn't: show it as the checks see it now.
           if (hasCode(error, 'export_not_previewed') || hasCode(error, 'export_counts_changed')) void check.refetch();
-          // One is already running (another tab started it): follow that one instead.
+          // One is already running (another tab started it): follow that one instead, even one set aside here
+          // earlier ("Set up the export again" after the server wouldn't say how it was doing).
           const running = error instanceof ApiRequestError && error.body.code === 'conflict' ? error.body.details?.job_id : undefined;
           if (typeof running === 'string') {
             setTyped('');
             setAcceptedFor(null);
             start.reset();
+            setDismissedJob(null);
             exportJob.track(running);
+            return; // the switch to that export moves focus
           }
+          // Start was off while it was asked, so focus may have gone nowhere: to the field for a number it didn't
+          // take, else to the card's heading, above what it says now.
+          if (!focusLostOrIn(sectionRef.current)) return;
+          if (hasCode(error, 'confirmation_mismatch')) fieldRef.current?.focus();
+          else if (document.activeElement !== fieldRef.current) titleRef.current?.focus();
         },
       },
     );
@@ -127,8 +147,10 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
 
   // The one live region of the card: the sentence that says the export started or finished, never the percentage.
   let statusLine: string | null = null;
+  let phase: 'form' | 'error' | 'running' | 'succeeded' | 'failed' = 'form';
   let body;
   if (shownJob && !shownJob.isRunning && !shownJob.isSucceeded && !shownJob.isFailed && shownJob.queryError) {
+    phase = 'error';
     // The server won't say how the export is doing (it answered no, so polling stopped): say so, and let the
     // person move on.
     body = (
@@ -141,7 +163,9 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
       </>
     );
   } else if (shownJob && (shownJob.isRunning || !shownJob.job)) {
-    statusLine = shownJob.job ? `Export started at ${clock(shownJob.job.created_at)}` : 'Export started';
+    phase = 'running';
+    // Said once, when the job is known: not "Export started" and then again with its time.
+    statusLine = shownJob.job ? `Export started at ${clock(shownJob.job.created_at)}` : null;
     body = (
       <>
         <Progress label="Export progress" value={shownJob.progress} />
@@ -152,6 +176,7 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
       </>
     );
   } else if (shownJob?.isSucceeded) {
+    phase = 'succeeded';
     statusLine = 'Export ready in Purview';
     body = (
       <>
@@ -168,6 +193,7 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
       </>
     );
   } else if (shownJob?.isFailed) {
+    phase = 'failed';
     body = (
       <>
         <ErrorNotice error={jobError(shownJob.failure)} matterId={matterId} headingLevel={3} />
@@ -260,6 +286,17 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
     );
   }
 
+  // When a shown export fails, or the server stops saying how it is doing, the sentence that had focus is gone:
+  // put focus on the card's heading, above the explanation. Again only for someone working in this card.
+  const phaseBefore = useRef(phase);
+  useEffect(() => {
+    if (phaseBefore.current === phase) return;
+    phaseBefore.current = phase;
+    if ((phase !== 'failed' && phase !== 'error') || !focusInCard.current) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) titleRef.current?.focus();
+  }, [phase]);
+
   return (
     <section
       ref={sectionRef}
@@ -277,12 +314,16 @@ export function StartCard({ matterId, matterNumber, check, options, exportJob }:
         Start the export
       </h2>
       <div className={styles.stack}>
-        {/* Always mounted, so a change of its sentence is announced; empty, and out of the layout, while the form shows. */}
+        {/* Always mounted, so a change of its sentence is announced; empty, and out of the layout, until there is one. */}
         <div role="status" className={statusLine ? undefined : 'st-visually-hidden'}>
-          {statusLine && (
+          {(phase === 'running' || phase === 'succeeded') && (
             <p ref={statusRef} tabIndex={-1} className={styles.done}>
-              <CheckMark status="passed" />
-              {statusLine}
+              {statusLine && (
+                <>
+                  <CheckMark status="passed" />
+                  {statusLine}
+                </>
+              )}
             </p>
           )}
         </div>
