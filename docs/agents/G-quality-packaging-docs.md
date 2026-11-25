@@ -27,9 +27,11 @@ cd backend && python3.12 -m venv .venv && . .venv/bin/activate && pip install -e
 pytest && ruff check .
 # Postgres-only tests: SEARCHTRAIL_TEST_DATABASE_URL=postgresql+psycopg://user:pw@localhost:5432/test pytest
 
-# Whole stack, dry run on (no tenant): API on :8000, worker, Postgres
+# Whole stack, dry run on (no tenant): the app on :8080 (web, also serving /api), API on :8000,
+# worker, Postgres. Then Playwright against it (once, in frontend/: npx playwright install chromium)
 docker compose -f deploy/docker-compose.yml up --build
 curl localhost:8000/api/v1/health
+npm --prefix frontend run test:e2e
 
 # Frontend: mocks on (MSW serves the contract's examples)
 cd frontend && npm ci && npm run dev        # http://localhost:5173

@@ -14,3 +14,16 @@
 ## Departure
 The plan lists a `web` image too. Phase 0 doesn't add it (no screens to serve yet); WS-G adds the
 web image, a reverse proxy serving the built frontend and `/api`, and TLS.
+
+Phase 1 added it: `deploy/Dockerfile.web` builds the frontend and serves it with Caddy
+(`deploy/Caddyfile`), which passes `/api` to the `api` service unchanged, on `WEB_PORT` (8080, so it
+doesn't clash with the Vite dev server on 5173).
+Caddy over nginx: it streams request and response bodies without the buffering and size limits
+nginx needs tuning for, finds the `api` container again after it restarts, and can manage TLS
+certificates itself for the install guide. TLS and HSTS come with the install guide.
+
+Caddy also answers for the API when it can't: a 502 with the contract's Error body (`internal_error`),
+so the app shows its usual message. The API trusts Caddy's `X-Forwarded-*` headers
+(`FORWARDED_ALLOW_IPS=*`), which is safe only while nothing else can reach it, so compose publishes the
+API port on 127.0.0.1 only. Base images are pinned by digest (the multi-arch index); update them by hand
+with `docker buildx imagetools inspect <tag>`.

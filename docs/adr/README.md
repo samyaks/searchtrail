@@ -24,7 +24,6 @@
 - **Pydantic models are generated** from the contract instead of hand-written and checked (ADR 0006).
 - **First migration creates all tables** from section 5.5; the plan's table said "empty first migration" while section 5.5 calls it the first migration's data model. The tables are there so WS-B1 and WS-B2 start from one schema.
 - **Hold body is `{"on_hold": bool}`**: `on` is a YAML 1.1 boolean and broke the example in Python tooling (ADR 0006).
-- **No `web` image yet** (ADR 0010); WS-G adds it.
 - **TypeScript 5.9, not 7**, and self-hosted fonts (ADR 0007).
 - **The worker builds the gateway per job** (the live one acts as the job's user), so it starts even before live access exists.
 - **`/health` is in the contract** (plan section 5.1 didn't list it; Phase 0 needs it).
