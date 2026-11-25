@@ -1,13 +1,16 @@
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, type Ref, useId } from 'react';
 import styles from './DefineScreen.module.css';
 
-/** A white panel with a heading, as the Define design draws each group (17px bold heading, an optional note beside it). */
-export function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+/**
+ * A white panel with a heading, as the Define design draws each group (17px bold heading, an optional note beside it).
+ * With `headingRef`, the heading can be given focus (when what had focus in the section has gone).
+ */
+export function Section({ title, note, headingRef, children }: { title: string; note?: string; headingRef?: Ref<HTMLHeadingElement>; children: ReactNode }) {
   const id = useId();
   return (
     <section aria-labelledby={id} className={styles.section}>
       <div className={styles.sectionHead}>
-        <h2 id={id} className={styles.sectionTitle}>
+        <h2 id={id} className={styles.sectionTitle} ref={headingRef} tabIndex={headingRef ? -1 : undefined}>
           {title}
         </h2>
         {note && <span className={styles.muted}>{note}</span>}

@@ -9,7 +9,7 @@ import { Banner, ButtonLink } from '@/components';
 import { CustodiansSection, type Unsaved } from './CustodiansSection';
 import { DetailsSection } from './DetailsSection';
 import { allSites, holdSummary, purviewCountText, searchedCounts, sourcesOf, type SearchedCounts, type Sources } from './format';
-import { useChangeKind, useDefineMatter } from './hooks';
+import { type ChangeKind, useChangeKind, useDefineMatter } from './hooks';
 import styles from './DefineScreen.module.css';
 import { CheckIcon, Section } from './Section';
 import { SitesSection } from './SitesSection';
@@ -77,7 +77,7 @@ const initials = (name: string) => {
   return ((words[0]?.[0] ?? '') + (words.length > 1 ? (words[words.length - 1]?.[0] ?? '') : '')).toUpperCase();
 };
 
-function SearchedSection({ matter, counts, changeKind }: { matter: Matter; counts: SearchedCounts; changeKind: 'sources' | 'search' | null }) {
+function SearchedSection({ matter, counts, changeKind }: { matter: Matter; counts: SearchedCounts; changeKind: ChangeKind }) {
   const current = matter.current_version;
   const tiles: [number, string][] = [
     [counts.mailboxes, 'Mailboxes, with Teams chats'],
@@ -98,7 +98,8 @@ function SearchedSection({ matter, counts, changeKind }: { matter: Matter; count
       {current === null ? (
         <p className={styles.small}>Nothing has been sent to Purview yet. SearchTrail creates the Purview case the first time this matter is estimated.</p>
       ) : matter.draft_changed ? (
-        <Banner title={changeKind === 'sources' ? 'Who is searched has changed.' : 'The search has changed.'}>
+        // Until it is known whether only the people and sites changed, the notice says neither.
+        <Banner title={changeKind === 'sources' ? 'Who is searched has changed.' : changeKind === 'search' ? 'The search has changed.' : undefined}>
           {`SearchTrail will create search v${current + 1} in Purview. `}
           {matter.previewed_version !== null
             ? `The v${matter.previewed_version} preview no longer applies, so you'll need to preview again before exporting.`
@@ -126,6 +127,7 @@ function CaseSection({ matter }: { matter: Matter }) {
           <span className={styles.small}>Premium case · created by SearchTrail</span>
           <a href="https://purview.microsoft.com" className={styles.external} target="_blank" rel="noreferrer">
             Open in Purview
+            <span className="st-visually-hidden"> (opens in a new tab)</span>
           </a>
         </>
       ) : (

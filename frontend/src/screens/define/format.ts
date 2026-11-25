@@ -113,3 +113,6 @@ export function sameCriteria(a: unknown, b: unknown): boolean {
         : value;
   return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 }
+
+/** The ids for aria-describedby, from the ones that are showing; undefined for none. */
+export const describedBy = (...ids: (string | false | null | undefined)[]) => ids.filter(Boolean).join(' ') || undefined;

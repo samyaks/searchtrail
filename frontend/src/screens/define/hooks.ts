@@ -73,7 +73,9 @@ export function useUpdateMatter(matterId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (body: Schemas['MatterUpdate']) => unwrap(await api.PATCH('/matters/{matterId}', { params: { path: { matterId } }, body })),
-    onSuccess: (matter) => {
+    onSuccess: async (matter) => {
+      // A read of the matter that started before this change would otherwise land after it and undo it.
+      await client.cancelQueries({ queryKey: queryKeys.matter(matterId), exact: true });
       client.setQueryData(queryKeys.matter(matterId), matter);
       // The Matters list shows the name too.
       void client.invalidateQueries({ queryKey: ['matters', {}], exact: false, refetchType: 'none' });
@@ -81,27 +83,46 @@ export function useUpdateMatter(matterId: string) {
   });
 }
 
+const sourcesKey = (matterId: string) => ['define', matterId, 'sources'];
+
+/** What a caller wants to hear about each change, even after the part of the screen that asked has gone. */
+type SourcesCallbacks<V> = { onSuccess?: (v: V) => void; onError?: (error: unknown, v: V) => void; onMutate?: (v: V) => void };
+
 /**
  * A change to who is searched: shown at once (`apply`), undone if the API refuses it, and followed by one read
- * of the matter when the last such change has settled.
+ * of the matter when the last such change has settled. Changes to a matter's sources are sent one at a time, in
+ * the order they were made, so a later change can't be overtaken by an earlier one.
  */
-function useSourcesMutation<V, R>(matterId: string, request: (v: V) => Promise<R>, apply: (m: Matter, v: V) => Matter, saved?: (m: Matter, r: R, v: V) => Matter) {
+function useSourcesMutation<V, R>(
+  matterId: string,
+  request: (v: V) => Promise<R>,
+  apply: (m: Matter, v: V) => Matter,
+  saved?: (m: Matter, r: R, v: V) => Matter,
+  callbacks: SourcesCallbacks<V> = {},
+) {
   const client = useQueryClient();
-  const mutationKey = ['define', matterId, 'sources'];
+  const mutationKey = sourcesKey(matterId);
   return useMutation({
     mutationKey,
+    scope: { id: `define-sources-${matterId}` },
     mutationFn: request,
     onMutate: async (v: V) => {
+      callbacks.onMutate?.(v);
       await client.cancelQueries({ queryKey: queryKeys.matter(matterId), exact: true });
       const before = client.getQueryData<Matter>(queryKeys.matter(matterId));
       editMatter(client, matterId, (m) => apply(m, v));
       return { before };
     },
     onSuccess: (r, v) => {
-      if (saved) editMatter(client, matterId, (m) => saved(m, r, v));
+      // While later changes wait, what is shown already includes them; the API's copy of this one could undo them.
+      if (saved && client.isMutating({ mutationKey }) <= 1) editMatter(client, matterId, (m) => saved(m, r, v));
+      callbacks.onSuccess?.(v);
     },
-    onError: (_error, _v, context) => {
-      if (context?.before) client.setQueryData(queryKeys.matter(matterId), context.before);
+    onError: (error, v, context) => {
+      // Put the matter back as it was, unless later changes are still waiting their turn: they were shown on top
+      // of this one, and the read of the matter once they have settled shows what the API kept.
+      if (context?.before && client.isMutating({ mutationKey }) <= 1) client.setQueryData(queryKeys.matter(matterId), context.before);
+      callbacks.onError?.(error, v);
     },
     onSettled: () => {
       // This mutation still counts as running here, so 1 means it is the last.
@@ -123,11 +144,17 @@ export function useUpsertCustodian(matterId: string) {
   );
 }
 
-export function useRemoveCustodian(matterId: string) {
+/**
+ * Remove a custodian. Their row goes at once, so what the caller is told (a refusal, say) goes to `callbacks`,
+ * which are kept with the change itself rather than with the row.
+ */
+export function useRemoveCustodian(matterId: string, callbacks?: SourcesCallbacks<string>) {
   return useSourcesMutation(
     matterId,
     async (userId: string) => unwrap(await api.DELETE('/matters/{matterId}/custodians/{userId}', { params: { path: { matterId, userId } } })),
     (m, userId) => ({ ...m, custodians: m.custodians.filter((c) => c.user_id !== userId) }),
+    undefined,
+    callbacks,
   );
 }
 
@@ -157,15 +184,22 @@ export function useSetHold(matterId: string, userId: string) {
   return useMutation({
     mutationFn: async (onHold: boolean) =>
       unwrap(await api.PUT('/matters/{matterId}/custodians/{userId}/hold', { params: { path: { matterId, userId } }, body: { on_hold: onHold } })),
-    onSuccess: (custodian) => editMatter(client, matterId, (m) => replaceCustodian(m, custodian)),
+    onSuccess: async (custodian) => {
+      // A read of the matter that started before the answer would otherwise put the old hold back.
+      await client.cancelQueries({ queryKey: queryKeys.matter(matterId), exact: true });
+      editMatter(client, matterId, (m) => replaceCustodian(m, custodian));
+    },
   });
 }
+
+/** `null` while it isn't known yet (or nothing has changed). */
+export type ChangeKind = 'sources' | 'search' | null;
 
 /**
  * Whether a changed draft differs from the current version in who is searched only (`sources`), or in its criteria
  * too (`search`). The contract's draft_changed covers both, so the draft's criteria are compared with the version's.
  */
-export function useChangeKind(matter: Matter | undefined): 'sources' | 'search' | null {
+export function useChangeKind(matter: Matter | undefined): ChangeKind {
   const matterId = matter?.id ?? '';
   const enabled = !!matter?.draft_changed && matter.current_version !== null;
   const draft = useQuery({
@@ -179,7 +213,11 @@ export function useChangeKind(matter: Matter | undefined): 'sources' | 'search' 
     enabled,
   });
   if (!enabled) return null;
-  const current = versions.data?.items.find((v) => v.version === matter.current_version);
-  if (!draft.data || !current) return 'search';
+  // Until both have been read, say neither, so the wording doesn't change under the reader; if either can't be
+  // read, say the search changed, which is never wrong.
+  if (draft.isError || versions.isError) return 'search';
+  if (!draft.data || !versions.data) return null;
+  const current = versions.data.items.find((v) => v.version === matter.current_version);
+  if (!current) return 'search';
   return sameCriteria(draft.data.criteria, current.criteria) ? 'sources' : 'search';
 }

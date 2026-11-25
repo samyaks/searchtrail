@@ -1,10 +1,10 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { API_BASE, type Schemas } from '@/api/client';
 import { example } from '@/mocks/examples';
 import { setScenario } from '@/mocks/scenarios';
-import { db } from '@/mocks/db';
+import { db, findMatter } from '@/mocks/db';
 import { server } from '@/mocks/server';
 import { matterView } from '@/mocks/views';
 import { holdSummary, holdText, purviewCountText, siteLabel, siteProblem, SITE_DUPLICATE_ERROR, SITE_FORMAT_ERROR } from '@/screens/define/format';
@@ -75,6 +75,7 @@ test("the screen shows the matter's details, custodians, sites and what will be 
   expect(within(searched()).getByRole('link', { name: 'Continue to Scope' })).toHaveAttribute('href', '/matters/mat_falcon/scope');
   expect(screen.getByText('1 of 2 custodians on hold')).toBeInTheDocument();
   expect(screen.getByLabelText('Add a custodian from Contoso Ltd\'s directory')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Open in Purview ?\(opens in a new tab\)$/ })).toHaveAttribute('target', '_blank');
   await expectNoA11yViolations(document.body);
 });
 
@@ -101,6 +102,8 @@ test('an empty name is not saved', async () => {
   await userEvent.clear(screen.getByLabelText('Name'));
   await userEvent.tab();
   expect(await screen.findByRole('alert')).toHaveTextContent('Enter a name for the matter.');
+  expect(screen.getByLabelText('Name')).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByLabelText('Name')).toHaveAccessibleDescription('Enter a name for the matter.');
   expect(sent).toEqual([]);
 });
 
@@ -110,6 +113,31 @@ test('a refused detail change is shown under the field', async () => {
   await userEvent.type(screen.getByLabelText('Description'), ' More.');
   await userEvent.tab();
   expect(await screen.findByRole('alert')).toHaveTextContent("That isn't valid. description must be at most 2000 characters.");
+  const description = screen.getByLabelText('Description');
+  expect(description).toHaveAttribute('aria-invalid', 'true');
+  expect(description).toHaveAccessibleDescription(
+    "Shown on the Purview case and at the top of the methodology report. That isn't valid. description must be at most 2000 characters.",
+  );
+});
+
+test('a refused type change goes back to the saved type', async () => {
+  server.use(http.patch('/api/v1/matters/:matterId', () => HttpResponse.json({ code: 'validation_failed', message: 'type is not allowed.', details: {} }, { status: 400 })));
+  await openDefine();
+  const type = screen.getByLabelText('Matter type');
+  await userEvent.selectOptions(type, 'Litigation');
+  expect(await screen.findByRole('alert')).toHaveTextContent("That isn't valid. type is not allowed.");
+  expect(type).toHaveValue('investigation');
+  expect(type).toHaveAttribute('aria-invalid', 'true');
+  expect(type).toHaveAccessibleDescription("That isn't valid. type is not allowed.");
+});
+
+test('"Saved" goes once the details are edited again', async () => {
+  await openDefine();
+  await userEvent.type(screen.getByLabelText('Description'), ' More.');
+  await userEvent.tab();
+  expect(await screen.findByText('Saved')).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText('Name'), '!');
+  expect(screen.queryByText('Saved')).not.toBeInTheDocument();
 });
 
 test('finding a person and adding them makes the next search a new version', async () => {
@@ -120,19 +148,21 @@ test('finding a person and adding them makes the next search a new version', asy
   // Megan Bowen is in Finance too, but already a custodian.
   const hannah = await within(list).findByRole('button', { name: /Hannah Ortega/ });
   expect(within(list).queryByRole('button', { name: /Megan Bowen/ })).not.toBeInTheDocument();
+  await expectNoA11yViolations(document.body);
   await userEvent.click(hannah);
 
   expect(screen.getByLabelText(/Add a custodian/)).toHaveValue('');
+  expect(screen.getByLabelText(/Add a custodian/)).toHaveFocus();
   expect(custodianRow('Hannah Ortega')).toBeInTheDocument();
   await waitFor(() => expect(sent).toEqual([{ method: 'PUT', path: `/matters/mat_falcon/custodians/${HANNAH}`, body: { mailbox: true, onedrive: true, sites: [] } }]));
   // The header and the summary say the sources changed and the preview no longer applies.
   expect(await screen.findByText('Query v4 · draft')).toBeInTheDocument();
   expect(screen.getByText('Not previewed yet')).toBeInTheDocument();
   expect(screen.getByText(/^Purview case M-2026-0142 · 3 custodians · /)).toBeInTheDocument();
-  const notice = await within(searched()).findByRole('status');
-  await waitFor(() => expect(notice).toHaveTextContent('Who is searched has changed.'));
+  const notice = (await within(searched()).findByText('Who is searched has changed.')).closest('[role="status"]');
   expect(notice).toHaveTextContent("SearchTrail will create search v4 in Purview. The v3 preview no longer applies, so you'll need to preview again before exporting.");
   expect(countOf('Mailboxes, with Teams chats')).toBe('3');
+  await expectNoA11yViolations(document.body);
 });
 
 test('the people search waits for two letters, and says when no one matches', async () => {
@@ -189,6 +219,7 @@ test('a custodian with nothing to search is held back with a warning until a sou
   await userEvent.click(within(row()).getByRole('button', { name: 'Mailbox and Teams chats' }));
   expect(within(row()).getByRole('alert')).toHaveTextContent('Nothing selected for Alex Wilber. Choose at least one source, or remove them.');
   expect(countOf('Mailboxes, with Teams chats')).toBe('1');
+  await expectNoA11yViolations(document.body);
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(sent).toHaveLength(1); // the API needs at least one source, so nothing was sent
   await userEvent.click(within(row()).getByRole('button', { name: 'Mailbox and Teams chats' }));
@@ -206,16 +237,123 @@ test('a refused source change is put back and explained', async () => {
   expect(countOf('OneDrive accounts')).toBe('2');
 });
 
+/** Answer removals of a custodian after a moment, as a real API would, so their row has gone by then. */
+function slowRemovals() {
+  server.use(
+    http.delete('/api/v1/matters/:matterId/custodians/:userId', async () => {
+      await delay(50);
+      return undefined; // the mock's own handler
+    }),
+  );
+}
+
 test('a custodian can be removed, but not while on hold', async () => {
+  slowRemovals(); // the row has gone by the time the API answers, and comes back when refused
   const sent = recordWrites();
   await openDefine();
   await userEvent.click(screen.getByRole('button', { name: 'Remove Alex Wilber' }));
   await waitFor(() => expect(screen.queryByText('alex.wilber@contoso.com · Procurement')).not.toBeInTheDocument());
-  expect(sent).toEqual([{ method: 'DELETE', path: `/matters/mat_falcon/custodians/${ALEX}`, body: null }]);
+  // Focus goes to the next custodian's remove button.
+  expect(screen.getByRole('button', { name: 'Remove Megan Bowen' })).toHaveFocus();
+  await waitFor(() => expect(sent).toEqual([{ method: 'DELETE', path: `/matters/mat_falcon/custodians/${ALEX}`, body: null }]));
 
   await userEvent.click(screen.getByRole('button', { name: 'Remove Megan Bowen' }));
-  expect(await within(custodianRow('Megan Bowen')).findByRole('alert')).toHaveTextContent('Megan Bowen is on hold. Release the hold before removing them.');
+  // No one is left below or above, so focus goes to the section's heading.
+  await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Custodians' })).toHaveFocus());
+  expect(await screen.findByText('Megan Bowen is on hold. Release the hold before removing them.')).toBeInTheDocument();
+  expect(within(custodianRow('Megan Bowen')).getByRole('alert')).toHaveTextContent('Megan Bowen is on hold. Release the hold before removing them.');
   expect(screen.getByText('megan.bowen@contoso.com · Finance')).toBeInTheDocument();
+  await expectNoA11yViolations(document.body);
+});
+
+test('sources held back for a removed custodian are not brought back when they are added again', async () => {
+  slowRemovals();
+  await openDefine();
+  const row = () => custodianRow('Alex Wilber');
+  await userEvent.click(within(row()).getByRole('button', { name: 'OneDrive' }));
+  await userEvent.click(within(row()).getByRole('button', { name: 'Mailbox and Teams chats' }));
+  expect(within(row()).getByRole('alert')).toHaveTextContent('Nothing selected for Alex Wilber.');
+  await userEvent.click(screen.getByRole('button', { name: 'Remove Alex Wilber' }));
+  await waitFor(() => expect(screen.queryByRole('group', { name: 'Sources to search for Alex Wilber' })).not.toBeInTheDocument());
+  await waitFor(() => expect(findMatter('mat_falcon')!.matter.custodians.some((c) => c.user_id === ALEX)).toBe(false));
+
+  await userEvent.type(screen.getByLabelText(/Add a custodian/), 'alex');
+  await userEvent.click(await screen.findByRole('button', { name: /Alex Wilber/ }));
+  await waitFor(() => expect(findMatter('mat_falcon')!.matter.custodians.some((c) => c.user_id === ALEX)).toBe(true));
+  expect(within(row()).getByRole('button', { name: 'Mailbox and Teams chats' })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(row()).getByRole('button', { name: 'OneDrive' })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(row()).queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('changes to who is searched are sent one at a time, in order', async () => {
+  // The first change is answered slowly; sent side by side, the second would land first and be overwritten.
+  let calls = 0;
+  let open = 0;
+  let mostOpen = 0;
+  server.use(
+    http.put('/api/v1/matters/:matterId/custodians/:userId', async () => {
+      calls += 1;
+      open += 1;
+      mostOpen = Math.max(mostOpen, open);
+      if (calls === 1) await delay(150);
+      open -= 1;
+      return undefined; // the mock's own handler
+    }),
+  );
+  await openDefine();
+  const oneDrive = () => within(custodianRow('Alex Wilber')).getByRole('button', { name: 'OneDrive' });
+  await userEvent.click(oneDrive());
+  await userEvent.click(oneDrive());
+  await waitFor(() => expect(calls).toBe(2));
+  await waitFor(() => expect(findMatter('mat_falcon')!.matter.custodians.find((c) => c.user_id === ALEX)!.onedrive).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(mostOpen).toBe(1);
+  expect(findMatter('mat_falcon')!.matter.custodians.find((c) => c.user_id === ALEX)!.onedrive).toBe(true);
+  expect(oneDrive()).toHaveAttribute('aria-pressed', 'true');
+});
+
+/**
+ * Reads of the matter that take a moment and answer with the matter as it was when they were asked, without
+ * settling holds. Resolves `started` once a read is under way.
+ */
+function slowStaleReads() {
+  let started = () => {};
+  const readStarted = new Promise<void>((resolve) => (started = resolve));
+  server.use(
+    http.get('/api/v1/matters/:matterId', async ({ params }) => {
+      const asAsked = matterView(db.matters.find((x) => x.matter.id === params.matterId)!);
+      started();
+      await delay(150);
+      return HttpResponse.json(asAsked);
+    }),
+  );
+  return readStarted;
+}
+
+test("a hold's answer is not undone by a read of the matter that was already under way", async () => {
+  await openDefine();
+  const read = slowStaleReads();
+  // A saved source change reads the matter again.
+  await userEvent.click(within(custodianRow('Alex Wilber')).getByRole('button', { name: 'OneDrive' }));
+  await read;
+  await userEvent.click(screen.getByRole('switch', { name: 'Legal hold for Alex Wilber' }));
+  expect(await within(custodianRow('Alex Wilber')).findByText('Hold requested')).toBeInTheDocument();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  expect(within(custodianRow('Alex Wilber')).getByText('Hold requested')).toBeInTheDocument();
+});
+
+test("a detail's answer is not undone by a read of the matter that was already under way", async () => {
+  await openDefine();
+  const read = slowStaleReads();
+  await userEvent.click(within(custodianRow('Alex Wilber')).getByRole('button', { name: 'OneDrive' }));
+  await read;
+  const name = screen.getByLabelText('Name');
+  await userEvent.clear(name);
+  await userEvent.type(name, 'Falcon');
+  await userEvent.tab();
+  expect(await screen.findByRole('heading', { level: 1, name: 'Falcon' })).toBeInTheDocument();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  expect(screen.getByRole('heading', { level: 1, name: 'Falcon' })).toBeInTheDocument();
 });
 
 /** While `hold.purviewDone` is false, the matter is read without Purview finishing any hold change (the mock settles one on every read). */
@@ -312,8 +450,12 @@ test('a site can be linked to a custodian, and unlinked', async () => {
   const field = screen.getByLabelText('Site address to link to Alex Wilber');
   await userEvent.type(field, 'contoso.sharepoint.com/sites/Procurement{Enter}');
   expect(within(custodianRow('Alex Wilber')).getByRole('alert')).toHaveTextContent(SITE_FORMAT_ERROR);
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(field).toHaveAccessibleDescription(SITE_FORMAT_ERROR);
+  await expectNoA11yViolations(document.body);
   await userEvent.clear(field);
   await userEvent.type(field, 'https://contoso.sharepoint.com/sites/Procurement/{Enter}');
+  expect(within(custodianRow('Alex Wilber')).getByRole('button', { name: 'Link a site' })).toHaveFocus();
   expect(await within(custodianRow('Alex Wilber')).findByRole('list', { name: 'Sites linked to Alex Wilber' })).toHaveTextContent('sites/Procurement');
   await waitFor(() =>
     expect(sent).toEqual([{ method: 'PUT', path: `/matters/mat_falcon/custodians/${ALEX}`, body: { mailbox: true, onedrive: true, sites: ['https://contoso.sharepoint.com/sites/Procurement'] } }]),
@@ -324,6 +466,19 @@ test('a site can be linked to a custodian, and unlinked', async () => {
   await waitFor(() => expect(sent).toHaveLength(2));
   expect(sent[1]!.body).toEqual({ mailbox: true, onedrive: true, sites: [] });
   expect(countOf('SharePoint sites')).toBe('2');
+});
+
+test('closing the link-site form puts focus back on "Link a site"', async () => {
+  await openDefine();
+  const linkButton = () => within(custodianRow('Alex Wilber')).getByRole('button', { name: 'Link a site' });
+  await userEvent.click(linkButton());
+  expect(screen.getByLabelText('Site address to link to Alex Wilber')).toHaveFocus();
+  await userEvent.keyboard('{Escape}');
+  expect(linkButton()).toHaveFocus();
+  await userEvent.click(linkButton());
+  await userEvent.click(within(custodianRow('Alex Wilber')).getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByLabelText('Site address to link to Alex Wilber')).not.toBeInTheDocument();
+  expect(linkButton()).toHaveFocus();
 });
 
 test('a site without a custodian can be added and removed', async () => {
@@ -349,7 +504,10 @@ test("a site address that isn't a site, or is already there, is caught before it
   const field = screen.getByLabelText('Site address');
   await userEvent.type(field, 'https://example.com/Legal{Enter}');
   expect(screen.getByRole('alert')).toHaveTextContent(SITE_FORMAT_ERROR);
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(field).toHaveAccessibleDescription(SITE_FORMAT_ERROR);
   await userEvent.clear(field);
+  expect(field).not.toHaveAttribute('aria-invalid');
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   await userEvent.type(field, 'https://contoso.sharepoint.com/sites/projectfalcon{Enter}'); // linked to Megan Bowen
   expect(screen.getByRole('alert')).toHaveTextContent(SITE_DUPLICATE_ERROR);
@@ -361,6 +519,7 @@ test("the API's refusals of a site are shown in the design's words", async () =>
   await openDefine();
   await userEvent.type(screen.getByLabelText('Site address'), 'https://contoso.sharepoint.com/sites/Legal{Enter}');
   expect(await screen.findByRole('alert')).toHaveTextContent(SITE_DUPLICATE_ERROR);
+  expect(screen.getByLabelText('Site address')).toHaveAccessibleDescription(SITE_DUPLICATE_ERROR);
   expect(within(screen.getByRole('list', { name: 'Sites without a custodian' })).queryByText('https://contoso.sharepoint.com/sites/Legal')).not.toBeInTheDocument();
 });
 
@@ -376,6 +535,22 @@ test('a draft whose criteria changed says the search changed, not who is searche
   expect(notice).toHaveTextContent('SearchTrail will create search v4 in Purview.');
 });
 
+test("while it isn't known what changed, the notice says neither", async () => {
+  server.use(
+    http.get('/api/v1/matters/:matterId', () => HttpResponse.json({ ...falcon(), draft_changed: true })),
+    http.get('/api/v1/matters/:matterId/versions', async () => {
+      await delay(100);
+      return undefined; // the mock's own handler
+    }),
+  );
+  await openDefine();
+  const notice = await within(searched()).findByRole('status');
+  expect(notice).toHaveTextContent('SearchTrail will create search v4 in Purview.');
+  expect(notice).not.toHaveTextContent('The search has changed.');
+  expect(notice).not.toHaveTextContent('Who is searched has changed.');
+  expect(await within(notice).findByText('Who is searched has changed.')).toBeInTheDocument();
+});
+
 test('a new matter has nothing in Purview yet', async () => {
   server.use(
     http.get('/api/v1/matters/:matterId', () =>
@@ -387,7 +562,7 @@ test('a new matter has nothing in Purview yet', async () => {
   expect(screen.getByText('No custodians on hold')).toBeInTheDocument();
   expect(within(searched()).getByText(/^Nothing has been sent to Purview yet\./)).toBeInTheDocument();
   expect(screen.getByText(/^Not created yet\./)).toBeInTheDocument();
-  expect(screen.queryByRole('link', { name: 'Open in Purview' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Open in Purview/ })).not.toBeInTheDocument();
   await expectNoA11yViolations(document.body);
 });
 

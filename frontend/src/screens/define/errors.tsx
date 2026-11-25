@@ -1,5 +1,6 @@
 // How a refused change is shown on the Define screen: under the thing it was about, in the design's words where
 // the design has them (the site field), and otherwise as the error code's title with the API's own message.
+import type { ReactNode } from 'react';
 import { describeError, hasCode } from '@/api/errors';
 import { InlineError } from '@/components';
 import { SITE_DUPLICATE_ERROR, SITE_FORMAT_ERROR } from './format';
@@ -18,14 +19,29 @@ function errorWords(error: unknown, place: ErrorPlace = 'other'): { title?: stri
   return message.toLowerCase().startsWith(title.toLowerCase()) ? { message } : { title, message };
 }
 
-/** An error under a field or a row, announced when it appears. */
-export function ChangeError({ error, place }: { error: unknown; place?: ErrorPlace }) {
+/**
+ * An error under a field or a row, announced when it appears. Give it an `id` when it is about one field, and
+ * point the field's aria-describedby at it (see `describedBy` in format.ts).
+ */
+export function ChangeError({ error, place, id }: { error: unknown; place?: ErrorPlace; id?: string }) {
   const words = errorWords(error, place);
   if (!words) return null;
   return (
-    <InlineError>
-      {words.title && <strong>{words.title}. </strong>}
-      {words.message}
-    </InlineError>
+    <div id={id}>
+      <InlineError>
+        {words.title && <strong>{words.title}.</strong>}
+        {words.title && ' '}
+        {words.message}
+      </InlineError>
+    </div>
+  );
+}
+
+/** A field's own problem in words (InlineError takes no id), under `id`. */
+export function FieldError({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div id={id}>
+      <InlineError>{children}</InlineError>
+    </div>
   );
 }

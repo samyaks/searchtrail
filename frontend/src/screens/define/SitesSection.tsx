@@ -1,9 +1,9 @@
 // Sites without a custodian: shared team or department sites, added by address and removed one by one.
 import { type FormEvent, useState } from 'react';
 import type { Schemas } from '@/api/client';
-import { Button, IconButton, InlineError } from '@/components';
-import { ChangeError } from './errors';
-import { normaliseSiteUrl, siteProblem } from './format';
+import { Button, IconButton } from '@/components';
+import { ChangeError, FieldError } from './errors';
+import { describedBy, normaliseSiteUrl, siteProblem } from './format';
 import { useAddSite, useRemoveSite } from './hooks';
 import styles from './DefineScreen.module.css';
 import { CloseIcon, Section } from './Section';
@@ -59,6 +59,7 @@ export function SitesSection({ matter, existingSites }: { matter: Schemas['Matte
             value={draft}
             placeholder="https://contoso.sharepoint.com/sites/Legal"
             aria-invalid={problem || add.isError ? true : undefined}
+            aria-describedby={describedBy((!!problem || add.isError) && 'site-url-error')}
             onChange={(e) => {
               setDraft(e.target.value);
               setProblem(null);
@@ -70,7 +71,7 @@ export function SitesSection({ matter, existingSites }: { matter: Schemas['Matte
           Add site
         </Button>
       </form>
-      {problem ? <InlineError>{problem}</InlineError> : <ChangeError error={add.error} place="site" />}
+      {problem ? <FieldError id="site-url-error">{problem}</FieldError> : <ChangeError error={add.error} place="site" id="site-url-error" />}
     </Section>
   );
 }

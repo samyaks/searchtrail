@@ -2,9 +2,8 @@
 // (the type as soon as it is chosen) with PATCH /matters/{id}; the header's title follows.
 import { useState } from 'react';
 import type { Schemas } from '@/api/client';
-import { InlineError } from '@/components';
-import { ChangeError } from './errors';
-import { MATTER_TYPES } from './format';
+import { ChangeError, FieldError } from './errors';
+import { describedBy, MATTER_TYPES } from './format';
 import { useUpdateMatter } from './hooks';
 import styles from './DefineScreen.module.css';
 import { Section } from './Section';
@@ -22,7 +21,12 @@ export function DetailsSection({ matter }: { matter: Matter }) {
 
   const save = (field: Field, body: Schemas['MatterUpdate']) => {
     setLastField(field);
-    update.mutate(body);
+    // A refused type change goes back to the saved type; a name or description stays as typed, to be fixed.
+    update.mutate(body, { onError: () => field === 'type' && setType(matter.type) });
+  };
+  /** A new edit makes the last "Saved" out of date. */
+  const editing = () => {
+    if (update.isSuccess) update.reset();
   };
   const saveName = () => {
     const trimmed = name.trim();
@@ -38,6 +42,9 @@ export function DetailsSection({ matter }: { matter: Matter }) {
   };
 
   const errorFor = (field: Field) => (update.isError && lastField === field ? update.error : null);
+  const typeError = errorFor('type');
+  const nameError = errorFor('name');
+  const descError = errorFor('description');
 
   return (
     <Section title="Matter details">
@@ -59,8 +66,11 @@ export function DetailsSection({ matter }: { matter: Matter }) {
             id="matter-type"
             className={styles.input}
             value={type}
+            aria-invalid={typeError ? true : undefined}
+            aria-describedby={describedBy(!!typeError && 'matter-type-error')}
             onChange={(e) => {
               const next = e.target.value as Schemas['MatterType'];
+              editing();
               setType(next);
               if (next !== matter.type) save('type', { type: next });
             }}
@@ -71,7 +81,7 @@ export function DetailsSection({ matter }: { matter: Matter }) {
               </option>
             ))}
           </select>
-          <ChangeError error={errorFor('type')} />
+          <ChangeError error={typeError} id="matter-type-error" />
         </div>
       </div>
       <div className={styles.field}>
@@ -85,12 +95,16 @@ export function DetailsSection({ matter }: { matter: Matter }) {
           value={name}
           maxLength={200}
           required
-          aria-invalid={nameMissing || undefined}
-          onChange={(e) => setName(e.target.value)}
+          aria-invalid={nameMissing || nameError ? true : undefined}
+          aria-describedby={describedBy(nameMissing && 'matter-name-missing', !!nameError && 'matter-name-error')}
+          onChange={(e) => {
+            editing();
+            setName(e.target.value);
+          }}
           onBlur={saveName}
         />
-        {nameMissing && <InlineError>Enter a name for the matter.</InlineError>}
-        <ChangeError error={errorFor('name')} />
+        {nameMissing && <FieldError id="matter-name-missing">Enter a name for the matter.</FieldError>}
+        <ChangeError error={nameError} id="matter-name-error" />
       </div>
       <div className={styles.field}>
         <label htmlFor="matter-desc" className={styles.label}>
@@ -102,14 +116,18 @@ export function DetailsSection({ matter }: { matter: Matter }) {
           className={styles.textarea}
           value={description}
           maxLength={2000}
-          aria-describedby="matter-desc-hint"
-          onChange={(e) => setDescription(e.target.value)}
+          aria-invalid={descError ? true : undefined}
+          aria-describedby={describedBy('matter-desc-hint', !!descError && 'matter-desc-error')}
+          onChange={(e) => {
+            editing();
+            setDescription(e.target.value);
+          }}
           onBlur={saveDescription}
         />
         <span id="matter-desc-hint" className={styles.hint}>
           Shown on the Purview case and at the top of the methodology report.
         </span>
-        <ChangeError error={errorFor('description')} />
+        <ChangeError error={descError} id="matter-desc-error" />
       </div>
       <p className={styles.saveStatus} role="status">
         {update.isPending ? 'Saving…' : update.isSuccess ? 'Saved' : ''}
