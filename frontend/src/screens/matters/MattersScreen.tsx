@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { Schemas } from '@/api/client';
 import { Button, type Column, DataTable, ErrorNotice, FilterChip, Pill, type PillTone } from '@/components';
-import { activityText, itemsText, STAGE_LABELS, stageText } from './format';
+import { activityText, emptyText, itemsText, STAGE_LABELS, stageText } from './format';
 import { useDebouncedValue, useMatterList, useStageCounts } from './hooks';
 import { NewMatterForm } from './NewMatterForm';
 import styles from './MattersScreen.module.css';
@@ -53,6 +53,8 @@ function PlusIcon() {
   );
 }
 
+const shownText = (n: number) => (n === 1 ? '1 matter shown.' : `${n} matters shown.`);
+
 export function MattersScreen() {
   const [stage, setStage] = useState<Stage | undefined>();
   const [search, setSearch] = useState('');
@@ -72,8 +74,9 @@ export function MattersScreen() {
     wasCreating.current = creating;
   }, [creating]);
 
-  const emptyMessage =
-    !stage && !q ? 'No matters yet. Choose New matter to create the first one.' : 'No matters match. Clear the search or choose All.';
+  const emptyMessage = emptyText(stage, q);
+  // Said by screen readers once a filter or search has settled (not while the previous rows are still shown).
+  const shown = matters.data && !matters.isPlaceholderData ? shownText(matters.data.items.length) : '';
 
   return (
     <div className={styles.page}>
@@ -84,7 +87,7 @@ export function MattersScreen() {
         </div>
         {!creating && (
           <div ref={headerActions}>
-            <Button variant="primary" icon={<PlusIcon />} aria-expanded={false} aria-controls={formId} onClick={() => setCreating(true)}>
+            <Button variant="primary" icon={<PlusIcon />} onClick={() => setCreating(true)}>
               New matter
             </Button>
           </div>
@@ -115,7 +118,14 @@ export function MattersScreen() {
         </div>
       </div>
 
-      {matters.isPending && <p className={styles.muted}>Loading matters…</p>}
+      <p role="status" className="st-visually-hidden">
+        {shown}
+      </p>
+      {matters.isPending && (
+        <p role="status" className={styles.muted}>
+          Loading matters…
+        </p>
+      )}
       {matters.isError && <ErrorNotice error={matters.error} onRetry={() => void matters.refetch()} />}
       {matters.data && (
         <div aria-busy={matters.isPlaceholderData}>

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router';
 import type { Schemas } from '@/api/client';
 import { Button, Card, ErrorNotice, InlineError } from '@/components';
 import { useCreateMatter } from './hooks';
-import { DESCRIPTION_MAX, fieldOfError, type FieldErrors, MATTER_TYPES, type MatterField, NAME_MAX, toBody, validate } from './newMatter';
+import { apiFieldError, DESCRIPTION_MAX, fieldOfError, type FieldErrors, MATTER_TYPES, type MatterField, NAME_MAX, toBody, validate } from './newMatter';
 import styles from './NewMatterForm.module.css';
 
 const EMPTY: Schemas['MatterCreate'] = { matter_number: '', name: '', type: 'investigation', description: '' };
@@ -21,13 +21,16 @@ export function NewMatterForm({ id, onCancel }: { id: string; onCancel: () => vo
   useEffect(() => fields.current.matter_number?.focus(), []);
 
   // An error the API returned for one field shows under it; any other shows above the buttons.
-  const apiField = create.isError ? fieldOfError(create.error) : undefined;
-  const errors: FieldErrors = { ...checked, ...(apiField && { [apiField]: create.error!.message }) };
+  const apiError = create.isError ? apiFieldError(create.error) : undefined;
+  const apiField = apiError?.field;
+  const errors: FieldErrors = { ...checked, ...(apiError && { [apiError.field]: apiError.message }) };
 
+  // Editing a field clears its own error. An API error about another field (a number already in use, while the
+  // person fixes the name) stays until that field changes; one about no field goes with any edit.
   const set = (field: MatterField) => (event: { target: { value: string } }) => {
     setValues((v) => ({ ...v, [field]: event.target.value }));
     setChecked((c) => ({ ...c, [field]: undefined }));
-    if (create.isError) create.reset();
+    if (create.isError && (!apiField || apiField === field)) create.reset();
   };
 
   const submit = (event: FormEvent) => {

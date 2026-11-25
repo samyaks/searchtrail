@@ -42,22 +42,28 @@ export function validate(body: Schemas['MatterCreate']): FieldErrors {
 }
 
 /**
- * The field an API error is about, so its message can sit under that field: a duplicate number (409 conflict),
- * or a validation error naming the field (the mocks say `details.field`; FastAPI's own check gives
- * `details.errors[].loc`, such as ["body", "matter_number"]).
+ * The field an API error is about, and what to say under it: a duplicate number (409 conflict), or a validation
+ * error naming the field. The mocks say `details.field` and put the reason in the message; FastAPI's own check
+ * gives `details.errors[]`, each with a `loc` such as ["body", "matter_number"] and its own `msg`, while the
+ * envelope's message only says the request is not valid, so the matching entry's `msg` is used.
  */
-export function fieldOfError(error: unknown): MatterField | undefined {
+export function apiFieldError(error: unknown): { field: MatterField; message: string } | undefined {
   if (!(error instanceof ApiRequestError)) return undefined;
-  const { code, details } = error.body;
-  if (code === 'conflict') return 'matter_number';
+  const { code, details, message } = error.body;
+  if (code === 'conflict') return { field: 'matter_number', message };
   if (code !== 'validation_failed') return undefined;
   const isField = (value: unknown): value is MatterField => typeof value === 'string' && (FIELDS as string[]).includes(value);
-  if (isField(details.field)) return details.field;
+  if (isField(details.field)) return { field: details.field, message };
   if (Array.isArray(details.errors)) {
-    for (const entry of details.errors as { loc?: unknown }[]) {
+    for (const entry of details.errors as { loc?: unknown; msg?: unknown }[]) {
       const field = Array.isArray(entry?.loc) ? entry.loc.find(isField) : undefined;
-      if (field) return field;
+      if (field) return { field, message: typeof entry.msg === 'string' && entry.msg.trim() ? entry.msg : message };
     }
   }
   return undefined;
+}
+
+/** The field an API error is about, if any (see apiFieldError). */
+export function fieldOfError(error: unknown): MatterField | undefined {
+  return apiFieldError(error)?.field;
 }

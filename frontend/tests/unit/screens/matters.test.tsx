@@ -3,12 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { db } from '@/mocks/db';
 import { server } from '@/mocks/server';
-import { activityText } from '@/screens/matters/format';
+import { summaryOf } from '@/mocks/views';
+import { activityText, emptyText } from '@/screens/matters/format';
 import { EXPORTING_REFRESH_MS } from '@/screens/matters/hooks';
-import { fieldOfError, toBody, validate } from '@/screens/matters/newMatter';
+import { apiFieldError, fieldOfError, toBody, validate } from '@/screens/matters/newMatter';
 import { ApiRequestError } from '@/api/client';
 import { expectNoA11yViolations } from '../a11y';
 import { renderApp } from '../renderApp';
+
+// Listeners added with server.events.on would otherwise pile up from test to test.
+afterEach(() => server.events.removeAllListeners());
 
 /** The query string of every GET /matters the screen makes. */
 function watchListRequests() {
@@ -99,6 +103,46 @@ test('the search and the stage filter combine, and say so when nothing matches',
   expect(await screen.findByText('Project Falcon investigation')).toBeInTheDocument();
 });
 
+test('a search with no stage chosen that matches nothing says to clear the search', async () => {
+  renderApp('/matters');
+  await screen.findByRole('table', { name: 'Matters' });
+  await userEvent.type(screen.getByRole('searchbox', { name: 'Search matters' }), 'no such matter');
+  expect(await screen.findByText('No matters match. Clear the search.')).toBeInTheDocument();
+  expect(await screen.findByRole('status')).toHaveTextContent('0 matters shown.');
+});
+
+test('the empty table says how to undo whatever hides the matters', () => {
+  expect(emptyText(undefined, undefined)).toBe('No matters yet. Choose New matter to create the first one.');
+  expect(emptyText('exported', undefined)).toBe('No matters match. Choose All.');
+  expect(emptyText(undefined, 'x')).toBe('No matters match. Clear the search.');
+  expect(emptyText('exported', 'x')).toBe('No matters match. Clear the search or choose All.');
+});
+
+test('screen readers hear how many matters show once a filter settles, and that the list is loading', async () => {
+  renderApp('/matters');
+  expect(screen.getByText('Loading matters…')).toHaveAttribute('role', 'status');
+  await screen.findByRole('table', { name: 'Matters' });
+  const status = () => screen.getByText(/matters? shown\.$/);
+  await waitFor(() => expect(status()).toHaveTextContent('5 matters shown.'));
+  expect(status()).toHaveAttribute('role', 'status');
+  expect(status()).toHaveClass('st-visually-hidden');
+
+  await userEvent.click(chip(/^Exported/));
+  await waitFor(() => expect(status()).toHaveTextContent('2 matters shown.'));
+  await userEvent.click(chip(/^Previewed/));
+  await waitFor(() => expect(status()).toHaveTextContent('1 matter shown.'));
+});
+
+test('the All chip counts every matter the API says there are', async () => {
+  server.use(
+    http.get('/api/v1/matters', () =>
+      HttpResponse.json({ items: db.matters.slice(0, 2).map(summaryOf), total: 12 }),
+    ),
+  );
+  renderApp('/matters');
+  expect(await screen.findByRole('button', { name: 'All 12' })).toBeInTheDocument();
+});
+
 test('with no matters at all, the list says how to make the first one', async () => {
   server.use(http.get('/api/v1/matters', () => HttpResponse.json({ items: [], total: 0 })));
   renderApp('/matters');
@@ -117,6 +161,46 @@ test('a matter that is exporting is read again, so its percentage moves', async 
       await vi.advanceTimersByTimeAsync(EXPORTING_REFRESH_MS + 100);
     });
     expect(await screen.findByText('Exporting 81%')).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('with the Exported chip chosen, a matter that finishes exporting joins the table', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    renderApp('/matters');
+    await screen.findByText('Exporting 64%');
+    await userEvent.click(chip(/^Exported/));
+    await waitFor(() => expect(rowsOf(screen.getByRole('table', { name: 'Matters' }))).toHaveLength(2));
+
+    // The export finishes while the person looks at Exported, whose own rows have nothing exporting.
+    const exporting = db.matters.find((m) => m.matter.stage === 'exporting')!;
+    exporting.matter.stage = 'exported';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXPORTING_REFRESH_MS + 100);
+    });
+    await waitFor(() => expect(rowsOf(screen.getByRole('table', { name: 'Matters' }))).toHaveLength(3));
+    expect(screen.getByRole('link', { name: exporting.matter.name })).toBeInTheDocument();
+    expect(chip(/^Exported/)).toHaveAccessibleName('Exported 3');
+    expect(chip(/^Exporting/)).toHaveAccessibleName('Exporting 0');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('with the Exporting chip chosen, the percentage still moves', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    renderApp('/matters');
+    await screen.findByRole('button', { name: 'All 5' });
+    await userEvent.click(chip(/^Exporting/));
+    await waitFor(() => expect(rowsOf(screen.getByRole('table', { name: 'Matters' }))).toHaveLength(1));
+    db.matters.find((m) => m.matter.stage === 'exporting')!.exports[0]!.progress = 0.9;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXPORTING_REFRESH_MS + 100);
+    });
+    expect(await screen.findByText('Exporting 90%')).toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }
@@ -213,6 +297,11 @@ test('a matter number already in use is shown under the field', async () => {
   expect(number).toHaveFocus();
   expect(router.state.location.pathname).toBe('/matters');
 
+  // Fixing the name leaves the message about the number in place.
+  await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), ' 2');
+  expect(within(form).getByText('A matter with number M-2026-0142 already exists.')).toBeInTheDocument();
+  expect(number).toHaveAttribute('aria-invalid', 'true');
+
   // Changing the number takes the message away, and the next try goes through.
   await userEvent.type(number, '-B');
   expect(within(form).queryByText(/already exists/)).not.toBeInTheDocument();
@@ -235,7 +324,9 @@ test("the API's own validation errors go under the field they name", async () =>
   const name = within(form).getByRole('textbox', { name: 'Name' });
   await userEvent.type(name, 'Something');
   await userEvent.click(within(form).getByRole('button', { name: 'Create matter' }));
-  expect(await within(form).findByText('The request is not valid.')).toBeInTheDocument();
+  // FastAPI's own reason for the field, not the envelope's general message.
+  expect(await within(form).findByText('too long')).toBeInTheDocument();
+  expect(within(form).queryByText('The request is not valid.')).not.toBeInTheDocument();
   expect(name).toHaveAttribute('aria-invalid', 'true');
 });
 
@@ -258,6 +349,10 @@ test('any other failure is explained in the form, which keeps what was typed', a
 
 test('Cancel closes the form and puts focus back on New matter', async () => {
   renderApp('/matters');
+  // The button is gone while the form is open, so it claims no expanded state or control.
+  const button = await screen.findByRole('button', { name: 'New matter' });
+  expect(button).not.toHaveAttribute('aria-expanded');
+  expect(button).not.toHaveAttribute('aria-controls');
   const form = await openForm();
   await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), 'Half typed');
   await userEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
@@ -294,6 +389,14 @@ test('an API error is matched to its field from the mocks or from FastAPI', () =
   expect(fieldOfError(err('validation_failed', { field: 'body' }))).toBeUndefined();
   expect(fieldOfError(err('internal_error', { field: 'name' }))).toBeUndefined();
   expect(fieldOfError(new Error('x'))).toBeUndefined();
+
+  // The message: FastAPI's entry's own msg where it has one, else the envelope's message.
+  expect(apiFieldError(err('validation_failed', { errors: [{ loc: ['body', 'name'], msg: 'String should have at most 200 characters' }] }))).toEqual({
+    field: 'name',
+    message: 'String should have at most 200 characters',
+  });
+  expect(apiFieldError(err('validation_failed', { errors: [{ loc: ['body', 'name'] }] }))).toEqual({ field: 'name', message: 'x' });
+  expect(apiFieldError(err('validation_failed', { field: 'name' }))).toEqual({ field: 'name', message: 'x' });
 });
 
 test('activity dates read like the design', () => {
