@@ -1,4 +1,5 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import type { Schemas } from '@/api/client';
@@ -53,6 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   jobPolling.pollMs = pollDelay;
+  onlineManager.setOnline(true);
   server.events.removeAllListeners();
   vi.restoreAllMocks();
 });
@@ -179,6 +181,29 @@ test('the whole list downloads through the API (so the mocks and the session wor
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
+test('while the file downloads, the button says so and does nothing more', async () => {
+  const hold = gate();
+  const csv = watchRequests(/\/items\.csv$/);
+  const downloads = catchDownloads();
+  server.use(
+    http.get('/api/v1/previews/:previewId/items.csv', async () => {
+      await hold.opened;
+      return undefined; // on to the stateful mock
+    }),
+  );
+  renderApp(PATH);
+  await loaded();
+  await userEvent.click(screen.getByRole('button', { name: 'Download preview.csv' }));
+  const busy = await screen.findByRole('button', { name: 'Downloading…' });
+  expect(busy).toHaveAttribute('aria-disabled', 'true');
+  await userEvent.click(busy);
+  expect(csv).toHaveLength(1);
+
+  hold.release();
+  expect(await screen.findByRole('button', { name: 'Download preview.csv' })).toBeInTheDocument();
+  expect(downloads.saved).toHaveLength(1);
+});
+
 test('a download the API refuses says why, and nothing is saved', async () => {
   const downloads = catchDownloads();
   server.use(http.get('/api/v1/previews/:previewId/items.csv', () => HttpResponse.json({ code: 'not_found', message: 'That preview has gone.', details: {} }, { status: 404 })));
@@ -206,10 +231,18 @@ test('while another filter loads, the table does not describe the old rows as th
   expect(screen.queryByText(/^Showing/)).not.toBeInTheDocument();
   expect(screen.getByRole('table', { name: 'Items' })).toBeInTheDocument();
   expect(screen.queryByRole('table', { name: /where/ })).not.toBeInTheDocument();
+  // Nor does the pager page on the old total, or show it.
+  const pages = screen.getByRole('navigation', { name: 'Item pages' });
+  expect(within(pages).getByText('Page 1')).toBeInTheDocument();
+  expect(within(pages).queryByText(/of 66/)).not.toBeInTheDocument();
+  expect(within(pages).getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'true');
+  expect(within(pages).getByRole('button', { name: 'Previous' })).toHaveAttribute('aria-disabled', 'true');
 
   hold.release();
   expect(await screen.findByText('Showing 1–10 of the 223 where the type is Teams chat')).toBeInTheDocument();
   expect(screen.getByRole('table', { name: 'Items where the type is Teams chat' })).toBeInTheDocument();
+  expect(within(pages).getByText('Page 1 of 23')).toBeInTheDocument();
+  expect(within(pages).getByRole('button', { name: 'Next' })).toHaveAttribute('aria-disabled', 'false');
 });
 
 test('on the last page, Next stays focusable and does nothing', async () => {
@@ -292,10 +325,48 @@ test('when asking about the job is refused, the screen says so instead of going 
   server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'not_found', message: 'That job has gone.', details: {} }, { status: 404 })));
   renderApp(PATH);
   const alert = await screen.findByRole('alert');
-  expect(alert).toHaveTextContent('That job has gone.');
+  expect(alert).toHaveTextContent("We can't find the preview job. That job has gone.");
+  // A job that's gone doesn't send the person away from a screen that still works: it offers to preview again.
+  expect(within(alert).queryByRole('link', { name: 'Back to Matters' })).not.toBeInTheDocument();
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   // The last preview is still there.
   await loaded();
+
+  // (The mock's job ends, so the new preview is a new job, as it would be for a job that was cleared away.)
+  tick(10);
+  server.resetHandlers();
+  await userEvent.click(within(alert).getByRole('button', { name: 'Preview again' }));
+  expect(await screen.findByRole('progressbar')).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+});
+
+test('other refusals to say how the job is going keep the shared notice', async () => {
+  await post(`/matters/${FALCON}/previews`);
+  server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'purview_permission_missing', message: 'You need the eDiscovery Manager role.', details: {} }, { status: 403 })));
+  renderApp(PATH);
+  const alert = await screen.findByRole('alert');
+  expect(within(alert).getByRole('heading', { name: 'You need a Purview permission for this' })).toBeInTheDocument();
+  expect(alert).toHaveTextContent('You need the eDiscovery Manager role.');
+});
+
+test('a job that already succeeded shows no error when a later look at it fails', async () => {
+  renderApp(PATH);
+  await loaded();
+  await userEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
+  await screen.findByRole('progressbar');
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  await screen.findByText(/^Showing 1–10 of/);
+
+  // The job is asked about again (here after a moment offline) and the server fails.
+  const jobRequests = watchRequests(/^\/api\/v1\/jobs\//);
+  server.use(http.get('/api/v1/jobs/:jobId', () => HttpResponse.json({ code: 'internal_error', message: 'Down for a moment.', details: {} }, { status: 500 })));
+  act(() => onlineManager.setOnline(false));
+  act(() => onlineManager.setOnline(true));
+  await waitFor(() => expect(jobRequests.length).toBeGreaterThan(0));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.queryByText('Down for a moment.')).not.toBeInTheDocument();
 });
 
 test('a preview job that fails says why, keeps the last preview, and can be tried again', async () => {

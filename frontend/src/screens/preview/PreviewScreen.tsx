@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router';
 import { ApiRequestError, type Schemas } from '@/api/client';
+import { hasCode } from '@/api/errors';
 import { useMatter } from '@/api/queries';
 import { Banner, BarBreakdown, Button, ButtonLink, CountTile, EmptyState, ErrorNotice, MonthChart, TileGrid } from '@/components';
 import { barKey, madeWhen, monthSpan, sizeText, type BarFilter, type Dimension } from './format';
@@ -36,9 +37,10 @@ export function PreviewScreen() {
         />
       )}
       {job.startError !== null && <ErrorNotice error={job.startError} matterId={matterId} onRetry={job.start} />}
-      {/* Asking about the job was refused (the session ended, the job is gone): say so rather than go quiet. */}
-      {job.queryError !== null && !job.isRunning && !job.isFailed && (
-        <ErrorNotice error={job.queryError} matterId={matterId} onRetry={() => void job.refetch()} />
+      {/* Asking about the job was refused (the session ended, the job is gone): say so rather than go quiet. A job that
+          already ended has said what it had to: a later failed refetch of it isn't news. */}
+      {job.queryError !== null && !job.isRunning && !job.isSucceeded && !job.isFailed && (
+        <JobQueryError error={job.queryError} matterId={matterId} onRetry={() => void job.refetch()} onStart={job.start} busy={busy} />
       )}
 
       {(latest.isPending || (latest.isSuccess && matter.isPending)) && <p className={styles.muted}>Loading the preview…</p>}
@@ -50,6 +52,28 @@ export function PreviewScreen() {
         <PreviewBody key={latest.data.id} preview={latest.data} matter={matter.data} onRefresh={job.start} busy={busy} />
       )}
     </div>
+  );
+}
+
+/**
+ * Why the screen can't follow the job. A job that can't be found (it ended and was cleared away, say) gets its own
+ * words: the shared "not found" notice sends the person back to Matters, away from a screen that still works.
+ */
+function JobQueryError({ error, matterId, onRetry, onStart, busy }: { error: unknown; matterId: string; onRetry: () => void; onStart: () => void; busy: boolean }) {
+  if (!hasCode(error, 'not_found')) return <ErrorNotice error={error} matterId={matterId} onRetry={onRetry} />;
+  const message = error instanceof ApiRequestError ? error.body.message?.trim() : '';
+  return (
+    <Banner
+      role="alert"
+      title="We can't find the preview job."
+      actions={
+        <Button size="sm" variant="highlight" onClick={onStart} disabled={busy}>
+          Preview again
+        </Button>
+      }
+    >
+      {message || 'It may have ended and been cleared away.'}
+    </Banner>
   );
 }
 
@@ -117,7 +141,7 @@ function PreviewBody({ preview, matter, onRefresh, busy }: { preview: Preview; m
             Refresh preview
           </Button>
           <Button icon={<DownloadIcon />} aria-disabled={download.isPending} onClick={download.isPending ? undefined : () => download.mutate()}>
-            Download preview.csv
+            {download.isPending ? 'Downloading…' : 'Download preview.csv'}
           </Button>
         </div>
       </div>

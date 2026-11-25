@@ -147,13 +147,12 @@ export function ItemTable({ preview, matterId, filter, onClearFilter, page, onPa
       <div className={styles.itemsFoot}>
         {data && data.total > PAGE_SIZE && (
           <nav aria-label="Item pages" className={styles.pager}>
-            <PageButton onPress={() => onPage(page - 1)} unavailable={page <= 1}>
+            {/* While a page loads, the total is the last page's: don't page on it, or show it. */}
+            <PageButton onPress={() => onPage(page - 1)} unavailable={loading || page <= 1}>
               Previous
             </PageButton>
-            <span>
-              Page {page} of {pages.toLocaleString('en-US')}
-            </span>
-            <PageButton onPress={() => onPage(page + 1)} unavailable={page >= pages}>
+            <span>{loading ? `Page ${page.toLocaleString('en-US')}` : `Page ${page.toLocaleString('en-US')} of ${pages.toLocaleString('en-US')}`}</span>
+            <PageButton onPress={() => onPage(page + 1)} unavailable={loading || page >= pages}>
               Next
             </PageButton>
           </nav>
