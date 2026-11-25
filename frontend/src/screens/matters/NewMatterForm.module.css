@@ -1,0 +1,64 @@
+/* Fields as on docs/design/Define.dc.html (the matter details card). */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-4);
+}
+.intro {
+  margin: 0;
+  color: var(--st-muted);
+  font-size: 14px;
+}
+.row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--st-space-4);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.field label {
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+}
+.optional {
+  color: var(--st-muted);
+  font-weight: 500;
+}
+.input {
+  min-height: var(--st-target);
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--st-rule-strong);
+  border-radius: var(--st-radius-md);
+  background: var(--st-sheet);
+  color: var(--st-ink);
+  font: inherit;
+}
+.input:focus-visible {
+  outline: var(--st-focus);
+  outline-offset: 2px;
+}
+.input[aria-invalid='true'] {
+  border-color: var(--st-margin-red);
+}
+.mono {
+  font-family: var(--st-font-mono);
+}
+.textarea {
+  padding: 10px 12px;
+  resize: vertical;
+}
+.hint {
+  margin: 0;
+  color: var(--st-muted);
+  font-size: var(--st-text-sm);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
