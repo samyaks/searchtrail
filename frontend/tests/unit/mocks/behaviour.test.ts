@@ -274,16 +274,29 @@ describe('previews', () => {
     expect((await get(`${M}/term-reports/latest`)).json).toMatchObject({ version: 3 });
   });
 
-  test('a term report of a changed draft that fails leaves the new version unestimated, as a failed estimate does', async () => {
+  test('a term report of a changed draft estimates the new version as it starts, so it is estimated even if the count fails', async () => {
     const criteria = (await draft()).criteria;
     await put(`${M}/draft`, { criteria: { ...criteria, keywords: [...criteria.keywords, 'bribe'] } });
     setScenario({ failJobs: ['term_report'] });
-    expect((await runJob((await post(`${M}/term-reports`)).json.id)).at(-1).status).toBe('failed');
+    const start = await post(`${M}/term-reports`);
+    // While the count runs, v4 already has counts, so a preview of it can start.
     const v4 = ((await get(`${M}/versions`)).json.items as Schemas['QueryVersion'][]).find((v) => v.version === 4)!;
-    expect(v4.counts).toBeNull();
-    // Estimating it then is the way on, as after a failed estimate.
-    setScenario({ failJobs: [] });
-    expect((await runJob((await post(`${M}/estimates`)).json.id)).at(-1).result.version).toBe(4);
+    expect(v4.counts).not.toBeNull();
+    expect((await runJob(start.json.id)).at(-1).status).toBe('failed');
+    expect((await post(`${M}/previews`)).status).toBe(202);
+  });
+
+  test("counting a version that was never estimated doesn't estimate it or log an estimate", async () => {
+    const H = '/matters/mat_harlow';
+    const estimates = async () => ((await get(`${H}/log`)).json.items as { action: string }[]).filter((e) => e.action === 'estimate').length;
+    const v1 = async () => ((await get(`${H}/versions`)).json.items as Schemas['QueryVersion'][]).find((v) => v.version === 1)!;
+    expect((await v1()).counts).toBeNull();
+    const before = await estimates();
+    const start = await post(`${H}/term-reports`);
+    expect(start.status).toBe(202);
+    await runJob(start.json.id);
+    expect((await v1()).counts).toBeNull();
+    expect(await estimates()).toBe(before);
   });
 });
 

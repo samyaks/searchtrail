@@ -88,18 +88,18 @@ export const runHandlers = [
       // that version unestimated; the mock refuses up front instead, on both paths.)
       if (jobDeniedByPurview()) return HttpResponse.json(createJob('term_report', m.matter.id, { finish: () => null }), { status: 202 });
       // A recount counts the query as it is now: a changed draft becomes a new query version first, as it does for an
-      // estimate, so the report names the version it counted and isn't out of date the moment it lands. If the job
-      // then fails (failJobs), that version stays, unestimated, as it does when an estimate of it fails.
+      // estimate, so the report names the version it counted and isn't out of date the moment it lands. That new
+      // version is estimated at once, as the estimate endpoint does, so Scope, Preview and the log treat it like any
+      // other version while the count runs. All terms together is that estimate.
+      const wasCurrent = currentVersion(m);
       const version = freezeDraft(m);
+      if (version !== wasCurrent) estimateVersion(m, version);
       return HttpResponse.json(
         createJob('term_report', m.matter.id, {
           finish: () => {
             const previous = m.termReport;
-            // A version with no estimate yet (the one this count just made of a changed draft) gets one first, as an
-            // estimate would give it, so Scope, Preview and the log treat it like any other version. All terms
-            // together is that estimate.
-            if (!version.counts) estimateVersion(m, version);
-            const total = version.counts!.items;
+            // A version that was never estimated (seeded Harlow v1) is counted as it is, with no estimate made for it.
+            const total = version.counts?.items ?? 300;
             const rows: S['TermRow'][] = version.criteria.keywords.map((term) => {
               const before = previous?.rows.find((r) => r.term === term || r.term === `"${term}"`);
               const same = previous?.version === version.version;

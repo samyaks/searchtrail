@@ -107,6 +107,7 @@ function MatterTerms({ matterId }: { matterId: string }) {
         progress={job.isRunning ? job.progress : 0}
         queued={!job.isRunning || !job.job || job.job.status === 'queued'}
         done={done}
+        failed={Boolean(jobFailure)}
         focusAfter={reportHeading}
       />
 
@@ -192,22 +193,47 @@ function staleText(matter: { current_version: number | null; draft_changed: bool
  * that is read out. Only the phase is live: the percent is left to the progress bar, not read out on every poll.
  * Once the count is done, the same region says so (`done`).
  */
-function Progress({ counting, progress, queued, done, focusAfter }: { counting: boolean; progress: number; queued: boolean; done: string; focusAfter: RefObject<HTMLElement> }) {
+function Progress({ counting, progress, queued, done, failed, focusAfter }: { counting: boolean; progress: number; queued: boolean; done: string; failed: boolean; focusAfter: RefObject<HTMLElement> }) {
   const block = useRef<HTMLDivElement>(null);
   const wasCounting = useRef(false);
+  // Whether focus was on this block while it counted, and wasn't moved elsewhere since (to another control, or by a
+  // click on the page): only then does the end of the count move it on to the report.
+  const held = useRef(false);
+  useEffect(() => {
+    if (!counting) return;
+    const away = (event: Event) => {
+      if (!block.current?.contains(event.target as Node)) held.current = false;
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  }, [counting]);
   useEffect(() => {
     const active = document.activeElement;
     const lost = active === null || active === document.body;
     // The button that started the count is gone (the stale banner's, the empty state's, Try again): rather than
     // leave focus on the page itself, bring it here. Focus that is still somewhere is left alone.
     if (counting && lost) block.current?.focus();
-    // When the count ends this block goes away: focus that was in it (or that it dropped) goes on to the report.
-    if (!counting && wasCounting.current && (lost || block.current?.contains(active))) focusAfter.current?.focus();
+    // When the count ends this block goes away: focus that was in it (or that it dropped as it went) goes on to the
+    // report. Not when the count failed: the notice saying so comes first, and focus is left for the person to move.
+    const inBlock = Boolean(active && block.current?.contains(active));
+    if (!counting && wasCounting.current && !failed && (inBlock || (lost && held.current))) focusAfter.current?.focus();
+    if (!counting) held.current = false;
     wasCounting.current = counting;
-  }, [counting, focusAfter]);
+  }, [counting, failed, focusAfter]);
   const percent = Math.round(progress * 100);
   return (
-    <div ref={block} className={counting ? styles.progress : 'st-visually-hidden'} tabIndex={counting ? -1 : undefined}>
+    <div
+      ref={block}
+      className={counting ? styles.progress : 'st-visually-hidden'}
+      tabIndex={counting ? -1 : undefined}
+      onFocus={() => {
+        held.current = true;
+      }}
+      onBlur={(event) => {
+        // Moved to another control: no longer ours. (Focus the block drops as it hides has no next target.)
+        if (event.relatedTarget) held.current = false;
+      }}
+    >
       <div className={styles.progressTitle}>
         <p className={styles.phase} role="status">
           {counting ? <strong>{queued ? 'Starting the count…' : 'Counting hits per term…'}</strong> : done}

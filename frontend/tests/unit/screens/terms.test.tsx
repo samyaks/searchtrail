@@ -420,6 +420,20 @@ test('when focus is elsewhere as a count ends, it stays where it is', async () =
   expect(tab).toHaveFocus();
 });
 
+test('when a count fails, focus is not moved past the notice that says so', async () => {
+  renderApp(PATH);
+  await reportTable();
+  setScenario({ failJobs: ['term_report'] });
+  await userEvent.click(recount());
+  await screen.findByRole('progressbar');
+  progressBlock()!.focus();
+  tick(10);
+  await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
+  expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 3, name: 'Search term report' })).not.toHaveFocus();
+  setScenario({ failJobs: [] });
+});
+
 test('when the query was estimated as a new version since the report, the banner says Recount counts that version', async () => {
   const { criteria } = (await get(`/matters/${FALCON}/draft`)).json as { criteria: { keywords: string[] } };
   await put(`/matters/${FALCON}/draft`, { criteria: { ...criteria, keywords: [...criteria.keywords, 'bribe'] } });
