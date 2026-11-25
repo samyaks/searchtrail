@@ -60,7 +60,7 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
   Library tests (with MSW) for logic and each main action.
 - The check against the dry-run backend (`npm run dev:api`) comes with backend PRs 6 and 8, and the
   Playwright test per main action with PR 18 (see docs/PHASE1_PLAN.md). Fix what they find in a
-  follow-up `[E]` PR.
+  follow-up `[E]` PR, which merges before the PR that found it is called done.
 - PR screenshots next to the matching design files.
 
 ## Contracts (shared; don't change them inside a feature PR)

@@ -47,8 +47,9 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 2. Security: CSP for the web app (self-hosted fonts make a strict one possible), HSTS behind TLS,
    cookie flags checked in tests, TLS termination options in the install guide.
 3. Playwright e2e in `frontend/tests/e2e/`, running the full flow against the dry-run compose stack
-   in CI (create matter, custodians, scope, estimate, preview, terms, export, download, log verify).
-   Pass `--trace off` by default.
+   in CI (create matter, custodians, scope, estimate, preview, terms, export, download, log verify),
+   plus a test per main action of each screen (the screen PRs leave these to you in Phase 1, see
+   docs/PHASE1_PLAN.md). Pass `--trace off` by default.
 4. Install guide (`docs/install/`): a VM with Docker Compose in Azure or AWS, sizing (export storage),
    backups, upgrades (migrations), and an admin guide for the Entra app registration and permissions
    (from WS-C).
@@ -56,7 +57,8 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 
 ## Done when
 - A fresh VM goes from nothing to a working dry-run install by following the guide (record it).
-- The e2e suite runs green in CI against the dry-run stack.
+- The e2e suite (the full flow and each screen's main actions) runs green in CI against the dry-run
+  stack. Screen bugs it finds are fixed in follow-up `[E]` or `[F]` PRs before this is called done.
 
 ## Contracts (shared; don't change them inside a feature PR)
 - `contracts/openapi.yaml`: the API. Generated from it (never edit): `backend/app/schemas/contract.py`,

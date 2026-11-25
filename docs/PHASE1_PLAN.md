@@ -40,7 +40,7 @@ These are already applied to the briefs and to V1_PLAN.md section 6.
    against the mocks, with Vitest and Testing Library tests. The check against the dry-run backend
    moves to the backend PRs that serve each screen (6 and 8), and the Playwright test per main action
    moves to PR 18 (WS-G owns `frontend/tests/e2e/`). A screen bug those checks find is fixed in a
-   follow-up `[E]` or `[F]` PR, which merges before the backend PR that found it is called done.
+   follow-up `[E]` or `[F]` PR, which merges before the PR that found it (6, 8 or 18) is called done.
 
 ## Order of work
 One row is one PR, titled with its workstream (`[B1] ...`). A `[contract]` PR can be inserted
