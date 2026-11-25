@@ -51,9 +51,11 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
    (`POST .../log/verify`) with the result, and version comparison (`.../versions/compare`).
 
 ## Done when
-- Each screen works against the mocks and against the dry-run backend, including every blocked
-  export state.
-- A Playwright test per main action, and Vitest tests for logic.
+- Each screen works against the mocks (`npm run dev`), including slow jobs and every blocked export
+  state, with Vitest and Testing Library tests (with MSW) for logic and each main action.
+- The check against the dry-run backend (`npm run dev:api`) comes with backend PR 8, and the
+  Playwright test per main action with PR 18 (see docs/PHASE1_PLAN.md). Fix what they find in a
+  follow-up `[F]` PR, which merges before the PR that found it is called done.
 - PR screenshots next to the matching design files.
 
 ## Contracts (shared; don't change them inside a feature PR)

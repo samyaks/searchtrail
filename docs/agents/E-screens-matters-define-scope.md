@@ -14,8 +14,8 @@ Build each screen to match `docs/design/Main.dc.html`, `Define.dc.html` and `Sco
 `<script type="text/x-dc">` block; the files still say "culltool", the product is SearchTrail).
 
 The Matters screen already renders the list through the generated client; finish it (search box,
-counts on filter chips, New matter). Use WS-D's components and hooks; until they land, build
-against MSW mocks (`npm run dev`).
+counts on filter chips, New matter). Use WS-D's components and hooks, and build against the MSW mocks
+(`npm run dev`): in Phase 1 the screens come before the backend they run on.
 
 Important: Scope never builds KQL in the browser. It calls `POST /kql/preview` (debounced, about
 300 ms) as the user edits and shows the returned KQL, methodology lines and warnings. Criteria fields
@@ -56,8 +56,11 @@ npm run --prefix frontend lint:contract     # Spectral, version locked
 4. Map `criteria_invalid` and the other error codes to the design's inline messages.
 
 ## Done when
-- Each screen works against the mocks and against the dry-run backend (`npm run dev:api`).
-- A Playwright test per main action (with WS-G's e2e setup), and Vitest tests for logic.
+- Each screen works against the mocks (`npm run dev`), including slow jobs, with Vitest and Testing
+  Library tests (with MSW) for logic and each main action.
+- The check against the dry-run backend (`npm run dev:api`) comes with backend PRs 6 and 8, and the
+  Playwright test per main action with PR 18 (see docs/PHASE1_PLAN.md). Fix what they find in a
+  follow-up `[E]` PR, which merges before the PR that found it is called done.
 - PR screenshots next to the matching design files.
 
 ## Contracts (shared; don't change them inside a feature PR)

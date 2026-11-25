@@ -1,9 +1,15 @@
-# SearchTrail: Postgres, migrations, API and worker.
+# SearchTrail: Postgres, migrations, API, worker, and the web app on http://localhost:8080.
 #   docker compose -f deploy/docker-compose.yml up --build
 # Dry-run is on by default (SEARCHTRAIL_DRY_RUN=1): no Microsoft tenant is needed. The database
 # remembers which mode it was set up in, and the API and worker refuse it in the other mode, so a
 # live database left without its .env is refused (API unhealthy, worker exits), not served unsigned-in.
 # Settings: copy deploy/.env.example to deploy/.env.
+# The web service (Caddy) is the way in: it serves the app and passes /api to the API, so the browser sees
+# one origin. The API port is published on this machine only (127.0.0.1), for development and checks:
+# the API trusts the forwarding headers (the client address and http or https) from whoever can reach it,
+# which is safe only while that is just Caddy and this machine. Don't publish it more widely.
+# Behind a TLS-inspecting proxy, build the two images first with its CA bundle (the extra_ca secret in
+# deploy/Dockerfile.backend and deploy/Dockerfile.web), then run `up` without --build.
 name: searchtrail
 
 x-backend-env: &backend-env
@@ -22,7 +28,8 @@ x-backend: &backend
 
 services:
   db:
-    image: postgres:16-alpine
+    # Pinned by digest (the multi-arch index). To update: docker buildx imagetools inspect postgres:16-alpine
+    image: postgres:16-alpine@sha256:f377d590e5474681d4d7838635031a2b50647923b7abfa803ce9b5ff35d5c663
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-searchtrail}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-searchtrail}
@@ -44,8 +51,13 @@ services:
 
   api:
     <<: *backend
+    environment:
+      <<: *backend-env
+      # Take the client address and scheme from the X-Forwarded-* headers Caddy sets (uvicorn trusts only
+      # 127.0.0.1 by default). See the note at the top about who can reach the API.
+      FORWARDED_ALLOW_IPS: "*"
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       migrate: { condition: service_completed_successfully }
     healthcheck:
@@ -70,6 +82,23 @@ services:
       timeout: 5s
       retries: 6
       start_period: 10s
+    restart: unless-stopped
+
+  # The built frontend behind Caddy, which passes /api to the api service: the browser sees one origin.
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    image: searchtrail-web:dev
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     restart: unless-stopped
 
 volumes:
