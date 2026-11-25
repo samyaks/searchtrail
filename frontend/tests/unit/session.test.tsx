@@ -152,3 +152,23 @@ test('the client does not refetch on window focus, and applies the retry rule', 
   const client: QueryClient = makeQueryClient();
   expect(client.getDefaultOptions().queries).toMatchObject({ refetchOnWindowFocus: false, retry: retryOnce });
 });
+
+test('signing in again in place: a failed load with nothing to show starts afresh; one that still holds data keeps it and reads again', () => {
+  setSignInHere(() => {});
+  const client = new QueryClient();
+  const expired = apiError('session_expired', 401);
+  const cache = client.getQueryCache();
+  client.setQueryData(['kept'], 'what the screen is built on');
+  cache.find({ queryKey: ['kept'] })!.setState({ status: 'error', error: expired });
+  cache.build(client, { queryKey: ['empty'] }).setState({ status: 'error', error: expired });
+  cache.build(client, { queryKey: ['other'] }).setState({ status: 'error', error: apiError('internal_error', 500) });
+
+  signIn(client);
+
+  const kept = cache.find({ queryKey: ['kept'] })!.state;
+  expect(kept).toMatchObject({ status: 'success', error: null, data: 'what the screen is built on', isInvalidated: true });
+  expect(cache.find({ queryKey: ['empty'] })!.state).toMatchObject({ status: 'pending', error: null, data: undefined });
+  // An error that isn't the ended session is left for its screen to show.
+  expect(cache.find({ queryKey: ['other'] })!.state.error).toBeInstanceOf(ApiRequestError);
+});
+

@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { API_BASE, type Schemas } from '@/api/client';
+import { setSignInHere } from '@/api/session';
 import { example } from '@/mocks/examples';
 import { setScenario } from '@/mocks/scenarios';
 import { db, findMatter } from '@/mocks/db';
@@ -793,3 +794,20 @@ test('the words for holds, counts and sites', () => {
   expect(siteProblem('http://contoso.sharepoint.com/sites/Legal', [])).toBe(SITE_FORMAT_ERROR);
   expect(siteLabel('https://contoso.sharepoint.com/sites/Project%20Falcon')).toBe('sites/Project Falcon');
 });
+
+test('a removal refused because the session ended: after signing in again in place, the row is back and says nothing was changed', async () => {
+  setSignInHere(() => setScenario({ sessionExpired: false })); // as the mocks do in the browser
+  try {
+    await openDefine();
+    setScenario({ sessionExpired: true });
+    await removeCustodian('Alex Wilber');
+    await screen.findByRole('button', { name: 'Sign in' });
+    await delay(100); // the read of the matter after the refusal fails too
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await within(custodianRow('Alex Wilber')).findByRole('alert')).toHaveTextContent('nothing was changed');
+    expect(screen.getByText('alex.wilber@contoso.com · Procurement')).toBeInTheDocument();
+  } finally {
+    setSignInHere(null);
+  }
+});
+

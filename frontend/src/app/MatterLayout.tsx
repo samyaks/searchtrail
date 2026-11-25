@@ -12,7 +12,8 @@ export function MatterLayout() {
   const matter = useMatter(matterId);
 
   // A matter that can't be opened (it doesn't exist, or you may not open it, which looks the same) has no tabs.
-  if (matter.isError) {
+  // A matter already open stays open when a later read fails (an ended session, say), so the screen keeps its state.
+  if (matter.isError && matter.data === undefined) {
     return (
       <div className={styles.page}>
         <nav aria-label="Breadcrumb" className={styles.breadcrumb}>
