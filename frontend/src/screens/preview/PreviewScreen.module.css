@@ -1,0 +1,233 @@
+/* the Preview screen (docs/design/Preview.dc.html) */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-5);
+}
+.muted {
+  margin: 0;
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.mono {
+  font-family: var(--st-font-mono);
+  color: var(--st-ink);
+}
+
+/* the line about where the preview came from, and its two actions */
+.intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+.source {
+  margin: 0;
+  max-width: 70ch;
+  font-size: 14px;
+  color: var(--st-muted);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--st-space-2);
+}
+/* a plain link, so the browser downloads the file; it looks like the design's outlined button */
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--st-space-2);
+  min-height: var(--st-target);
+  padding: 0 var(--st-space-4);
+  border: 1px solid var(--st-ink);
+  border-radius: var(--st-radius-md);
+  background: var(--st-sheet);
+  color: var(--st-ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.download:hover {
+  background: var(--st-paper);
+  color: var(--st-ink);
+}
+.download:focus-visible {
+  outline: var(--st-focus);
+  outline-offset: 2px;
+}
+
+/* the breakdowns */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-space-3);
+}
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+}
+.h2 {
+  margin: 0;
+  font-family: var(--st-font-body);
+  font-size: 19px;
+  font-weight: 700;
+}
+.breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: var(--st-space-4);
+}
+
+/* a running preview job */
+.progressCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+  border: 1px solid var(--st-notice-edge);
+  border-radius: var(--st-radius-card);
+  background: var(--st-highlighter-soft);
+}
+.progressTitle {
+  margin: 0;
+  font-family: var(--st-font-body);
+  font-size: var(--st-text-md);
+  font-weight: 700;
+}
+.progressTrack {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--st-sheet);
+  border: 1px solid var(--st-rule-strong);
+}
+.progressFill {
+  display: block;
+  height: 100%;
+  background: var(--st-ink);
+  transition: width 0.4s ease;
+}
+
+/* the item table, in one panel with its heading and footer */
+.itemsCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--st-rule);
+  border-radius: var(--st-radius-card);
+  background: var(--st-sheet);
+}
+.itemsHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+  padding: var(--st-space-4) 20px;
+  border-bottom: 1px solid var(--st-rule);
+}
+.itemsTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.h2Small {
+  margin: 0;
+  font-family: var(--st-font-body);
+  font-size: 17px;
+  font-weight: 700;
+}
+.clearChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--st-space-2);
+  min-height: 40px;
+  padding: 0 var(--st-space-3);
+  border: 1px solid var(--st-ink);
+  border-radius: var(--st-radius-pill);
+  background: var(--st-highlighter);
+  color: var(--st-highlighter-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.clearChip:focus-visible {
+  outline: var(--st-focus);
+  outline-offset: 2px;
+}
+/* the table's own panel sits inside this one: no second border */
+.tableWrap > div {
+  border: 0;
+  border-radius: 0;
+}
+.tableWrap[aria-busy='true'] {
+  opacity: 0.6;
+}
+.itemsError {
+  padding: var(--st-space-4) 20px;
+}
+.itemCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 44ch;
+  font-weight: 500;
+}
+.itemTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.typeIcon {
+  flex: none;
+  color: var(--st-muted);
+}
+.lock {
+  flex: none;
+  color: var(--st-margin-red);
+}
+.mutedCell {
+  color: var(--st-muted);
+  white-space: nowrap;
+}
+.label {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--st-space-2);
+  border: 1px solid var(--st-rule-strong);
+  border-radius: var(--st-radius-sm);
+  color: var(--st-ink);
+  font-size: var(--st-text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.label[data-tone='high'] {
+  border-color: var(--st-ink);
+  background: var(--st-ink);
+  color: var(--st-sheet);
+}
+.label[data-tone='none'] {
+  border-style: dashed;
+  color: var(--st-muted);
+}
+.itemsFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-space-3);
+  padding: 14px 20px;
+  border-top: 1px solid var(--st-rule);
+  font-size: var(--st-text-sm);
+  color: var(--st-muted);
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--st-space-2);
+}
