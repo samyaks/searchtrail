@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { findMatter } from '@/mocks/db';
 import { example } from '@/mocks/examples';
-import { exportCheck } from '@/mocks/handlers/exports';
+import { exportCheck, exportName } from '@/mocks/handlers/exports';
 import { setScenario } from '@/mocks/scenarios';
 import { server } from '@/mocks/server';
 import { exportStatus, exportTotals, historyItems, sizeText, whenText } from '@/screens/export/format';
@@ -319,6 +319,33 @@ test('an export Purview fails is explained, and can be set up again', async () =
   await userEvent.click(screen.getByRole('button', { name: 'Set up the export again' }));
   expect(confirmField()).toHaveValue('');
   await waitFor(() => expect(confirmField()).toHaveFocus());
+});
+
+test('an export retried after Purview refused it gets a name of its own, so the history never shows two the same', async () => {
+  setScenario({ purviewDenied: 'license_missing' });
+  await openReady();
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(startButton());
+  tick(1);
+  await within(startCard()).findByRole('alert');
+  await waitFor(() => expect(historyRows()[0]).toHaveTextContent('Failed in Purview'));
+  setScenario({ purviewDenied: false });
+  await userEvent.click(screen.getByRole('button', { name: 'Set up the export again' }));
+  await userEvent.type(confirmField(), NUMBER);
+  await userEvent.click(startButton()); // a second after the one that failed: the same minute
+  await waitFor(() => expect(historyRows()).toHaveLength(3));
+  const names = historyRows().map((row) => within(row).getByRole('rowheader').textContent);
+  expect(new Set(names).size).toBe(3);
+  // As the backend names them: the matter number, EVERLAW and the time to the second.
+  expect(names.slice(0, 2)).toEqual(['M-2026-0142 EVERLAW 20261105T120001Z', 'M-2026-0142 EVERLAW 20261105T120000Z']);
+});
+
+test('two exports started in the same second still get different names', () => {
+  const m = findMatter(FALCON)!;
+  const first = exportName(m, '2026-11-05T12:00:00Z');
+  expect(first).toBe('M-2026-0142 EVERLAW 20261105T120000Z');
+  m.exports.unshift({ ...m.exports[0]!, id: 'exp_same_second', name: first });
+  expect(exportName(m, '2026-11-05T12:00:00Z')).toBe(`${first}-2`);
 });
 
 /** Long enough for a request the screen might send to have been sent. */

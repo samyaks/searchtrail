@@ -77,6 +77,19 @@ export function exportCheck(m: MockMatter): S['ExportCheck'] {
   };
 }
 
+/**
+ * The export's name in Purview, as the backend makes it (searchtrail/workflow.py): the matter number, EVERLAW and
+ * the time it starts to the second, `M-2026-0142 EVERLAW 20261125T143012Z`. A retry soon after a failed export so
+ * gets its own name. Two in the same second (only the frozen clock of the tests) get -2, -3 after the time.
+ */
+export function exportName(m: MockMatter, stamp: string): string {
+  const base = `${m.matter.matter_number} EVERLAW ${stamp.replace(/[-:]/g, '').slice(0, 15)}Z`;
+  const taken = new Set(m.exports.map((e) => e.name));
+  let name = base;
+  for (let i = 2; taken.has(name); i += 1) name = `${base}-${i}`;
+  return name;
+}
+
 const findExport = (id: string) => {
   for (const m of db.matters) {
     const found = m.exports.find((e) => e.id === id);
@@ -133,7 +146,7 @@ export const exportHandlers = [
       const counts = check.counts!;
       const stamp = iso();
       const exp: S['Export'] = {
-        id: nextId('exp'), matter_id: m.matter.id, name: `${m.matter.matter_number} EVERLAW ${stamp.replace(/[-:]/g, '').slice(0, 13)}Z`, version: check.version!, status: 'preparing', progress: 0,
+        id: nextId('exp'), matter_id: m.matter.id, name: exportName(m, stamp), version: check.version!, status: 'preparing', progress: 0,
         counts, options: body.options as S['ExportOptions'], changes_accepted: check.blocked_code === 'export_counts_changed', started_at: stamp, started_by: user(),
         finished_at: null, expires_at: null, files: [], download: { status: 'none', progress: null, stored_path: null, finished_at: null }, review_set: { status: 'none', name: null, finished_at: null },
       };
