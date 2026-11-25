@@ -14,7 +14,7 @@ import { queryKeys, useMatter } from '@/api/queries';
 import { dayAndTime } from '@/app/time';
 import { ErrorNotice } from '@/components';
 import { markForms, SECTION_NAMES, sectionOf, stableKey, type Criteria, type Section } from './criteria';
-import { ExpertSection, LabelsSection, TermsSection, WhenSection, WhoCard } from './FilterSections';
+import { ADD_TERM_ID, ExpertSection, LabelsSection, TermsSection, WhenSection, WhoCard } from './FilterSections';
 import { scopeKeys, timing, useDebounced, useDraft, useKqlPreview, useSaveDraft, useStartEstimate, useVersions } from './hooks';
 import styles from './ScopeScreen.module.css';
 import { EstimatePanel, KqlPanel, MethodologyPanel, type ShownEstimate } from './SummaryPanels';
@@ -117,7 +117,10 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
   const unsaved = save.isError;
   useEffect(() => {
     if (!unsaved) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = ''; // older browsers ask only when this is set
+    };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [unsaved]);
@@ -128,7 +131,13 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
     setStartError(null);
   };
 
-  const retrySave = () => void requestSave(criteria);
+  // Try again sends the save, and the notice goes while it's on its way. Focus was in the notice (on Try again),
+  // so it moves first to the field for adding a term, at the top of the filters, rather than fall to the page's body.
+  const noticeBox = useRef<HTMLDivElement>(null);
+  const retrySave = () => {
+    if (noticeBox.current?.contains(document.activeElement)) document.getElementById(ADD_TERM_ID)?.focus();
+    void requestSave(criteria);
+  };
 
   const runEstimate = async () => {
     if (blocked) return;
@@ -192,14 +201,23 @@ function ScopeEditor({ matter, initial }: { matter: Schemas['Matter']; initial: 
     const counted = versions.data?.items.filter((v) => v.counts).sort((a, b) => b.version - a.version)[0];
     if (counted?.counts) shown = { version: counted.version, at: counted.created_at, counts: counted.counts };
   }
-  // While the last save failed, what's on screen isn't the saved draft: the methodology doesn't claim a version for it.
-  const versionLabel = save.isError ? 'Draft (not saved)' : current === null || changed ? `Query v${nextVersion} (draft)` : `Query v${current}`;
+  // While the last save failed, what's on screen isn't the saved draft: the methodology says the version the edit
+  // would be part of, and that the last change isn't saved, so it doesn't pass the edit off as saved.
+  const versionLabel = save.isError
+    ? `Query v${(current ?? 0) + 1} (draft) · last change not saved`
+    : current === null || changed
+      ? `Query v${nextVersion} (draft)`
+      : `Query v${current}`;
 
   return (
     <div className={styles.columns}>
       <div className={styles.filters}>
         {/* A save that failed is said at the top, where the person is looking, not under the last filter. */}
-        {save.isError && <ErrorNotice error={save.error} onRetry={retrySave} headingLevel={3} change />}
+        {save.isError && (
+          <div ref={noticeBox}>
+            <ErrorNotice error={save.error} onRetry={retrySave} headingLevel={3} change />
+          </div>
+        )}
         <WhoCard matter={matter} />
         <TermsSection criteria={criteria} onChange={change} problem={problemFor('terms')} />
         <WhenSection criteria={criteria} onChange={change} problem={problemFor('dates')} typesProblem={problemFor('types')} />

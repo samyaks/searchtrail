@@ -75,3 +75,12 @@ export function monthSpan(months: readonly { month: string }[]): string | undefi
   const last = short(months[months.length - 1]!.month);
   return first === last ? first : `${first} to ${last}`;
 }
+
+/** A failure's "…then try again" pointed at the page's own button for it ("…then choose Refresh preview."). */
+export function pointToButton(message: string, label: string): string {
+  const text = message.trim();
+  if (!text) return `Choose ${label} to try again. If it keeps failing, check the case in the Purview portal.`;
+  const pointed = text.replace(/(?:,? then| and) try again\.?$/i, `, then choose ${label}.`);
+  if (pointed !== text) return pointed;
+  return /^try again\.?/i.test(text) ? text.replace(/^try again\.?/i, `Choose ${label} to try again.`) : `${text} Choose ${label} to try again.`;
+}

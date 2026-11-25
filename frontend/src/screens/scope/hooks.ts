@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { pollDelay } from '@/api/jobs';
 import { queryKeys } from '@/api/queries';
+import { isSessionExpired } from '@/api/session';
 import { stableKey, type Criteria } from './criteria';
 
 /**
@@ -67,7 +68,9 @@ export function useKqlPreview(criteria: Criteria) {
   const [last, setLast] = useState<Answer>({ data: undefined, error: null });
   // (Setting state while rendering, guarded like this, is React's way to derive state from a change.)
   if (answered && (answered.data !== last.data || answered.error !== last.error)) setLast(answered);
-  const shown = answered ?? last;
+  // An ended session isn't an answer about the query: once signed in again, the query reads afresh (api/session.ts),
+  // and until it answers there's nothing to show, rather than the old error as if a change had been refused.
+  const shown = answered ?? (isSessionExpired(last.error) ? { data: undefined, error: null } : last);
   return { data: shown.data, error: shown.error, isError: shown.error !== null, refetch: query.refetch };
 }
 

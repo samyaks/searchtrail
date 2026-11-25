@@ -564,6 +564,30 @@ describe('counts that behave like a real search', () => {
     expect(await estimate([...FALCON_TERMS, 'brightline', 'zzznomatch'])).toBe(await estimate([...FALCON_TERMS, 'brightline']));
   });
 
+  test('what the demo shows can be searched for: words of the items\' titles, the custodians and sites, and investigation words', async () => {
+    // From the seeded items' titles ("RE: Side letter, please do not forward", "Invoice INV-20931 Brightline.pdf"), the
+    // custodians and their departments, the sites, and a few words an investigation looks for.
+    const found = ['forward', 'do not forward', 'Megan Bowen', 'Alex Wilber', 'procurement', 'ProjectFalcon', 'finance', 'fraud', 'bribe*', 'cash', 'email', 'INV-20931', 'hotline'];
+    for (const term of found) expect(await estimate([term]), term).toBeGreaterThan(0);
+    // Adding any of them to v3's terms never lowers its 630, and the seeded terms keep their hits.
+    for (const term of ['forward', 'Megan Bowen', 'fraud']) expect(await estimate([...FALCON_TERMS, term]), term).toBeGreaterThanOrEqual(630);
+    expect(await estimate(FALCON_TERMS)).toBe(630);
+  });
+
+  test('hits do not depend on case, as in Purview', async () => {
+    const lower = await estimate(['brightline']);
+    expect(await estimate(['BRIGHTLINE'])).toBe(lower);
+    expect(await estimate(['Brightline'])).toBe(lower);
+    expect(await estimate(['Project Falcon', 'INVOIC*', 'Kickback', 'Side Letter'])).toBe(630);
+  });
+
+  test("every seeded matter's own query still estimates to its seeded count", async () => {
+    for (const [id, items] of [['mat_falcon', 630], ['mat_brightwell', 1206], ['mat_q3trading', 9842], ['mat_travel', 311]] as const) {
+      const job = (await post(`/matters/${id}/estimates`)).json;
+      expect((await runJob(job.id)).at(-1).result.counts.items, id).toBe(items);
+    }
+  });
+
   test('with ALL terms, adding one never raises the total', async () => {
     const allOf = async (keywords: string[]) => {
       await put(`${M}/draft`, { criteria: { ...(await draft()).criteria, keywords, keyword_mode: 'all' } });

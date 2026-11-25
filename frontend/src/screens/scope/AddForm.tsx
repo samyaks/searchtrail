@@ -12,6 +12,8 @@ type Props = {
   /** `sm` for the short forms under a chip list (file types, domains). */
   size?: 'md' | 'sm';
   autoFocus?: boolean;
+  /** The field's id, for a field the screen moves focus to; otherwise one is made. */
+  inputId?: string;
   /** What was typed, ready to add, or why it can't be; null to ignore (nothing typed). */
   check: (typed: string) => Checked | null;
   onAdd: (value: string) => void;
@@ -19,8 +21,9 @@ type Props = {
 };
 
 /** A field and a button that add one thing to a list (a term, an exclusion, a file type, a domain). */
-export function AddForm({ label, button, placeholder, mono, size = 'md', autoFocus, check, onAdd, onCancel }: Props) {
-  const id = useId();
+export function AddForm({ label, button, placeholder, mono, size = 'md', autoFocus, inputId, check, onAdd, onCancel }: Props) {
+  const madeId = useId();
+  const id = inputId ?? madeId;
   const [text, setText] = useState('');
   const [error, setError] = useState('');
 

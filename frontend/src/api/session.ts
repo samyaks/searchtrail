@@ -65,7 +65,6 @@ export const signsInHere = () => signInHere !== null;
 export function signIn(client: QueryClient | undefined): void {
   if (signInHere && client) {
     signInHere();
-    client.setQueryData(ENDED_KEY, false);
     const failed = client.getQueryCache().findAll({ predicate: (query) => isSessionExpired(query.state.error) });
     // A load that failed with nothing to show starts afresh. One that still holds data keeps it (a screen may be
     // built on it, with edits in it), drops the old error and reads again in the background.
@@ -74,8 +73,10 @@ export function signIn(client: QueryClient | undefined): void {
       if (!fresh.has(query)) query.setState({ status: 'success', error: null, fetchFailureReason: null, fetchFailureCount: 0 });
     }
     void client.resetQueries({ predicate: (query) => fresh.has(query) });
-    // The ended-session flag itself is never fetched, so it stays false.
     void client.invalidateQueries({ predicate: (query) => !fresh.has(query) });
+    // Only then is the session live again: by the time anything sees that, no load still holds the old "session
+    // ended" error, so none of them shows it as a change that was refused. (The flag itself is never fetched.)
+    client.setQueryData(ENDED_KEY, false);
     return;
   }
   sessionNavigation.assign(loginUrl());

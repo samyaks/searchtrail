@@ -1,5 +1,5 @@
 import { QueryClientContext } from '@tanstack/react-query';
-import { useContext } from 'react';
+import { useContext, useId } from 'react';
 import { describeError, REFUSED_BY_ENDED_SESSION, type ErrorDescription } from '@/api/errors';
 import { isSessionExpired, useSessionEnded } from '@/api/session';
 import { Button, ButtonLink } from './Button';
@@ -17,7 +17,8 @@ export type ErrorNoticeProps = {
   /**
    * The error is a change the person made that was refused (a save), not a load. If it was refused because the
    * session had ended, then back from signing in again in place it's the news on the page: the Shell moves focus to
-   * it (data-refused-change) instead of to the page's heading.
+   * it (data-refused-change) instead of to the page's heading. Focus is what announces it then, so it isn't also an
+   * alert (that would say it twice): it's a group named by its heading and described by its message.
    */
   change?: boolean;
 };
@@ -46,10 +47,18 @@ function RefusedBySession(props: ErrorNoticeProps) {
 function Notice({ description, onRetry, headingLevel = 2, takesFocus = false }: ErrorNoticeProps & { description: ErrorDescription; takesFocus?: boolean }) {
   const { title, message, tone, action } = description;
   const Heading = `h${headingLevel}` as const;
+  const id = useId();
+  const announce = takesFocus
+    ? { role: 'group', 'aria-labelledby': `${id}-title`, 'aria-describedby': `${id}-message`, 'data-refused-change': '', tabIndex: -1 }
+    : { role: 'alert' };
   return (
-    <div role="alert" className={styles.notice} data-tone={tone} {...(takesFocus ? { 'data-refused-change': '', tabIndex: -1 } : {})}>
-      <Heading className={styles.title}>{title}</Heading>
-      <p className={styles.message}>{message}</p>
+    <div className={styles.notice} data-tone={tone} {...announce}>
+      <Heading id={`${id}-title`} className={styles.title}>
+        {title}
+      </Heading>
+      <p id={`${id}-message`} className={styles.message}>
+        {message}
+      </p>
       {action?.kind === 'retry' && onRetry && (
         <Button size="sm" onClick={onRetry}>
           {action.label}
